@@ -1,0 +1,25 @@
+HANDOVER.md
+INTERFACE.md
+README.md
+
+
+# js
+node_modules/
+dist/
+*.local
+.vercel/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# env
+.env
+.env.*
+!.env.example
+
+# os/editor
+.DS_Store

@@ -1,0 +1,10 @@
+{
+  "name": "direct-demand-portal",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "build:web": "pnpm --filter web build",
+    "dev:api": "cd apps/api && uv run uvicorn app.main:app --reload --port 8000",
+    "test:api": "cd apps/api && uv run pytest"
+  }
+}

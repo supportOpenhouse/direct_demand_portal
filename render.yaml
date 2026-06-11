@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: direct-demand-api
+    runtime: python
+    rootDir: apps/api
+    plan: starter # free tier spin-down would pause the in-process scheduler
+    buildCommand: pip install uv && uv sync --frozen
+    preDeployCommand: uv run alembic upgrade head
+    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL # Neon direct (unpooled) URL, postgresql+asyncpg://...
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: CORS_ORIGINS # comma-separated, e.g. https://<project>.vercel.app
+        sync: false
+      - key: CORS_ORIGIN_REGEX
+        value: ^https://.*\.vercel\.app$
+      - key: RUN_SCHEDULER
+        value: "true"
+      - key: ENV
+        value: production
+
+  # When the API scales past one instance, split the scheduler out:
+  # - type: worker
+  #   name: direct-demand-worker
+  #   runtime: python
+  #   rootDir: apps/api
+  #   buildCommand: pip install uv && uv sync --frozen
+  #   startCommand: uv run python -m app.workers.scheduler
+  #   (then set RUN_SCHEDULER=false on the web service)

@@ -25,6 +25,8 @@ async def _login_by_email(session: AsyncSession, email: str) -> dict:
 
 @router.post("/auth/google")
 async def auth_google(payload: GoogleAuthRequest, session: AsyncSession = Depends(get_session)):
+    if not settings.GOOGLE_CLIENT_ID:
+        raise ApiError(503, "Google sign-in is not configured (GOOGLE_CLIENT_ID is unset)")
     try:
         email = verify_google_token(payload.credential)
     except Exception:

@@ -29,6 +29,10 @@ log = logging.getLogger("app")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    problems = settings.production_misconfigurations()
+    if problems:
+        raise RuntimeError("Refusing to start in production: " + "; ".join(problems))
+
     if settings.SEED_ON_START:
         from app.db import SessionLocal, engine
         from app.models import Base

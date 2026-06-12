@@ -49,7 +49,40 @@ Frontend → **Vercel** · API + scheduler → **Render** · DB → **Neon Postg
    - `VITE_MAPS_API_KEY` = optional; without it the visit planner uses estimates + a map placeholder.
      With it (Maps JavaScript API enabled, billing on) the live map renders.
 
-## 5. Smoke test after deploy
+## 5. Production go-live checklist
+
+The API **refuses to start** with `ENV=production` (set in render.yaml) unless all of
+these hold — so a misconfigured deploy fails loudly instead of running insecurely:
+
+- `DEV_LOGIN_ENABLED` unset/false (password-less login must never reach prod)
+- `JWT_SECRET` is a random secret of 32+ chars (Render's "Generate" satisfies this)
+- `GOOGLE_CLIENT_ID` is set (the only login path in prod)
+- `DATABASE_URL` is Postgres, not SQLite
+
+**Users = login allowlist.** Only emails in the `users` table (active=true) can sign in
+with Google; the row's `role` (admin/cm/rm) controls what they see. Manage it without SQL
+from `backend/`:
+
+```bash
+uv run python -m app.add_user list
+uv run python -m app.add_user add rahul@openhouse.in "Rahul Verma" rm --team "Team Gurgaon"
+uv run python -m app.add_user add priya@openhouse.in "Priya Nair" cm --team "Team Gurgaon"
+uv run python -m app.add_user deactivate rm3@openhouse.in
+```
+
+(Admins can also POST /v1/users via the API docs.)
+
+**Clearing demo data.** The seed loads fake leads/inventory and demo logins for evaluation.
+Before real traffic, from `backend/` with the prod `DATABASE_URL`:
+
+```bash
+uv run python -m app.purge_demo --yes --remove-demo-users
+```
+
+Keeps users/teams/societies/localities/settings; always keeps `support@openhouse.in`.
+Then add your real team with `add_user` above.
+
+## 6. Smoke test after deploy
 
 1. `curl -X POST https://<render>/v1/auth/dev-login` → must be **404** (dev login disabled in prod).
 2. Log in on the Vercel URL with a provisioned Google account.

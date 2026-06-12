@@ -39,6 +39,26 @@ class Settings(BaseSettings):
     RUN_SCHEDULER: bool = False
     DEV_LOGIN_ENABLED: bool = False
     SEED_ON_START: bool = False
+    ENV: str = "dev"
+
+    @property
+    def is_production(self) -> bool:
+        return self.ENV.lower() in ("production", "prod")
+
+    def production_misconfigurations(self) -> list[str]:
+        """Settings that must never reach production. Checked at startup."""
+        if not self.is_production:
+            return []
+        problems = []
+        if self.DEV_LOGIN_ENABLED:
+            problems.append("DEV_LOGIN_ENABLED must be false in production (password-less login!)")
+        if self.JWT_SECRET == "dev-secret" or len(self.JWT_SECRET) < 32:
+            problems.append("JWT_SECRET must be a random secret of 32+ characters in production")
+        if not self.GOOGLE_CLIENT_ID:
+            problems.append("GOOGLE_CLIENT_ID is required in production — nobody can log in without it")
+        if self.is_sqlite:
+            problems.append("DATABASE_URL points at SQLite — production must use Postgres")
+        return problems
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -1,0 +1,134 @@
+# Direct Demand Dashboard
+
+A standalone, self-contained prototype for **Openhouse Direct Demand** — the direct-buyer
+lead & inventory engine for Delhi NCR (Gurgaon, Noida, Ghaziabad).
+
+> This is a **new and separate** dashboard. It is built from the `Openhouse-Direct-CRM-PRD.md`
+> handoff and the original `openhouse-crm.html` prototype, rebuilt with a refined, semantic
+> colour system.
+
+## Run it
+
+It's a single file — no build step, no dependencies.
+
+```
+open "index.html"
+```
+
+(Or just open `index.html` in any browser. Fonts load from Google Fonts; sample property
+images load from Unsplash, so an internet connection makes it look its best.)
+
+## What changed vs. the source prototype
+
+The functionality and flow are faithful to the PRD and the original prototype. The work here
+is the **colour coding** — moved from a warm cream/paper theme to a cleaner cool canvas so the
+semantic colours read clearly and consistently:
+
+- **Canvas** — cool near-white (`#f5f7fa`) instead of warm cream, so colour-coded chips pop.
+- **Stages** — a logical hue ramp across the pipeline:
+  `New (blue) → Contacted (cyan) → Visit Scheduled (amber) → Visit Feedback (violet) →
+  Negotiation (indigo) → Won (emerald)`, plus terminal states
+  `Lost (red)`, `Future Prospect (gold)`, `Timepass (slate)`.
+- **TAT** — a strict traffic-light scale: `ok = green`, `warn = amber`, `breach = red (pulsing)`.
+- **Sources** — kept on recognisable brand colours (Meta blue, Google Ads green, 99acres
+  orange, MagicBricks magenta, YouTube red, WhatsApp green) with harmonised soft backgrounds.
+- **Gold Mine** — anchored to a single honey-gold so buckets, tags and the re-activation
+  engine read as one coherent system.
+- Stat cards now carry a coloured left accent matching the metric's meaning, and the pipeline
+  funnel uses the same stage hues.
+
+All colours are CSS custom properties under `:root` in `index.html`, so re-theming is a
+single block to edit.
+
+## Features in the prototype
+
+Mirrors the PRD modules:
+
+- **Dashboard** — a New → Qualified → Pipeline → Converted funnel, a "leak-detector" signal
+  row (Follow-ups due / Uncontactable / Immediate buyers), "leads needing action now", a
+  pipeline funnel, the **Follow-up radar**, and a **Why we lose leads** breakdown (see below).
+- **Qualified / Pipeline / Converted Leads** — the leads list, split into three sidebar tabs
+  (qualified = confirmed on call; pipeline = contacted→negotiation; converted = won). The four
+  Dashboard stat cards are clickable and jump to the matching tab; **New Leads** has no tab
+  (it lives in "Leads needing action now" on the Dashboard, highlighted with a moving light).
+  Click any lead for the two-layer data model (source-captured vs call-confirmed),
+  mandatory-field validation, call tracking + follow-up, typed reminders, stage history with
+  mandatory remarks, AI smart summary, matched live inventory, the visit planner, and recordings.
+- **Reminders** — typed (follow-up / visit schedule / visit feedback / negotiation), filterable.
+  Opened from the **orange Reminders button in the top bar** (left of "Add New Lead").
+- **Live Inventory** — resale & available units with one-tap WhatsApp brochure share.
+- **Supply Pipeline** — MSI / token-paid / negotiating units with buyer-interest tagging.
+- **Society Insights** — demand (buyers, active + dormant) vs. live supply (units) per society,
+  with a demand-gap and "high-demand" flags to show which societies to source next. Add
+  free-form **buyer insights** (what buyers commonly ask — RERA, possession, facing/floor
+  availability, connectivity, price trend) for any society via "+ Add society insight".
+- **Gold Mine** — auto-bucketing of all leads against new inventory (city hard filter, then
+  society OR budget+config), with bulk WhatsApp / push-to-call actions.
+- **Settings & Access** — no-code integrations, API key / webhook, roles & assignment rules.
+- **Roles & access scope** (switch personas via the user chip, bottom-left):
+  - **Admin** — all leads; the only role that edits source-captured data & config.
+  - **Closing Manager (CM)** — all leads assigned to the RMs in their team (multiple RMs report
+    into one CM).
+  - **RM** — their own (assigned) leads only.
+  Every list, the dashboard counts, nav badges, Gold Mine and Society Insights are filtered to
+  the current user's scope. Source-captured data stays Admin-edit-only.
+- **Add New Lead** (top bar) and **Connect Meta Leads** demonstrate ingestion, TAT and
+  WhatsApp alerts.
+
+## Visibility features (from the live-sheet audit)
+
+Added after auditing the team's real working Google Sheet, which showed *why* leads were being
+wasted: 9 different table layouts, freeform statuses, and critical follow-ups/requirements
+buried in a Remarks column. Each feature plugs a specific leak:
+
+- **A — Follow-up / Callback radar.** Every lead carries a `next callback` (overdue / today /
+  upcoming). The dashboard surfaces a "Follow-ups due" tile + a radar list (overdue-first, with
+  one-tap Call). Fixes the biggest leak: "call back next month" notes that used to rot in the sheet.
+- **B — Standard stage + call outcome.** Alongside the stage enum, each lead records a **last
+  contact outcome** (Connected / Ring-no-response / Busy / Switched-off / Not-reachable) and an
+  **attempts** counter, shown as chips in the leads list and editable in the lead's
+  *Call tracking & follow-up* card. A dashboard tile counts "Uncontactable — needs retry".
+- **D — Immediate-buyer (🔥) flag.** Hot/ready buyers are flagged with a flame in the list, lead
+  header and radar, and counted in an "Immediate buyers" tile so they jump the queue.
+- **E — Loss-reason analytics.** Marking a lead **Lost** now requires a structured reason, typed
+  as **operational** (ground-team no-show, broker, missed follow-up — *recoverable*) or
+  **genuine** (bought elsewhere, budget, requirement unavailable). The dashboard's *Why we lose
+  leads* card splits the two so operational losses get fixed instead of written off.
+
+## Multi-stop visit planner (Google Maps)
+
+Available against **any lead** — the "📅 Schedule visit" button on the lead detail and a
+"📅 Visits" quick-action on every row of the Leads list open a route planner that lets an RM:
+
+- Add multiple properties from inventory as an ordered itinerary — **Visit 1, Visit 2, Visit 3…**
+  (reorder ↑/↓, remove, city-filtered to the lead's city).
+- See **distance & drive-time between each stop** and the **trip totals** (km, time, # stops).
+- **Optimize route** — one click reorders the selected stops into the shortest trip
+  (nearest-neighbour + 2-opt on the stop coordinates), and reports the km/time saved. Works on
+  the estimates now; with the Directions API enabled it reflects real driving distances.
+- Plot every stop on a **Google Map** with numbered pins and the driving route.
+- Save the plan to the lead (moves it to *Visit Scheduled*, logs the itinerary in history, and
+  auto-creates the +2 hr feedback reminder).
+
+### Enabling the map
+
+Open `index.html` and paste your key into the constant near the top:
+
+```js
+const MAPS_API_KEY = ""; // ← your Google Maps JavaScript API key (billing enabled)
+```
+
+- **Without a key:** the planner still works — itinerary, distance and drive-time are shown as
+  estimates (straight-line × road factor); the map area shows a placeholder.
+- **With a key:** the live Google Map renders with numbered pins. If the **Directions API** is
+  also enabled on the key, the route + per-leg distance/time switch to real driving values
+  automatically (otherwise it stays on the estimate).
+
+Inventory units carry approximate `lat`/`lng` per society (Delhi-NCR) for the pins and math.
+
+## Status
+
+`v0.3` — prototype / front-end reference only. Mock data lives inline in `index.html` (seeded
+lost leads for the loss analytics; approximate inventory coordinates for the map). No backend
+yet. See `Openhouse-Direct-CRM-PRD.md` for the data model, REST API, integration contracts,
+business rules and acceptance criteria when the backend build begins.

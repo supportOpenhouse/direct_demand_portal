@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -5,6 +6,29 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     DATABASE_URL: str = "sqlite+aiosqlite:///./dev.db"
+
+    @field_validator("DATABASE_URL")
+    @classmethod
+    def _normalize_database_url(cls, v: str) -> str:
+        # Accept Neon/psql-style URLs verbatim: rewrite the scheme for asyncpg and
+        # translate libpq-only query params (sslmode, channel_binding) it can't accept.
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://") :]
+        if v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://") :]
+        if v.startswith("postgresql+asyncpg://") and "?" in v:
+            base, _, query = v.partition("?")
+            params = [p for p in query.split("&") if p]
+            ssl_required = any(p.startswith("sslmode=") and "disable" not in p for p in params)
+            params = [
+                p
+                for p in params
+                if not p.startswith(("sslmode=", "channel_binding=", "ssl="))
+            ]
+            if ssl_required:
+                params.append("ssl=require")
+            v = base + ("?" + "&".join(params) if params else "")
+        return v
     JWT_SECRET: str = "dev-secret"
     JWT_EXPIRY_HOURS: int = 72
     GOOGLE_CLIENT_ID: str = ""

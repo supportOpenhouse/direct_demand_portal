@@ -1,6 +1,6 @@
 # API Contract — Direct Demand Portal
 
-Single source of truth for the JSON wire format between `apps/web` and `apps/api`.
+Single source of truth for the JSON wire format between `frontend` and `backend`.
 Both sides MUST conform exactly: snake_case keys, ISO-8601 UTC timestamps, all routes under `/v1`,
 Bearer JWT auth on everything except `/v1/auth/*`.
 

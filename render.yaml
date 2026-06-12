@@ -2,7 +2,7 @@ services:
   - type: web
     name: direct-demand-api
     runtime: python
-    rootDir: apps/api
+    rootDir: backend
     plan: starter # free tier spin-down would pause the in-process scheduler
     buildCommand: pip install uv && uv sync --frozen
     preDeployCommand: uv run alembic upgrade head
@@ -27,7 +27,7 @@ services:
   # - type: worker
   #   name: direct-demand-worker
   #   runtime: python
-  #   rootDir: apps/api
+  #   rootDir: backend
   #   buildCommand: pip install uv && uv sync --frozen
   #   startCommand: uv run python -m app.workers.scheduler
   #   (then set RUN_SCHEDULER=false on the web service)

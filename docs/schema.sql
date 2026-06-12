@@ -1,12 +1,12 @@
 -- ============================================================================
 -- Direct Demand Portal — full Postgres schema (Neon-ready)
--- Generated from apps/api Alembic migration 0001 (alembic upgrade head --sql).
+-- Generated from backend Alembic migration 0001 (alembic upgrade head --sql).
 --
 -- Usage: paste into the Neon SQL editor (or psql) and run once on an empty DB.
 -- It also stamps alembic_version = '0001', so Render's automatic
 -- `alembic upgrade head` pre-deploy step becomes a no-op — both paths stay in sync.
 --
--- After creating tables, seed demo data (optional) from apps/api:
+-- After creating tables, seed demo data (optional) from backend:
 --   DATABASE_URL=postgresql+asyncpg://... uv run python -m app.seed
 -- ============================================================================
 

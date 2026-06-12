@@ -9,10 +9,10 @@ Frontend → **Vercel** · API + scheduler → **Render** · DB → **Neon Postg
 3. Copy the **direct (unpooled)** connection string and convert the scheme for asyncpg:
    `postgresql+asyncpg://USER:PASSWORD@HOST/dbname?ssl=require`
    (The API keeps a small pool — 5+5 — well within Neon limits. If the API ever scales
-   past one instance, switch to the `-pooler` host; see notes in `apps/api/app/db.py`.)
+   past one instance, switch to the `-pooler` host; see notes in `backend/app/db.py`.)
 4. First-time setup runs automatically on Render deploy (`alembic upgrade head` is the
    pre-deploy command). To seed demo data once:
-   `DATABASE_URL=... uv run python -m app.seed` from `apps/api` (idempotent).
+   `DATABASE_URL=... uv run python -m app.seed` from `backend` (idempotent).
 
 ## 2. Google OAuth (login)
 
@@ -29,7 +29,7 @@ Frontend → **Vercel** · API + scheduler → **Render** · DB → **Neon Postg
 ## 3. Render (API)
 
 1. New → Blueprint → point at this repo; `render.yaml` defines the `direct-demand-api` service
-   (rootDir `apps/api`, uv build, Alembic pre-deploy, uvicorn start).
+   (rootDir `backend`, uv build, Alembic pre-deploy, uvicorn start).
 2. Fill the `sync: false` env vars: `DATABASE_URL` (Neon, asyncpg scheme), `GOOGLE_CLIENT_ID`,
    `CORS_ORIGINS` (your exact Vercel URL, comma-separated for several).
    `JWT_SECRET` is generated; `CORS_ORIGIN_REGEX` already allows `*.vercel.app` previews;
@@ -41,8 +41,8 @@ Frontend → **Vercel** · API + scheduler → **Render** · DB → **Neon Postg
 
 ## 4. Vercel (frontend)
 
-1. New project → import repo → **Root Directory: `apps/web`** → framework preset Vite
-   (build `pnpm build`, output `dist` — auto-detected; `apps/web/vercel.json` provides the SPA rewrite).
+1. New project → import repo → **Root Directory: `frontend`** → framework preset Vite
+   (build `pnpm build`, output `dist` — auto-detected; `frontend/vercel.json` provides the SPA rewrite).
 2. Env vars:
    - `VITE_API_URL` = `https://direct-demand-api.onrender.com` (no trailing slash)
    - `VITE_GOOGLE_CLIENT_ID` = OAuth client ID
@@ -61,14 +61,14 @@ Frontend → **Vercel** · API + scheduler → **Render** · DB → **Neon Postg
 
 ```bash
 # api — SQLite + seeded data
-cd apps/api && cp .env.example .env
+cd backend && cp .env.example .env
 uv sync && uv run python -m app.devdb
 uv run uvicorn app.main:app --reload --port 8000
 
 # web
-cd apps/web && cp .env.example .env   # VITE_API_URL=http://localhost:8000
+cd frontend && cp .env.example .env   # VITE_API_URL=http://localhost:8000
 pnpm install && pnpm dev              # http://localhost:5173
 ```
 
-`DEV_LOGIN_ENABLED=true` (in `apps/api/.env.example`) exposes quick logins on the login
+`DEV_LOGIN_ENABLED=true` (in `backend/.env.example`) exposes quick logins on the login
 page for `support@openhouse.in` / `admin@` / `cm@` / `rm1@openhouse.in` — never set it in prod.

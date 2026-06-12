@@ -473,6 +473,7 @@ tr.lead-row:hover{background:var(--panel-2)}
 .sup-stage.deal-terms{background:var(--indigo-soft);color:var(--indigo)}
 .sup-stage.ama-req{background:var(--violet-soft);color:var(--violet)}
 .sup-stage.token{background:var(--gold-soft);color:var(--gold)}
+.sup-stage.token-req{background:var(--gold-soft);color:var(--gold)}
 .sup-stage.ama-signed{background:var(--emerald-soft);color:var(--emerald)}
 /* NavLink renders <a> where the prototype used <div> — neutralize anchor defaults */
 a.nav-item{text-decoration:none}

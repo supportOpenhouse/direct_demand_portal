@@ -7,7 +7,7 @@ import { FilterSelect, uniqueValues } from "../components/Filters";
 
 /* closest-to-landing first — 'Visited' dominates the table (900+ rows), so the
    advanced stages must surface above it */
-const STAGE_ORDER = ["Token Req", "AMA Signed", "AMA Req", "Deal Terms", "Draft", "Visited"];
+const STAGE_ORDER = ["Token Req", "AMA Signed", "AMA Req", "Deal Terms", "Visited"];
 
 function unitText(s: SupplyItem): string {
   const parts = [

@@ -24,7 +24,7 @@ def test_stage_key():
     assert stage_key("AMA Req") == "ama-req"
     assert stage_key("Deal Terms") == "deal-terms"
     assert stage_key("AMA Signed") == "ama-signed"
-    assert stage_key("Token Req") == "token Req"
+    assert stage_key("Token Req") == "token-req"
 
 
 SHEET = [

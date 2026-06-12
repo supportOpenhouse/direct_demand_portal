@@ -14,6 +14,10 @@ log = logging.getLogger("supply")
 
 STAGES = ["AMA Req", "Deal Terms", "Draft", "AMA Signed", "Visited", "Token Req"]
 
+# business rule: 'Draft' is not a real stage — those units are at token, so they
+# display under 'Token Req' (DB filter above still matches the raw 'Draft' rows)
+DISPLAY_STAGE = {"Draft": "Token Req"}
+
 # columns we will SELECT if they exist (superset; intersected with reality)
 CANDIDATE_COLUMNS = [
     "uid", "id", "stage", "society_name", "society", "locality", "city",
@@ -72,14 +76,15 @@ def _row_to_item(row: dict) -> dict:
     price_text = row.get("demand_price")
     price_text = str(price_text).strip() if price_text not in (None, "") else None
     raw = {k: (str(v) if v is not None else None) for k, v in row.items() if k not in PRIVATE_COLUMNS}
+    stage = DISPLAY_STAGE.get(row.get("stage"), row.get("stage"))
     return {
         "id": str(row.get("uid") or row.get("id")),
         "name": name,
         "society": society,
         "locality": row.get("locality"),
         "city": row.get("city"),
-        "stage": row.get("stage"),
-        "stage_key": stage_key(row.get("stage") or ""),
+        "stage": stage,
+        "stage_key": stage_key(stage or ""),
         "configuration": cfg,
         "area_sqft": float(row["area_sqft"]) if row.get("area_sqft") not in (None, "") else None,
         "price_text": price_text,

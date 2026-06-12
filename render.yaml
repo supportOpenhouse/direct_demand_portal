@@ -1,0 +1,27 @@
+# Render blueprint — deploys the FastAPI backend.
+# Dashboard → New → Blueprint → point at this repo, or create a Web Service
+# manually with the same settings.
+services:
+  - type: web
+    name: direct-demand-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install uv && uv sync --frozen
+    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /v1/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: DATABASE_URL
+        sync: false # paste the Neon URL in the dashboard
+      - key: PROPERTIES_DATABASE_URL
+        sync: false # paste the supply DB URL
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON
+        sync: false # paste the FULL service-account JSON (inline, single line)
+      - key: SHEET_ID
+        value: "1-kxlCnXUv7absl4rpWeMoYIxSAHpWykyjpd9v_5df-o"
+      - key: SYNC_INTERVAL_MINUTES
+        value: "15"
+      # PHOTOS_API_URL has a baked-in default; set it here only if the service moves
+      - key: CORS_ORIGINS
+        sync: false # e.g. https://your-app.vercel.app (comma-separated for previews)

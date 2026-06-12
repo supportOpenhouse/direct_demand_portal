@@ -7,16 +7,69 @@ lead & inventory engine for Delhi NCR (Gurgaon, Noida, Ghaziabad).
 > handoff and the original `openhouse-crm.html` prototype, rebuilt with a refined, semantic
 > colour system.
 
-## Run it
+## The app (phase 1 — Live Inventory + Supply Pipeline)
 
-It's a single file — no build step, no dependencies.
+React (Vite) frontend + FastAPI backend. Two tabs are live; the rest are styled stubs.
 
+- **Live Inventory** — synced from the private Acquired Property Google Sheet into Neon
+  Postgres (on startup, every `SYNC_INTERVAL_MINUTES`, and via `POST /v1/inventory/sync`).
+  The whole sheet row is kept in a `raw` JSONB column, so sheet column changes never break
+  the sync — only the display mapping (`HEADER_ALIASES` in
+  `backend/app/services/inventory_sync.py`) may need a tweak.
+- **Supply Pipeline** — read live (read-only) from the external properties DB, showing rows
+  with `stage` in: Draft, Visited, Deal Terms, AMA Req, AMA Signed, Token. Contact/owner
+  columns are never exposed by the API.
+
+### Setup
+
+```bash
+cp .env.example .env        # fill in DATABASE_URL, PROPERTIES_DATABASE_URL,
+                            # GOOGLE_SERVICE_ACCOUNT_JSON (path or inline JSON), SHEET_ID
 ```
-open "index.html"
+
+The service-account **email must be granted Viewer access on the sheet**. The app boots fine
+with an empty `.env` — endpoints report `not_configured` instead of crashing.
+
+### Run (dev)
+
+```bash
+cd backend  && uv sync     && uv run uvicorn app.main:app --reload --port 8000
+cd frontend && npm install && npm run dev          # http://localhost:5173
 ```
 
-(Or just open `index.html` in any browser. Fonts load from Google Fonts; sample property
-images load from Unsplash, so an internet connection makes it look its best.)
+API: `GET /v1/health` · `GET /v1/inventory` · `POST /v1/inventory/sync` · `GET /v1/supply`.
+Tests: `cd backend && uv run pytest`.
+
+### Deploy — backend on Render, frontend on Vercel
+
+**Backend (Render):**
+
+1. Render dashboard → **New → Blueprint** → select this repo (it picks up `render.yaml`),
+   or create a **Web Service** manually with: root dir `backend`, build
+   `pip install uv && uv sync --frozen`, start
+   `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/v1/health`.
+2. Set env vars in the dashboard: `DATABASE_URL`, `PROPERTIES_DATABASE_URL`,
+   `GOOGLE_SERVICE_ACCOUNT_JSON` (**paste the full JSON inline** — there's no file on Render;
+   the app parses values starting with `{` as JSON), `SHEET_ID`, `SYNC_INTERVAL_MINUTES`,
+   and `CORS_ORIGINS` (your Vercel URL, comma-separated to include previews).
+3. Note your service URL, e.g. `https://direct-demand-api.onrender.com`.
+4. Free tier sleeps after idle (cold start ≈30s; the sheet re-syncs on every wake). Use the
+   Starter plan to keep the 15-min sync schedule alive around the clock.
+
+**Frontend (Vercel):**
+
+1. Vercel → **Add New Project** → import this repo → set **Root Directory = `frontend`**
+   (framework auto-detects as Vite; build `npm run build`, output `dist`).
+2. Add env var `VITE_API_URL=https://direct-demand-api.onrender.com` (no trailing slash).
+3. Deploy. `frontend/vercel.json` already rewrites all routes to `index.html` so
+   react-router deep links (`/inventory`, `/supply`) work.
+4. Copy the production domain back into the backend's `CORS_ORIGINS` on Render.
+
+## The prototype (UI reference)
+
+`index.html` is the single-file design prototype — the pixel spec for every screen. The React
+app lifts its `<style>` block verbatim (`frontend/src/styles/app.css`) and ports its markup
+1:1. To view it, just `open index.html` in a browser.
 
 ## What changed vs. the source prototype
 

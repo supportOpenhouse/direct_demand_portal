@@ -2,8 +2,8 @@
   "name": "direct-demand-portal",
   "private": true,
   "scripts": {
-    "dev:web": "pnpm --filter frontend dev",
-    "build:web": "pnpm --filter frontend build",
+    "dev:web": "cd frontend && pnpm dev",
+    "build:web": "cd frontend && pnpm build",
     "dev:api": "cd backend && uv run uvicorn app.main:app --reload --port 8000",
     "test:api": "cd backend && uv run pytest"
   }

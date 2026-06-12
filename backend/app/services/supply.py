@@ -12,7 +12,7 @@ from ..db import properties_engine
 
 log = logging.getLogger("supply")
 
-STAGES = ["AMA Req", "Deal Terms", "Draft", "AMA Signed", "Visited", "Token"]
+STAGES = ["AMA Req", "Deal Terms", "Draft", "AMA Signed", "Visited", "Token Req"]
 
 # columns we will SELECT if they exist (superset; intersected with reality)
 CANDIDATE_COLUMNS = [

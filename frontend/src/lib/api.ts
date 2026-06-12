@@ -9,7 +9,8 @@
 export const TOKEN_KEY = 'dd_token';
 export const USER_KEY = 'dd_user';
 
-const BASE = `${import.meta.env.VITE_API_URL ?? 'http://localhost:8000'}/v1`;
+// Trailing slashes in VITE_API_URL would produce `//v1/...` paths, which 404 — strip them.
+const BASE = `${(import.meta.env.VITE_API_URL ?? 'http://localhost:8000').replace(/\/+$/, '')}/v1`;
 
 export class ApiError extends Error {
   status: number;

@@ -65,6 +65,56 @@ Tests: `cd backend && uv run pytest`.
    react-router deep links (`/inventory`, `/supply`) work.
 4. Copy the production domain back into the backend's `CORS_ORIGINS` on Render.
 
+## How lead → property matching works
+
+When a buyer's requirement is known (society, area, budget, BHK), every available unit gets a
+**score** and the top 5 are shown — on the lead detail and live as the call form is filled.
+Code: `backend/app/services/matching.py` (`match_lead` / `match_preview`).
+
+### In plain English
+
+Every property earns points; more points = better fit:
+
+| Signal | Points | Why |
+|---|---|---|
+| Same society they asked for | **+30** | strongest signal |
+| Inside their budget | **+20** | closer to their exact figure scores higher |
+| Same sub-area / micro-market | **+15** | |
+| Same locality | **+12** | |
+| Same BHK | **+10** | |
+| Same city | **+5** | baseline |
+
+And it searches in order, stopping once it has 5 — a stronger tier always beats a weaker one,
+and within a tier the higher score wins:
+
+1. their **exact society**
+2. their **same area** (micro-market / locality) with budget or BHK matching
+3. **same city** + budget **and** BHK
+4. **same city** + budget **or** BHK
+5. anything else in the **same city**
+
+> Simple rule: a unit in their exact society always ranks above one that's only in the same
+> city, and within each group the one closest to their budget wins — so the buyer sees the
+> most relevant options first, not a random list.
+
+### The exact mechanics
+
+- **Geo anchor** comes from `master_societies.micro_market` (the buyer's societies are looked
+  up to find their micro-markets; candidate units are enriched the same way).
+- **Budget window** = the confirmed figure ±20%; *budget closeness* is continuous — `1.0` at
+  the exact figure, decaying to `0` at the window edge (a band like "Up to ₹75L" is parsed to a
+  range). So "inside budget" isn't binary; nearer = more points.
+- **Score** = `3.0·society + 2.0·budget_closeness + 1.5·micro_market + 1.2·locality + 1.0·BHK
+  + 0.5·city` (the table above is this, scaled for explaining).
+- **City** is a hard filter when the lead has one. Confirmed call data (Q1–Q6) overrides the
+  source-captured data when present.
+- Units are **cached in-memory (90s)** so the live preview recomputes on every keystroke
+  without re-hitting the databases.
+
+This is adapted from the seller-flow "Similar Properties v2" ladder, kept to the parts that fit
+buyer-lead matching (tiered fill so we always surface up to 5, continuous budget closeness,
+micro-market geo anchor, match reasons) and dropping the seller-only bits.
+
 ## The prototype (UI reference)
 
 `index.html` is the single-file design prototype — the pixel spec for every screen. The React

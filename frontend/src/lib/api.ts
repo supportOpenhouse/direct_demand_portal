@@ -146,7 +146,8 @@ export interface MatchPreviewReq {
   localities?: string[];
   micromarkets?: string[];
   configuration?: string | null;
-  size_sqft?: number | null;
+  size_min_sqft?: number | null;
+  size_max_sqft?: number | null;
   budget_min_lacs?: number | null;
   budget_max_lacs?: number | null;
   budget_band?: string | null;
@@ -157,7 +158,8 @@ export interface ConfirmedData {
   budget_min_lacs: number | null;
   budget_max_lacs: number | null;
   configuration: string | null;
-  size_sqft: number | null;
+  size_min_sqft: number | null;
+  size_max_sqft: number | null;
   preferred_micromarkets: string[];
   shortlisted_societies: string[];
   preferred_localities: string[];
@@ -187,7 +189,8 @@ export interface ConfirmPayload {
   budget_min_lacs: number;
   budget_max_lacs: number;
   configuration: string;
-  size_sqft: number | null;
+  size_min_sqft: number | null;
+  size_max_sqft: number | null;
   preferred_micromarkets: string[];
   shortlisted_societies: string[];
   preferred_localities: string[];

@@ -67,14 +67,14 @@ async def build_requirement(
     localities: list[str] | None,
     micromarkets: list[str] | None,
     config: str | None,
-    size_sqft: float | None,
+    size_min_sqft: float | None,
+    size_max_sqft: float | None,
     budget_min_lacs: float | None,
     budget_max_lacs: float | None,
     budget_band: str | None,
 ) -> dict:
     """Shared requirement builder for saved-lead matching and live preview.
-    Budget is a RANGE (top priority); micro_markets come from explicit selection
-    plus the buyer's societies."""
+    Budget and size are both RANGES; budget is the top priority."""
     societies = [s for s in (societies or []) if s]
     localities = [l for l in (localities or []) if l]
     mms = {m for m in (micromarkets or []) if m}
@@ -86,8 +86,6 @@ async def build_requirement(
     bmin, bmax = budget_min_lacs, budget_max_lacs
     if bmin is None and bmax is None:
         bmin, bmax = parse_band(budget_band)
-    bmin = float(bmin) if bmin is not None else None
-    bmax = float(bmax) if bmax is not None else None
     return {
         "city": city,
         "societies": societies,
@@ -95,9 +93,10 @@ async def build_requirement(
         "localities_lc": {l.lower() for l in localities},
         "micromarkets": mms,
         "config": config,
-        "size": float(size_sqft) if size_sqft else None,
-        "bmin": bmin,
-        "bmax": bmax,
+        "size_min": float(size_min_sqft) if size_min_sqft else None,
+        "size_max": float(size_max_sqft) if size_max_sqft else None,
+        "bmin": float(bmin) if bmin is not None else None,
+        "bmax": float(bmax) if bmax is not None else None,
     }
 
 
@@ -105,14 +104,16 @@ async def lead_requirement(lead: dict, confirmed: dict | None) -> dict:
     """Confirmed data wins over source-captured."""
     c = confirmed or {}
     societies = c.get("shortlisted_societies") or ([lead["society"]] if lead.get("society") else [])
-    bmin = c.get("budget_min_lacs")
-    bmax = c.get("budget_max_lacs")
+    bmin, bmax = c.get("budget_min_lacs"), c.get("budget_max_lacs")
     if bmin is None and bmax is None and c.get("budget_value_lacs"):  # legacy single value
         v = float(c["budget_value_lacs"])
         bmin, bmax = v * 0.9, v
+    smin, smax = c.get("size_min_sqft"), c.get("size_max_sqft")
+    if smin is None and smax is None and c.get("size_sqft"):  # legacy single value
+        smin = smax = c["size_sqft"]
     return await build_requirement(
         lead.get("city"), societies, c.get("preferred_localities"), c.get("preferred_micromarkets"),
-        c.get("configuration") or lead.get("configuration"), c.get("size_sqft"),
+        c.get("configuration") or lead.get("configuration"), smin, smax,
         bmin, bmax, lead.get("budget_band"),
     )
 
@@ -140,13 +141,19 @@ def _budget_closeness(req: dict, price) -> tuple[float, bool]:
 
 
 def _size_closeness(req: dict, area) -> float:
-    if not req.get("size") or area is None:
+    """Range version: 1.0 inside [min,max]; decays to 0 within ±15% of the bound."""
+    lo, hi = req.get("size_min"), req.get("size_max")
+    if area is None or (lo is None and hi is None):
         return 0.0
-    diff = abs(float(area) - req["size"]) / req["size"]
-    if diff <= SIZE_TOLERANCE:
+    a = float(area)
+    if (lo is None or a >= lo) and (hi is None or a <= hi):
         return 1.0
-    if diff <= SIZE_TOLERANCE * 2:
-        return 1 - (diff - SIZE_TOLERANCE) / SIZE_TOLERANCE * 0.5
+    if hi is not None and a > hi:
+        tol = hi * SIZE_TOLERANCE
+        return max(0.0, 1 - (a - hi) / tol) if tol else 0.0
+    if lo is not None and a < lo:
+        tol = lo * SIZE_TOLERANCE
+        return max(0.0, 1 - (lo - a) / tol) if tol else 0.0
     return 0.0
 
 
@@ -319,7 +326,8 @@ async def _match(req: dict) -> dict:
     return {
         "requirement": {
             "city": req["city"], "societies": req["societies"], "config": req["config"],
-            "size": req.get("size"), "localities": sorted(req.get("localities_lc", set())),
+            "size_min": req.get("size_min"), "size_max": req.get("size_max"),
+            "localities": sorted(req.get("localities_lc", set())),
             "micromarkets": sorted(req["micromarkets"]), "bmin": req["bmin"], "bmax": req["bmax"],
         },
         "inventory": inv,
@@ -335,7 +343,8 @@ async def match_preview(payload: dict) -> dict:
     """Live preview from in-progress form fields (no save needed)."""
     req = await build_requirement(
         payload.get("city"), payload.get("societies"), payload.get("localities"),
-        payload.get("micromarkets"), payload.get("configuration"), payload.get("size_sqft"),
+        payload.get("micromarkets"), payload.get("configuration"),
+        payload.get("size_min_sqft"), payload.get("size_max_sqft"),
         payload.get("budget_min_lacs"), payload.get("budget_max_lacs"), payload.get("budget_band"),
     )
     return await _match(req)

@@ -163,7 +163,9 @@ class LeadConfirmedData(Base):
     budget_min_lacs: Mapped[float | None] = mapped_column(Numeric)  # Q2 range
     budget_max_lacs: Mapped[float | None] = mapped_column(Numeric)
     configuration: Mapped[str | None] = mapped_column(Text)  # Q3
-    size_sqft: Mapped[float | None] = mapped_column(Numeric)  # Q4 target size
+    size_sqft: Mapped[float | None] = mapped_column(Numeric)  # legacy single value
+    size_min_sqft: Mapped[float | None] = mapped_column(Numeric)  # Q4 size range
+    size_max_sqft: Mapped[float | None] = mapped_column(Numeric)
     preferred_micromarkets: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     shortlisted_societies: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     preferred_localities: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")

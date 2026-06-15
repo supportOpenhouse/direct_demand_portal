@@ -110,7 +110,8 @@ async def get_lead(lead_id: UUID):
             "budget_min_lacs": _num(c["budget_min_lacs"]),
             "budget_max_lacs": _num(c["budget_max_lacs"]),
             "configuration": c["configuration"],
-            "size_sqft": _num(c["size_sqft"]),
+            "size_min_sqft": _num(c["size_min_sqft"]),
+            "size_max_sqft": _num(c["size_max_sqft"]),
             "preferred_micromarkets": c["preferred_micromarkets"],
             "shortlisted_societies": c["shortlisted_societies"],
             "preferred_localities": c["preferred_localities"],
@@ -150,7 +151,8 @@ class MatchPreview(BaseModel):
     localities: list[str] = []
     micromarkets: list[str] = []
     configuration: str | None = None
-    size_sqft: float | None = None
+    size_min_sqft: float | None = None
+    size_max_sqft: float | None = None
     budget_min_lacs: float | None = None
     budget_max_lacs: float | None = None
     budget_band: str | None = None
@@ -167,7 +169,8 @@ class ConfirmPayload(BaseModel):
     budget_min_lacs: float
     budget_max_lacs: float
     configuration: str
-    size_sqft: float | None = None
+    size_min_sqft: float | None = None
+    size_max_sqft: float | None = None
     preferred_micromarkets: list[str] = []
     shortlisted_societies: list[str] = []
     preferred_localities: list[str] = []
@@ -200,9 +203,10 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         except ValueError:
             raise HTTPException(status_code=422, detail={"fields": ["office_preferred_date"]})
     values = dict(
-        lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=None,
+        lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=None, size_sqft=None,
         budget_min_lacs=payload.budget_min_lacs, budget_max_lacs=payload.budget_max_lacs,
-        configuration=payload.configuration, size_sqft=payload.size_sqft,
+        configuration=payload.configuration,
+        size_min_sqft=payload.size_min_sqft, size_max_sqft=payload.size_max_sqft,
         preferred_micromarkets=payload.preferred_micromarkets,
         shortlisted_societies=payload.shortlisted_societies, preferred_localities=payload.preferred_localities,
         office_willing=payload.office_willing, office_preferred_date=office_date, remark=payload.remark,

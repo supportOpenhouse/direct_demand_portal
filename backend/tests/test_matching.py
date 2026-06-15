@@ -10,7 +10,8 @@ def test_parse_band():
 
 def _req(**kw):
     base = {"city": None, "societies": [], "society_lc": set(), "localities_lc": set(),
-            "micromarkets": set(), "config": None, "size": None, "bmin": None, "bmax": None}
+            "micromarkets": set(), "config": None, "size_min": None, "size_max": None,
+            "bmin": None, "bmax": None}
     base.update(kw)
     return base
 
@@ -25,13 +26,14 @@ def test_budget_range_in_and_above():
     c, ok = _budget_closeness(req, 60); assert ok             # cheaper than min → acceptable
 
 
-def test_size_closeness():
-    req = _req(size=1000)
-    assert _size_closeness(req, 1000) == 1.0
-    assert _size_closeness(req, 1100) == 1.0          # within ±15%
-    assert 0 < _size_closeness(req, 1250) < 1.0       # 25% off → partial credit
-    assert _size_closeness(req, 1400) == 0.0          # >30% off → no credit
-    assert _size_closeness(_req(), 1000) == 0.0       # no target size
+def test_size_range_closeness():
+    req = _req(size_min=1000, size_max=1400)
+    assert _size_closeness(req, 1200) == 1.0          # inside range
+    assert _size_closeness(req, 1000) == 1.0          # at min
+    assert _size_closeness(req, 1400) == 1.0          # at max
+    assert 0 < _size_closeness(req, 1500) < 1.0       # just over max → partial
+    assert _size_closeness(req, 1700) == 0.0          # well over → no credit
+    assert _size_closeness(_req(), 1200) == 0.0       # no size requirement
 
 
 def test_budget_is_the_gate():

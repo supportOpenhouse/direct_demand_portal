@@ -18,6 +18,8 @@ _ADD_COLUMNS = [
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),
+    ("lead_confirmed_data", "size_min_sqft", "NUMERIC"),
+    ("lead_confirmed_data", "size_max_sqft", "NUMERIC"),
     ("lead_confirmed_data", "preferred_micromarkets", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
 ]
 

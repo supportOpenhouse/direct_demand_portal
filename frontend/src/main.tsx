@@ -10,6 +10,7 @@ import LeadDetail from "./pages/LeadDetail";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
+import { AuthProvider } from "./components/AuthContext";
 import "./styles/app.css";
 
 const router = createBrowserRouter([
@@ -38,11 +39,13 @@ const queryClient = new QueryClient();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <SearchProvider>
-        <ToastProvider>
-          <RouterProvider router={router} />
-        </ToastProvider>
-      </SearchProvider>
+      <AuthProvider>
+        <SearchProvider>
+          <ToastProvider>
+            <RouterProvider router={router} />
+          </ToastProvider>
+        </SearchProvider>
+      </AuthProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );

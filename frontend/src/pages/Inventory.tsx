@@ -6,6 +6,7 @@ import { InventoryItem } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
+import { useSort } from "../lib/useSort";
 
 function fmtArea(a: number | null): string | null {
   if (a == null) return null;
@@ -74,13 +75,23 @@ export default function Inventory() {
   const [status, setStatus] = useState("");
 
   const all = data?.items ?? [];
-  const items = all.filter(
+  const matched = all.filter(
     (p) =>
       (!city || p.city === city) &&
       (!config || p.configuration === config) &&
       (!status || p.status === status) &&
       matches(query, p.name, p.society, p.locality, p.city, p.configuration, p.status)
   );
+  // a card grid has no column headers — drive the shared sort hook from a dropdown
+  const { sorted: items, sortKey, dir, onSort } = useSort<InventoryItem>(matched, {
+    name: (p) => p.name,
+    society: (p) => p.society,
+    city: (p) => p.city,
+    config: (p) => p.configuration,
+    area: (p) => p.area_sqft,
+    price: (p) => p.price_lacs,
+    status: (p) => p.status,
+  });
   const filtered = items.length !== all.length;
 
   const synced = data?.last_synced_at
@@ -106,6 +117,25 @@ export default function Inventory() {
           <FilterSelect label="City" value={city} options={uniqueValues(all, (p) => p.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (p) => p.configuration)} onChange={setConfig} width={130} />
           <FilterSelect label="Status" value={status} options={uniqueValues(all, (p) => p.status)} onChange={setStatus} width={140} />
+          <div className="field" style={{ marginBottom: 0, width: 150 }}>
+            <select
+              value={sortKey || ""}
+              onChange={(e) => e.target.value && onSort(e.target.value)}
+              style={{ padding: "7px 10px", fontSize: 12.5 }}
+            >
+              <option value="">Sort: default</option>
+              <option value="price">Sort: Price</option>
+              <option value="area">Sort: Area</option>
+              <option value="society">Sort: Society</option>
+              <option value="city">Sort: City</option>
+              <option value="status">Sort: Status</option>
+            </select>
+          </div>
+          {sortKey && (
+            <button className="btn ghost sm" title="Toggle direction" onClick={() => onSort(sortKey)}>
+              {dir === "asc" ? "↑" : "↓"}
+            </button>
+          )}
           {(city || config || status || query) && (
             <button
               className="btn ghost sm"

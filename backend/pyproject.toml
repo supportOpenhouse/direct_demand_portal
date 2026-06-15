@@ -12,6 +12,7 @@ dependencies = [
     "gspread>=6.1",
     "google-auth>=2.30",
     "apscheduler>=3.10,<4",
+    "pyjwt>=2.9",
 ]
 
 [dependency-groups]

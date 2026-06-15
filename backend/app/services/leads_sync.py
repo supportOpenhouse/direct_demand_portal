@@ -116,6 +116,22 @@ def _norm_header(h: str) -> str:
     return re.sub(r"[^\w]+", "_", h.strip().lower()).strip("_")
 
 
+# listing sheet dates are MM/DD/YYYY (confirmed: '06/01/2026' co-occurs with 'Jun 1, 2026')
+_DATE_FORMATS = ["%m/%d/%Y %I:%M %p", "%m/%d/%Y", "%b %d, %Y %I:%M:%S %p", "%b %d, %Y"]
+
+
+def parse_lead_date(raw: str | None):
+    if not raw or raw.strip().lower() == "test":
+        return None
+    s = raw.strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
 # ---- sheet reading (blocking; wrapped in to_thread) ---------------------------
 
 
@@ -167,6 +183,7 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,
             "city": None, "society": None, "configuration": None, "budget_band": budget,
             "plan_to_buy": plan, "preferred_visit_day": visit_day, "source_remarks": None, "is_test": False,
+            "received_at": None,  # meta sheet has no date → filled with ingest time below
             "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day},
         })
     return ingest, spine
@@ -198,6 +215,7 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": assigned,
             "city": city, "society": prop, "configuration": None, "budget_band": None,
             "plan_to_buy": None, "preferred_visit_day": None, "source_remarks": remarks, "is_test": False,
+            "received_at": parse_lead_date(r.get("date")),
             "source_meta": {"property": prop, "lead_type": ltype, "source": source},
         })
     return ingest, spine
@@ -265,9 +283,12 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
         meta_ingest.insert(0, TEST_META["ingest"]); meta_spine.insert(0, TEST_META["spine"])
         listing_ingest.insert(0, TEST_LISTING["ingest"]); listing_spine.insert(0, TEST_LISTING["spine"])
 
-        tat = datetime.now(timezone.utc) + timedelta(hours=TAT_HOURS)
+        now = datetime.now(timezone.utc)
+        tat = now + timedelta(hours=TAT_HOURS)
         for s in (*meta_spine, *listing_spine):
             s.setdefault("tat_deadline", tat)
+            if s.get("received_at") is None:  # meta + test leads → use ingest time
+                s["received_at"] = now
 
         async with engine.begin() as conn:
             m_new = await _insert_only(conn, MetaLead, meta_ingest, "dedupe_key")

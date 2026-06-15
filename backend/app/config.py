@@ -47,6 +47,13 @@ class Settings(BaseSettings):
     LEADS_LISTING_WORKSHEET: str = "Listing Leads_New"
     LEADS_META_WORKSHEET: str = "Meta Affordable_New"
     LEADS_SYNC_INTERVAL_HOURS: int = 4
+
+    # --- Google OAuth (optional; app stays open until both sides are configured) ---
+    GOOGLE_OAUTH_CLIENT_ID: str = ""
+    JWT_SECRET: str = "dev-insecure-change-me"
+    JWT_EXPIRY_HOURS: int = 12
+    # restrict logins to this email domain ("" = any Google account)
+    ALLOWED_EMAIL_DOMAIN: str = "openhouse.in"
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (
@@ -76,6 +83,12 @@ class Settings(BaseSettings):
     @property
     def leads_sheet_configured(self) -> bool:
         return bool(self.LEADS_SHEET_ID) and bool(self.service_account_info)
+
+    @property
+    def auth_enabled(self) -> bool:
+        """Auth is enforced only once a Google client id is configured — until
+        then the API stays open so the live deployment never locks out."""
+        return bool(self.GOOGLE_OAUTH_CLIENT_ID)
 
     @property
     def service_account_info(self) -> dict | None:

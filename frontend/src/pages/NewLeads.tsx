@@ -1,13 +1,14 @@
 /* New Leads — 1:1 with the prototype's tplNewLeads(), wired to GET /v1/leads?segment=new.
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
 import { useNavigate } from "react-router-dom";
-import { useLeads } from "../lib/queries";
+import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcClass, srcLabel, planClass, initials } from "../lib/leads";
+import { srcLabel, planClass, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { WhatsAppIcon } from "../components/icons";
 import { useToast } from "../components/Toast";
+import { useSort, SortTh } from "../lib/useSort";
 import { useState } from "react";
 
 function PlanChip({ plan }: { plan: string | null }) {
@@ -24,12 +25,22 @@ export default function NewLeads() {
   const [city, setCity] = useState("");
 
   const all = data?.items ?? [];
-  const list = all.filter(
+  const filtered = all.filter(
     (l) =>
       (!source || l.source === source) &&
       (!city || l.city === city) &&
       matches(query, l.name, l.phone, l.city, l.society, l.budget_band, srcLabel(l.source))
   );
+  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
+    name: (l) => l.name,
+    city: (l) => l.city,
+    society: (l) => l.society,
+    config: (l) => l.configuration,
+    budget: (l) => l.budget_band,
+    plan: (l) => l.plan_to_buy,
+    date: (l) => (l.received_at ? Date.parse(l.received_at) : null),
+    assigned: (l) => l.assigned_to,
+  });
 
   const wa = (e: React.MouseEvent, l: Lead) => {
     e.stopPropagation();
@@ -78,26 +89,27 @@ export default function NewLeads() {
         <table>
           <thead>
             <tr>
-              <th>Lead</th>
-              <th>City</th>
-              <th>Society (from source)</th>
-              <th>Config</th>
-              <th>Budget</th>
-              <th>Plan to Buy</th>
-              <th>Assigned To</th>
+              <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Society (from source)" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Config" sortKey="config" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Budget" sortKey="budget" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Plan to Buy" sortKey="plan" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Date" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <div className="empty" style={{ padding: 24 }}>Loading leads…</div>
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={8}>
+                <td colSpan={9}>
                   <div className="empty" style={{ padding: 24 }}>
                     {all.length === 0 ? "No new leads right now. 🎉" : "No leads match the search / filters."}
                   </div>
@@ -128,6 +140,7 @@ export default function NewLeads() {
                   <td>{l.configuration ? <span className="cfg-chip">{l.configuration}</span> : "—"}</td>
                   <td style={{ fontSize: 12.5 }}>{l.budget_band || "—"}</td>
                   <td><PlanChip plan={l.plan_to_buy} /></td>
+                  <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>{formatDate(l.received_at)}</td>
                   <td style={{ fontSize: 12.5 }}>{l.assigned_to || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td style={{ textAlign: "right" }}>
                     <button className="wa-ico" title={`WhatsApp ${l.name}`} onClick={(e) => wa(e, l)}>

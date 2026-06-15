@@ -1,8 +1,9 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from ..core.auth import current_user
 from ..services.supply import fetch_supply
 
-router = APIRouter(tags=["supply"])
+router = APIRouter(tags=["supply"], dependencies=[Depends(current_user)])
 
 
 @router.get("/supply")

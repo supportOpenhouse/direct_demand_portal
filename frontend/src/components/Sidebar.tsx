@@ -1,5 +1,6 @@
 /* 1:1 port of the prototype's <aside class="sidebar"> markup. */
 import { NavLink } from "react-router-dom";
+import { useAuth } from "./AuthContext";
 import {
   OpenhouseLogo,
   IconDashboard,
@@ -64,14 +65,40 @@ export default function Sidebar() {
         </NavLink>
       </nav>
       <div className="spacer"></div>
-      <div className="user">
-        <div className="av">AD</div>
-        <div>
-          <div className="un">Admin</div>
-          <div className="ur">Openhouse Direct</div>
-        </div>
-        <span className="role-chip">Admin</span>
-      </div>
+      <UserChip />
     </aside>
+  );
+}
+
+function UserChip() {
+  const { enabled, user, logout } = useAuth();
+  if (enabled && user) {
+    const init = (user.name || user.email).split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
+    return (
+      <div className="user" onClick={logout} title="Sign out">
+        {user.picture ? (
+          <img className="av" src={user.picture} alt="" style={{ objectFit: "cover" }} />
+        ) : (
+          <div className="av">{init}</div>
+        )}
+        <div style={{ minWidth: 0 }}>
+          <div className="un" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {user.name || user.email}
+          </div>
+          <div className="ur">Sign out</div>
+        </div>
+        <span className="role-chip" style={{ textTransform: "capitalize" }}>{user.role}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="user">
+      <div className="av">AD</div>
+      <div>
+        <div className="un">Admin</div>
+        <div className="ur">Openhouse Direct</div>
+      </div>
+      <span className="role-chip">Admin</span>
+    </div>
   );
 }

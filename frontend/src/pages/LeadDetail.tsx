@@ -2,8 +2,9 @@
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useLead, useConfirmLead } from "../lib/queries";
+import { useLead, useConfirmLead, useLeadMatches, formatPrice } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
+import { MatchUnit } from "../lib/api";
 import { useToast } from "../components/Toast";
 
 const PURPOSES = ["Self-use", "Investment"];
@@ -62,11 +63,71 @@ const OFFICE_PITCH_HI = [
   "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
 ];
 
+function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
+  const [open, setOpen] = useState(false);
+  const detail: [string, string | null | undefined][] = [
+    ["Society", u.society],
+    ["City", u.city],
+    ["Configuration", u.configuration],
+    ["Super area", u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : null],
+    ["Ask price", formatPrice(u.price_lacs, u.price_text)],
+    isSupply ? ["Stage", u.stage] : ["Status", u.status],
+    ["Matched on", u.matched_on.join(" + ")],
+  ];
+  return (
+    <div className={"opt" + (open ? " open" : "")}>
+      <div className="opt-row" onClick={() => setOpen(!open)}>
+        <div className="opt-info">
+          <div className="opt-name">
+            {u.name || "—"} <span className="match-mini">{u.score}%</span>
+          </div>
+          <div className="opt-meta">
+            {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
+            <b style={{ color: "var(--ink-2)" }}>{formatPrice(u.price_lacs, u.price_text)}</b>
+          </div>
+        </div>
+        <svg className="opt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </div>
+      <div className="opt-detail">
+        <div className="opt-dl">
+          {detail.map(([k, v]) => (
+            <div key={k} style={{ display: "contents" }}>
+              <div className="opt-dt">{k}</div>
+              <div className="opt-dd">{v || "—"}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MatchPanel({ title, tag, units, loading }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; }) {
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title" style={{ justifyContent: "space-between" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>{title}</span>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{tag}</span>
+      </div>
+      {loading ? (
+        <div className="empty" style={{ padding: 16 }}>Matching…</div>
+      ) : units.length === 0 ? (
+        <div className="empty" style={{ padding: 16 }}>No matches yet — confirm budget &amp; config to surface more.</div>
+      ) : (
+        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} />)
+      )}
+    </div>
+  );
+}
+
 export default function LeadDetail() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const toast = useToast();
   const { data: lead, isLoading } = useLead(id);
+  const { data: matches, isLoading: matchesLoading } = useLeadMatches(id);
   const confirm = useConfirmLead(id);
 
   const [purpose, setPurpose] = useState("");
@@ -255,18 +316,10 @@ export default function LeadDetail() {
           </div>
         </div>
 
-        {/* RIGHT column — matched inventory / supply / recordings come in a later phase */}
+        {/* RIGHT column — live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <div className="card panel-pad">
-            <div className="panel-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>{" "}
-              Matched inventory
-            </div>
-            <div className="empty" style={{ padding: 18 }}>
-              <div>Matching engine arrives in a later phase</div>
-              <div style={{ fontSize: 12 }}>Once confirmed, this lead's budget &amp; config will rank live inventory here.</div>
-            </div>
-          </div>
+          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} />
+          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} />
         </div>
       </div>
     </>

@@ -17,6 +17,15 @@ export function useLead(id: string) {
   return useQuery({ queryKey: ["lead", id], queryFn: () => api.lead(id), staleTime: 30_000 });
 }
 
+export function useLeadMatches(id: string) {
+  return useQuery({ queryKey: ["lead-matches", id], queryFn: () => api.leadMatches(id), staleTime: 60_000 });
+}
+
+export function formatDate(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export function useConfirmLead(id: string) {
   const qc = useQueryClient();
   return useMutation({

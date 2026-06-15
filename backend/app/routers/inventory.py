@@ -1,11 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
+from ..core.auth import current_user
 from ..db import neon_engine
 from ..models import InventoryUnit
 from ..services.inventory_sync import read_state, run_sync
 
-router = APIRouter(tags=["inventory"])
+router = APIRouter(tags=["inventory"], dependencies=[Depends(current_user)])
 
 # kept in DB, but not exposed to the no-auth frontend
 PRIVATE_RAW_KEYS = {"sales_manager_contact"}

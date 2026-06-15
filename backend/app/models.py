@@ -133,6 +133,9 @@ class Lead(Base):
     source_remarks: Mapped[str | None] = mapped_column(Text)
     source_meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
+    # when the lead came in (source date for listing; ingest time for meta)
+    received_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+
     # lifecycle
     stage: Mapped[str] = mapped_column(Text, nullable=False, server_default="new")
     tat_deadline: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
@@ -166,3 +169,19 @@ class LeadConfirmedData(Base):
     confirmed_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class User(Base):
+    """Google-authenticated user. Created on first sign-in."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name: Mapped[str | None] = mapped_column(Text)
+    picture: Mapped[str | None] = mapped_column(Text)
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")  # admin | cm | rm
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    last_login_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))

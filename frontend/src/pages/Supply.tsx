@@ -4,6 +4,7 @@ import { useSupply, formatPrice } from "../lib/queries";
 import { SupplyItem } from "../lib/api";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
+import { useSort, SortTh } from "../lib/useSort";
 
 /* closest-to-landing first — 'Visited' dominates the table (900+ rows), so the
    advanced stages must surface above it */
@@ -26,7 +27,7 @@ export default function Supply() {
   const [config, setConfig] = useState("");
 
   const all = data?.items ?? [];
-  const items = all
+  const base = all
     .filter(
       (s) =>
         (!stage || s.stage === stage) &&
@@ -35,6 +36,18 @@ export default function Supply() {
         matches(query, s.id, s.society, s.locality, s.city, s.configuration, s.stage)
     )
     .sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
+
+  // default (no column picked) keeps the closest-to-landing stage order above
+  const { sorted: items, sortKey, dir, onSort } = useSort<SupplyItem>(base, {
+    uid: (s) => s.id,
+    society: (s) => s.society,
+    locality: (s) => s.locality,
+    city: (s) => s.city,
+    config: (s) => s.configuration,
+    area: (s) => s.area_sqft,
+    price: (s) => s.price_lacs,
+    stage: (s) => STAGE_ORDER.indexOf(s.stage),
+  });
 
   const countOf = (st: string) => all.filter((s) => s.stage === st).length;
 
@@ -105,15 +118,15 @@ export default function Supply() {
           <table>
             <thead>
               <tr>
-                <th>UID</th>
-                <th>Society</th>
-                <th>Locality</th>
-                <th>City</th>
-                <th>Config</th>
-                <th>Area</th>
+                <SortTh label="UID" sortKey="uid" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Locality" sortKey="locality" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Config" sortKey="config" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Area" sortKey="area" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <th>Tower / Unit</th>
-                <th>Demand Price</th>
-                <th>Stage</th>
+                <SortTh label="Demand Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
               </tr>
             </thead>
             <tbody>

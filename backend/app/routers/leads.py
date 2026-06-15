@@ -1,16 +1,18 @@
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
+from ..core.auth import current_user
 from ..db import neon_engine
 from ..models import Lead, LeadConfirmedData
 from ..services.leads_sync import read_leads_state, run_leads_sync
+from ..services.matching import match_lead
 
-router = APIRouter(tags=["leads"])
+router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
 # segment → SQL predicate on the leads spine
 SEGMENTS = {
@@ -40,6 +42,7 @@ def _lead_row(r) -> dict:
         "preferred_visit_day": r["preferred_visit_day"],
         "source_remarks": r["source_remarks"],
         "source_meta": r["source_meta"],
+        "received_at": r["received_at"].isoformat() if r["received_at"] else None,
         "stage": r["stage"],
         "tat_deadline": r["tat_deadline"].isoformat() if r["tat_deadline"] else None,
         "confirmed": r["confirmed"],
@@ -98,6 +101,25 @@ async def get_lead(lead_id: UUID):
         else None
     )
     return lead
+
+
+@router.get("/leads/{lead_id}/matches")
+async def lead_matches(lead_id: UUID):
+    """Top-5 live inventory + top-5 supply units matched to this lead."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.connect() as conn:
+        res = await conn.execute(text("SELECT * FROM leads WHERE id = :id"), {"id": lead_id})
+        row = res.mappings().first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        cres = await conn.execute(
+            text("SELECT * FROM lead_confirmed_data WHERE lead_id = :id"), {"id": lead_id}
+        )
+        c = cres.mappings().first()
+    confirmed = dict(c) if c else None
+    return await match_lead(dict(row), confirmed)
 
 
 class ConfirmPayload(BaseModel):

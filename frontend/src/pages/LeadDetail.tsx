@@ -397,8 +397,8 @@ export default function LeadDetail() {
           <NotesThread id={id} />
 
 
-          {/* CONFIRMED Q1-Q6 */}
-          <div className="card panel-pad">
+          {/* CONFIRMED call form */}
+          <div className="card panel-pad compact-form">
             <div className="panel-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
@@ -406,49 +406,47 @@ export default function LeadDetail() {
               Lead data confirmed on call
             </div>
 
-            <div className={field(invalid.purpose)}>
-              <label>Q1. Purpose of buying property <span className="req">*</span></label>
-              <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
-                <option value="">Select…</option>
-                {PURPOSES.map((p) => <option key={p}>{p}</option>)}
-              </select>
-            </div>
-
-            <div className={field(invalid.budget)}>
-              <label>Q2. Budget range <span className="req">*</span> <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— in lacs (we show up to ₹10L above max)</span></label>
-              <div className="two" style={{ gap: 10 }}>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontWeight: 600 }}>₹</span>
-                  <input type="number" min="0" placeholder="min" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} style={{ paddingLeft: 24 }} />
-                </div>
-                <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontWeight: 600 }}>₹</span>
-                  <input type="number" min="0" placeholder="max" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} style={{ paddingLeft: 24 }} />
-                </div>
-              </div>
-              {bMin > 0 && bMax > 0 && (
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--emerald)", marginTop: 5 }}>
-                  ₹{bMin}L – ₹{bMax}L (shows up to ₹{bMax + 10}L)
-                </div>
-              )}
-            </div>
-
             <div className="two">
+              <div className={field(invalid.purpose)}>
+                <label>Q1. Purpose <span className="req">*</span></label>
+                <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                  <option value="">Select…</option>
+                  {PURPOSES.map((p) => <option key={p}>{p}</option>)}
+                </select>
+              </div>
               <div className={field(invalid.config)}>
-                <label>Q3. Configuration <span className="req">*</span></label>
+                <label>Q2. Configuration <span className="req">*</span></label>
                 <select value={config} onChange={(e) => setConfig(e.target.value)}>
                   <option value="">Select…</option>
                   {CONFIGS.map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
+            </div>
+
+            <div className="two">
+              <div className={field(invalid.budget)}>
+                <label>Q3. Budget <span className="req">*</span> <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 10.5 }}>lacs</span></label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input type="number" min="0" placeholder="min" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} />
+                  <input type="number" min="0" placeholder="max" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} />
+                </div>
+                {bMin > 0 && bMax > 0 && (
+                  <div style={{ fontSize: 10.5, fontWeight: 600, color: "var(--emerald)", marginTop: 4 }}>
+                    ₹{bMin}–{bMax}L · shows to ₹{bMax + 10}L
+                  </div>
+                )}
+              </div>
               <div className="field">
-                <label>Q4. Size <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— sq.ft</span></label>
-                <input type="number" min="0" placeholder="e.g. 1600" value={size} onChange={(e) => setSize(e.target.value)} />
+                <label>Q4. Size <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 10.5 }}>sq.ft</span></label>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input type="number" min="0" placeholder="min" value={sizeMin} onChange={(e) => setSizeMin(e.target.value)} />
+                  <input type="number" min="0" placeholder="max" value={sizeMax} onChange={(e) => setSizeMax(e.target.value)} />
+                </div>
               </div>
             </div>
 
             <div className="field">
-              <label>Q5. Micro-markets <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— picking one auto-fills its localities</span></label>
+              <label>Q5. Micro-markets <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— auto-fills localities + societies</span></label>
               <AutocompleteChips
                 value={micromarkets}
                 onChange={onMicromarketsChange}
@@ -458,7 +456,7 @@ export default function LeadDetail() {
             </div>
 
             <div className="field">
-              <label>Q6. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— picking one auto-fills its societies</span></label>
+              <label>Q6. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— auto-fills societies</span></label>
               <AutocompleteChips
                 value={localities}
                 onChange={onLocalitiesChange}
@@ -477,20 +475,21 @@ export default function LeadDetail() {
               />
             </div>
 
-            <div className={field(invalid.office)}>
-              <label>Q8. Willing to come to office? <span className="req">*</span></label>
-              <select value={office} onChange={(e) => setOffice(e.target.value)}>
-                <option value="">Select…</option>
-                {OFFICE.map((o) => <option key={o}>{o}</option>)}
-              </select>
-            </div>
-
-            {(office === "Yes" || office === "Maybe") && (
-              <div className="field">
-                <label>Preferred date</label>
-                <input type="date" value={officeDate} onChange={(e) => setOfficeDate(e.target.value)} />
+            <div className="two">
+              <div className={field(invalid.office)}>
+                <label>Q8. Willing to come to office? <span className="req">*</span></label>
+                <select value={office} onChange={(e) => setOffice(e.target.value)}>
+                  <option value="">Select…</option>
+                  {OFFICE.map((o) => <option key={o}>{o}</option>)}
+                </select>
               </div>
-            )}
+              {(office === "Yes" || office === "Maybe") ? (
+                <div className="field">
+                  <label>Preferred date</label>
+                  <input type="date" value={officeDate} onChange={(e) => setOfficeDate(e.target.value)} />
+                </div>
+              ) : <div />}
+            </div>
 
             {(office === "No" || office === "Maybe") && (
               <div className="office-pitch">

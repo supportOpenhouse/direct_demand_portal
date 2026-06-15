@@ -477,6 +477,11 @@ tr.lead-row:hover{background:var(--panel-2)}
 .sup-stage.ama-signed{background:var(--emerald-soft);color:var(--emerald)}
 /* NavLink renders <a> where the prototype used <div> — neutralize anchor defaults */
 a.nav-item{text-decoration:none}
+/* phase-1: compact confirm-on-call form — smaller fields, tighter rows */
+.compact-form .field{margin-bottom:11px}
+.compact-form .field label{margin-bottom:4px;font-size:11.5px}
+.compact-form input,.compact-form select{padding:8px 10px;font-size:13px}
+.compact-form .two{gap:11px}
 /* phase-1: inventory photo carousel arrows */
 .carousel-btn{position:absolute;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;border:0;
   background:rgba(15,23,42,.55);color:#fff;font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;

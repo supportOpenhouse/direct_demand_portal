@@ -287,7 +287,12 @@ export default function LeadDetail() {
     setRemark(c?.remark || "");
   }, [lead]);
 
-  // cascade: adding a micro-market auto-fills its localities; a locality auto-fills its societies
+  // cascade: a micro-market fills its localities AND their societies; a locality fills its societies
+  const addSocietiesFor = async (locs: string[]) => {
+    const lists = await Promise.all(locs.map((l) => api.societiesByLocality(l).then((r) => r.items).catch(() => [])));
+    const socs = lists.flat();
+    if (socs.length) setSocieties((prev) => Array.from(new Set([...prev, ...socs])));
+  };
   const onMicromarketsChange = (next: string[]) => {
     const added = next.filter((m) => !micromarkets.includes(m));
     setMicromarkets(next);
@@ -295,18 +300,14 @@ export default function LeadDetail() {
       try {
         const locs = (await api.localitiesByMicromarket(mm)).items;
         setLocalities((prev) => Array.from(new Set([...prev, ...locs])));
+        addSocietiesFor(locs); // cascade the second level too
       } catch { /* ignore */ }
     });
   };
   const onLocalitiesChange = (next: string[]) => {
     const added = next.filter((l) => !localities.includes(l));
     setLocalities(next);
-    added.forEach(async (loc) => {
-      try {
-        const socs = (await api.societiesByLocality(loc)).items;
-        setSocieties((prev) => Array.from(new Set([...prev, ...socs])));
-      } catch { /* ignore */ }
-    });
+    addSocietiesFor(added);
   };
 
   // live matching — recomputes (debounced) as any requirement field changes

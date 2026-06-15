@@ -261,7 +261,8 @@ export default function LeadDetail() {
   const [budgetMin, setBudgetMin] = useState("");
   const [budgetMax, setBudgetMax] = useState("");
   const [config, setConfig] = useState("");
-  const [size, setSize] = useState("");
+  const [sizeMin, setSizeMin] = useState("");
+  const [sizeMax, setSizeMax] = useState("");
   const [micromarkets, setMicromarkets] = useState<string[]>([]);
   const [societies, setSocieties] = useState<string[]>([]);
   const [localities, setLocalities] = useState<string[]>([]);
@@ -278,7 +279,8 @@ export default function LeadDetail() {
     setBudgetMin(c?.budget_min_lacs != null ? String(c.budget_min_lacs) : "");
     setBudgetMax(c?.budget_max_lacs != null ? String(c.budget_max_lacs) : "");
     setConfig(c?.configuration || lead.configuration || "");
-    setSize(c?.size_sqft != null ? String(c.size_sqft) : "");
+    setSizeMin(c?.size_min_sqft != null ? String(c.size_min_sqft) : "");
+    setSizeMax(c?.size_max_sqft != null ? String(c.size_max_sqft) : "");
     setMicromarkets(c?.preferred_micromarkets || []);
     setSocieties(c?.shortlisted_societies?.length ? c.shortlisted_societies : lead.society ? [lead.society] : []);
     setLocalities(c?.preferred_localities || []);
@@ -311,12 +313,14 @@ export default function LeadDetail() {
   };
 
   // live matching — recomputes (debounced) as any requirement field changes
-  const bMin = parseFloat(budgetMin), bMax = parseFloat(budgetMax), sizeNum = parseFloat(size);
+  const bMin = parseFloat(budgetMin), bMax = parseFloat(budgetMax);
+  const sMin = parseFloat(sizeMin), sMax = parseFloat(sizeMax);
   const reqKey = JSON.stringify({
     city: lead?.city ?? null,
     societies, localities, micromarkets,
     configuration: config || null,
-    size_sqft: sizeNum > 0 ? sizeNum : null,
+    size_min_sqft: sMin > 0 ? sMin : null,
+    size_max_sqft: sMax > 0 ? sMax : null,
     budget_min_lacs: bMin > 0 ? bMin : null,
     budget_max_lacs: bMax > 0 ? bMax : null,
     budget_band: lead?.budget_band ?? null,
@@ -342,7 +346,8 @@ export default function LeadDetail() {
         budget_min_lacs: bMin,
         budget_max_lacs: bMax,
         configuration: config,
-        size_sqft: sizeNum > 0 ? sizeNum : null,
+        size_min_sqft: sMin > 0 ? sMin : null,
+        size_max_sqft: sMax > 0 ? sMax : null,
         preferred_micromarkets: micromarkets,
         shortlisted_societies: societies,
         preferred_localities: localities,

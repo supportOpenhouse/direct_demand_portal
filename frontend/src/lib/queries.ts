@@ -1,5 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ConfirmPayload } from "./api";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ConfirmPayload, MatchPreviewReq } from "./api";
 
 export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
@@ -19,6 +19,17 @@ export function useLead(id: string) {
 
 export function useLeadMatches(id: string) {
   return useQuery({ queryKey: ["lead-matches", id], queryFn: () => api.leadMatches(id), staleTime: 60_000 });
+}
+
+/** Live matching from in-progress form fields. Keyed on the requirement so
+    react-query caches identical requirements; keepPreviousData avoids flicker. */
+export function useMatchPreview(req: MatchPreviewReq) {
+  return useQuery({
+    queryKey: ["match-preview", req],
+    queryFn: () => api.matchPreview(req),
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+  });
 }
 
 export function formatDate(iso: string | null): string {

@@ -12,8 +12,10 @@ Improvements over v1 (the old hard-gate scorer):
 
 City is the only hard filter, and only when the lead actually has a city.
 """
+import asyncio
 import logging
 import re
+import time
 
 from sqlalchemy import text
 
@@ -24,6 +26,12 @@ from .supply import STAGES, stage_key
 log = logging.getLogger("matching")
 
 BUDGET_TOLERANCE = 0.2  # ±20% window around a confirmed budget figure
+
+# in-memory unit cache so live preview (one call per keystroke) never re-hits the
+# DBs — units barely change during an editing session. Scoring is pure in-memory.
+_UNITS_TTL = 90  # seconds
+_cache: dict = {"inventory": None, "supply": None, "at": 0.0}
+_lock = asyncio.Lock()
 
 
 def parse_band(band: str | None) -> tuple[float | None, float | None]:
@@ -49,39 +57,54 @@ def parse_band(band: str | None) -> tuple[float | None, float | None]:
     return (nums[0], nums[0])
 
 
-async def lead_requirement(lead: dict, confirmed: dict | None) -> dict:
-    """Confirmed data wins over source-captured. Enriches the lead's societies
-    with their micro_markets for the geo anchor."""
-    societies = []
-    if confirmed and confirmed.get("shortlisted_societies"):
-        societies = confirmed["shortlisted_societies"]
-    elif lead.get("society"):
-        societies = [lead["society"]]
-    societies = [s for s in societies if s]
-
+async def build_requirement(
+    city: str | None,
+    societies: list[str] | None,
+    localities: list[str] | None,
+    config: str | None,
+    budget_value_lacs: float | None,
+    budget_band: str | None,
+) -> dict:
+    """Shared requirement builder for both saved-lead matching and live preview.
+    Resolves society micro_markets for the geo anchor."""
+    societies = [s for s in (societies or []) if s]
+    localities = [l for l in (localities or []) if l]
     micromarkets = set()
     for s in societies:
         meta = await society_meta(s)
         if meta and meta.get("micro_market"):
             micromarkets.add(meta["micro_market"])
-
-    config = (confirmed and confirmed.get("configuration")) or lead.get("configuration")
-    if confirmed and confirmed.get("budget_value_lacs"):
-        b = float(confirmed["budget_value_lacs"])
+    if budget_value_lacs:
+        b = float(budget_value_lacs)
         center, bmin, bmax = b, b * (1 - BUDGET_TOLERANCE), b * (1 + BUDGET_TOLERANCE)
     else:
-        bmin, bmax = parse_band(lead.get("budget_band"))
+        bmin, bmax = parse_band(budget_band)
         center = (bmin + bmax) / 2 if (bmin and bmax) else (bmax or bmin)
     return {
-        "city": lead.get("city"),
+        "city": city,
         "societies": societies,
         "society_lc": {s.lower() for s in societies},
+        "localities_lc": {l.lower() for l in localities},
         "micromarkets": micromarkets,
         "config": config,
         "center": center,
         "bmin": bmin,
         "bmax": bmax,
     }
+
+
+async def lead_requirement(lead: dict, confirmed: dict | None) -> dict:
+    """Confirmed data wins over source-captured."""
+    if confirmed and confirmed.get("shortlisted_societies"):
+        societies = confirmed["shortlisted_societies"]
+    else:
+        societies = [lead["society"]] if lead.get("society") else []
+    localities = (confirmed and confirmed.get("preferred_localities")) or []
+    config = (confirmed and confirmed.get("configuration")) or lead.get("configuration")
+    budget_value = confirmed.get("budget_value_lacs") if confirmed else None
+    return await build_requirement(
+        lead.get("city"), societies, localities, config, budget_value, lead.get("budget_band")
+    )
 
 
 def _price_closeness(req: dict, price) -> float:
@@ -97,11 +120,11 @@ def _price_closeness(req: dict, price) -> float:
     return max(0.0, 1 - abs(p - req["center"]) / span)
 
 
-def _tier(req: dict, unit: dict, society_hit: bool, mm_hit: bool, budget_ok: bool, config_hit: bool) -> int:
-    """Lower = stronger. Mirrors the v2 fill-ladder priority."""
+def _tier(req: dict, unit: dict, society_hit: bool, geo_hit: bool, budget_ok: bool, config_hit: bool) -> int:
+    """Lower = stronger. Mirrors the v2 fill-ladder priority (geo = micromarket OR locality)."""
     if society_hit:
         return 1
-    if mm_hit and (budget_ok or config_hit):
+    if geo_hit and (budget_ok or config_hit):
         return 2
     if req["city"] and unit.get("city") == req["city"] and budget_ok and config_hit:
         return 3
@@ -113,6 +136,8 @@ def _tier(req: dict, unit: dict, society_hit: bool, mm_hit: bool, budget_ok: boo
 def score_unit(req: dict, unit: dict) -> dict:
     society_hit = bool(unit.get("society") and unit["society"].lower() in req["society_lc"])
     mm_hit = bool(unit.get("micro_market") and unit["micro_market"] in req["micromarkets"])
+    locality_hit = bool(unit.get("locality") and unit["locality"].lower() in req.get("localities_lc", set()))
+    geo_hit = mm_hit or locality_hit
     closeness = _price_closeness(req, unit.get("price_lacs"))
     budget_ok = closeness > 0
     config_hit = bool(req["config"] and unit.get("configuration") == req["config"])
@@ -123,16 +148,19 @@ def score_unit(req: dict, unit: dict) -> dict:
         3.0 * society_hit
         + 2.0 * closeness
         + 1.5 * mm_hit
+        + 1.2 * locality_hit
         + 1.0 * config_hit
         + 0.5 * city_hit
     )
-    tier = _tier(req, unit, society_hit, mm_hit, budget_ok, config_hit)
+    tier = _tier(req, unit, society_hit, geo_hit, budget_ok, config_hit)
 
     reasons = []
     if society_hit:
         reasons.append(f"Same society — {unit['society']}")
     elif mm_hit:
         reasons.append(f"Same micro-market — {unit['micro_market']}")
+    elif locality_hit:
+        reasons.append(f"Same locality — {unit['locality']}")
     elif city_hit:
         reasons.append(f"Same city — {unit['city']}")
     if config_hit:
@@ -235,17 +263,44 @@ def _shape(u: dict, supply: bool) -> dict:
     return base
 
 
-async def match_lead(lead: dict, confirmed: dict | None) -> dict:
-    req = await lead_requirement(lead, confirmed)
-    inventory = await _inventory_units()
-    supply = await _supply_units()
+async def _load_units(force: bool = False) -> tuple[list[dict], list[dict]]:
+    """Inventory + supply units, cached in-memory for _UNITS_TTL so live preview
+    is a pure in-memory score (no DB round-trip per keystroke)."""
+    fresh = (time.monotonic() - _cache["at"]) < _UNITS_TTL
+    if not force and fresh and _cache["inventory"] is not None:
+        return _cache["inventory"], _cache["supply"]
+    async with _lock:
+        if not force and (time.monotonic() - _cache["at"]) < _UNITS_TTL and _cache["inventory"] is not None:
+            return _cache["inventory"], _cache["supply"]
+        inventory, supply = await asyncio.gather(_inventory_units(), _supply_units())
+        _cache.update({"inventory": inventory, "supply": supply, "at": time.monotonic()})
+        log.info("units cache refreshed: %d inventory, %d supply", len(inventory), len(supply))
+        return inventory, supply
+
+
+async def _match(req: dict) -> dict:
+    inventory, supply = await _load_units()
     inv = [_shape(u, False) for u in await _rank(req, inventory)]
     sup = [_shape(u, True) for u in await _rank(req, supply)]
     return {
         "requirement": {
             "city": req["city"], "societies": req["societies"], "config": req["config"],
+            "localities": sorted(req.get("localities_lc", set())),
             "micromarkets": sorted(req["micromarkets"]), "bmin": req["bmin"], "bmax": req["bmax"],
         },
         "inventory": inv,
         "supply": sup,
     }
+
+
+async def match_lead(lead: dict, confirmed: dict | None) -> dict:
+    return await _match(await lead_requirement(lead, confirmed))
+
+
+async def match_preview(payload: dict) -> dict:
+    """Live preview from in-progress form fields (no save needed)."""
+    req = await build_requirement(
+        payload.get("city"), payload.get("societies"), payload.get("localities"),
+        payload.get("configuration"), payload.get("budget_value_lacs"), payload.get("budget_band"),
+    )
+    return await _match(req)

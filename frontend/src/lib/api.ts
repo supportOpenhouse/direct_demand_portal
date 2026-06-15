@@ -128,6 +128,15 @@ export interface LeadMatches {
   supply: MatchUnit[];
 }
 
+export interface MatchPreviewReq {
+  city?: string | null;
+  societies?: string[];
+  localities?: string[];
+  configuration?: string | null;
+  budget_value_lacs?: number | null;
+  budget_band?: string | null;
+}
+
 export interface ConfirmedData {
   purpose: string | null;
   budget_value_lacs: number | null;
@@ -174,6 +183,8 @@ export const api = {
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),
   lead: (id: string) => request<LeadDetail>(`/v1/leads/${id}`),
   leadMatches: (id: string) => request<LeadMatches>(`/v1/leads/${id}/matches`),
+  matchPreview: (payload: MatchPreviewReq) =>
+    request<LeadMatches>("/v1/leads/match-preview", { method: "POST", body: JSON.stringify(payload) }),
   syncLeads: () =>
     request<{ status: string; meta_new: number; listing_new: number }>("/v1/leads/sync", { method: "POST" }),
   confirmLead: (id: string, payload: ConfirmPayload) =>
@@ -191,9 +202,9 @@ export const api = {
   searchLocalities: (q: string) => request<{ items: string[] }>(`/v1/localities/search?q=${encodeURIComponent(q)}`),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
-  createUser: (u: { email: string; name: string; role: string; assignment_name?: string | null }) =>
+  createUser: (u: { email: string; name: string; role: string }) =>
     request<{ id: string; status: string }>("/v1/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: Partial<{ name: string; role: string; assignment_name: string; active: boolean }>) =>
+  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean }>) =>
     request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
 };
@@ -217,7 +228,7 @@ export interface ManagedUser {
   name: string | null;
   picture: string | null;
   role: string;
-  assignment_name: string | null;
+  maps_to: string | null; // first name we match against the sheet's "Assigned to"
   active: boolean;
   last_login_at: string | null;
   matched_leads: number;

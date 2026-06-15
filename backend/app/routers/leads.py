@@ -10,7 +10,7 @@ from ..core.auth import assignment_aliases, current_user
 from ..db import neon_engine
 from ..models import Lead, LeadConfirmedData, LeadNote
 from ..services.leads_sync import read_leads_state, run_leads_sync
-from ..services.matching import match_lead
+from ..services.matching import match_lead, match_preview
 from ..services.societies import search_localities, search_societies
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
@@ -129,6 +129,21 @@ async def lead_matches(lead_id: UUID):
         c = cres.mappings().first()
     confirmed = dict(c) if c else None
     return await match_lead(dict(row), confirmed)
+
+
+class MatchPreview(BaseModel):
+    city: str | None = None
+    societies: list[str] = []
+    localities: list[str] = []
+    configuration: str | None = None
+    budget_value_lacs: float | None = None
+    budget_band: str | None = None
+
+
+@router.post("/leads/match-preview")
+async def leads_match_preview(payload: MatchPreview):
+    """Live matching for in-progress form fields — units are cached, so this is fast."""
+    return await match_preview(payload.model_dump())
 
 
 class ConfirmPayload(BaseModel):

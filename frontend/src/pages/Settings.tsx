@@ -21,7 +21,6 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("rm");
-  const [assignment, setAssignment] = useState("");
 
   const submit = () => {
     if (!email.trim() || !name.trim()) {
@@ -29,7 +28,7 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
       return;
     }
     create.mutate(
-      { email: email.trim(), name: name.trim(), role, assignment_name: assignment.trim() || null },
+      { email: email.trim(), name: name.trim(), role },
       {
         onSuccess: () => {
           toast(`${name} added`, "green", "✓");
@@ -49,8 +48,8 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
         </div>
         <div className="mb">
           <div className="note" style={{ marginBottom: 16 }}>
-            They sign in with this Google account — nobody else can log in. The assignment name maps their leads
-            from the sheet's <b>Assigned to</b> column (first name is used if left blank).
+            They sign in with this Google account — nobody else can log in. Their leads are mapped automatically
+            from the sheet's <b>Assigned to</b> column by matching their name (first or full).
           </div>
           <div className="field">
             <label>Google email <span className="req">*</span></label>
@@ -60,19 +59,16 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
             <label>Full name <span className="req">*</span></label>
             <input value={name} placeholder="e.g. Dheeraj Kumar" onChange={(e) => setName(e.target.value)} />
           </div>
-          <div className="two">
-            <div className="field">
-              <label>Role</label>
-              <select value={role} onChange={(e) => setRole(e.target.value)}>
-                {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label>Assignment name <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>(sheet)</span></label>
-              <input value={assignment} placeholder={name.trim().split(" ")[0] || "e.g. Dheeraj"} onChange={(e) => setAssignment(e.target.value)} />
-            </div>
+          <div className="field">
+            <label>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+            </select>
           </div>
-          <div className="note" style={{ marginTop: 0 }}>{ROLES.find((r) => r.v === role)?.desc}</div>
+          <div className="note" style={{ marginTop: 0 }}>
+            {ROLES.find((r) => r.v === role)?.desc}
+            {name.trim() && <> · maps leads assigned to <b>{name.trim().split(" ")[0]}</b></>}
+          </div>
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>Cancel</button>
@@ -85,9 +81,55 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
   );
 }
 
+function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
+  const { update } = useUserMutations();
+  const toast = useToast();
+  const [name, setName] = useState(u.name || "");
+  const [role, setRole] = useState(u.role);
+
+  const submit = () => {
+    if (!name.trim()) {
+      toast("Name is required", "gold", "⚠");
+      return;
+    }
+    update.mutate(
+      { id: u.id, patch: { name: name.trim(), role } },
+      { onSuccess: () => { toast("User updated", "green", "✓"); onClose(); }, onError: (e: any) => toast(e.message, "gold", "⚠") }
+    );
+  };
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="mh">
+          <h3>Edit {u.name || u.email}</h3>
+          <div className="icon-btn" onClick={onClose}>✕</div>
+        </div>
+        <div className="mb">
+          <div className="field"><label>Email</label><input value={u.email} disabled /></div>
+          <div className="field"><label>Full name <span className="req">*</span></label>
+            <input value={name} onChange={(e) => setName(e.target.value)} /></div>
+          <div className="field"><label>Role</label>
+            <select value={role} onChange={(e) => setRole(e.target.value)}>
+              {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+            </select></div>
+          <div className="note" style={{ marginTop: 0 }}>
+            Mapped to <b>{u.matched_leads}</b> leads by matching <b>{name.trim().split(" ")[0] || u.maps_to}</b> in the sheet's “Assigned to”.
+          </div>
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn green" onClick={submit} disabled={update.isPending}>{update.isPending ? "Saving…" : "Save changes"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserRow({ u }: { u: ManagedUser }) {
   const { update, remove } = useUserMutations();
   const toast = useToast();
+  const [editing, setEditing] = useState(false);
   return (
     <div className="role-row" style={{ gap: 14 }}>
       {u.picture ? (
@@ -105,7 +147,7 @@ function UserRow({ u }: { u: ManagedUser }) {
       </div>
       <div style={{ textAlign: "center", minWidth: 86 }}>
         <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 800, fontSize: 17, lineHeight: 1 }}>{u.matched_leads}</div>
-        <div style={{ fontSize: 10.5, color: "var(--muted)" }}>leads · {u.assignment_name}</div>
+        <div style={{ fontSize: 10.5, color: "var(--muted)" }}>leads · {u.maps_to}</div>
       </div>
       <select
         value={u.role}
@@ -116,9 +158,11 @@ function UserRow({ u }: { u: ManagedUser }) {
       </select>
       <div className={"switch" + (u.active ? " on" : "")} title={u.active ? "Disable" : "Enable"}
         onClick={() => update.mutate({ id: u.id, patch: { active: !u.active } })} />
+      <button className="btn ghost sm" onClick={() => setEditing(true)}>✎ Edit</button>
       <button className="btn ghost sm" onClick={() => {
         if (confirm(`Remove ${u.name || u.email}?`)) remove.mutate(u.id, { onSuccess: () => toast("User removed", "blue", "✓") });
       }}>Remove</button>
+      {editing && <EditUserForm u={u} onClose={() => setEditing(false)} />}
     </div>
   );
 }

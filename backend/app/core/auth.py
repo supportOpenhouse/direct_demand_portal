@@ -79,10 +79,9 @@ async def require_admin(user: dict = Depends(current_user)) -> dict:
 
 def assignment_aliases(user: dict) -> list[str]:
     """Names this user is known by in the sheet's 'Assigned to' column — used to
-    map leads to the user. Tries assignment_name, full name, and first name."""
-    out = set()
-    for v in (user.get("assignment_name"), user.get("name")):
-        if v and v.strip():
-            out.add(v.strip().lower())
-            out.add(v.strip().split()[0].lower())  # first name
-    return [a for a in out if a]
+    map leads to the user. Always derived from the user's name: matches on both the
+    full name and the first name (the sheet uses first names like 'Dheeraj')."""
+    name = (user.get("name") or "").strip()
+    if not name:
+        return []
+    return list({name.lower(), name.split()[0].lower()})

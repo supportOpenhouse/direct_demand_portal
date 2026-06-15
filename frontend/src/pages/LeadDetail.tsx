@@ -3,13 +3,14 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  useLead, useConfirmLead, useLeadMatches, formatPrice,
+  useLead, useConfirmLead, useMatchPreview, formatPrice,
   useLeadNotes, useAddNote, usePatchSourceData, formatDateTime,
 } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
 import { MatchUnit, api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { AutocompleteChips } from "../components/Autocomplete";
+import { useDebounce } from "../lib/useDebounce";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
@@ -199,13 +200,19 @@ function MatchPanel({ title, tag, units, loading }: { title: string; tag: string
   return (
     <div className="card panel-pad">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>{title}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {title}
+          <span title="Updates live as you edit" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9.5, fontWeight: 700, color: "var(--emerald)", letterSpacing: ".04em" }}>
+            <span className="tat" style={{ padding: 0, background: "none" }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--emerald)", display: "inline-block", animation: loading ? "pulse 1s infinite" : undefined }} />
+            </span>
+            LIVE
+          </span>
+        </span>
         <span style={{ fontSize: 10, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{tag}</span>
       </div>
-      {loading ? (
-        <div className="empty" style={{ padding: 16 }}>Matching…</div>
-      ) : units.length === 0 ? (
-        <div className="empty" style={{ padding: 16 }}>No matches yet — confirm budget &amp; config to surface more.</div>
+      {units.length === 0 ? (
+        <div className="empty" style={{ padding: 16 }}>{loading ? "Matching…" : "No matches yet — add budget, config or a society to surface more."}</div>
       ) : (
         units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} />)
       )}
@@ -218,7 +225,6 @@ export default function LeadDetail() {
   const nav = useNavigate();
   const toast = useToast();
   const { data: lead, isLoading } = useLead(id);
-  const { data: matches, isLoading: matchesLoading } = useLeadMatches(id);
   const confirm = useConfirmLead(id);
 
   const [purpose, setPurpose] = useState("");
@@ -244,6 +250,19 @@ export default function LeadDetail() {
     setOfficeDate(c?.office_preferred_date || "");
     setRemark(c?.remark || "");
   }, [lead]);
+
+  // live matching — recomputes (debounced) as budget/config/societies/localities change
+  const budgetLive = parseFloat(budget);
+  const reqKey = JSON.stringify({
+    city: lead?.city ?? null,
+    societies,
+    localities,
+    configuration: config || null,
+    budget_value_lacs: budgetLive > 0 ? budgetLive : null,
+    budget_band: lead?.budget_band ?? null,
+  });
+  const debouncedReq = useDebounce(reqKey, 350);
+  const { data: matches, isFetching: matchesLoading } = useMatchPreview(JSON.parse(debouncedReq));
 
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;

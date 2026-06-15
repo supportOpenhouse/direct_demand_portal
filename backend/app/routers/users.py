@@ -28,7 +28,7 @@ async def _lead_counts(conn) -> list[dict]:
 
 
 def _matched(user_row: dict, counts: list[dict]) -> int:
-    aliases = set(assignment_aliases({"name": user_row["name"], "assignment_name": user_row["assignment_name"]}))
+    aliases = set(assignment_aliases({"name": user_row["name"]}))
     return sum(c["c"] for c in counts if c["a"] in aliases)
 
 
@@ -47,7 +47,7 @@ async def list_users():
     return {"items": [
         {
             "id": str(u["id"]), "email": u["email"], "name": u["name"], "picture": u["picture"],
-            "role": u["role"], "assignment_name": u["assignment_name"] or _first_name(u["name"]),
+            "role": u["role"], "maps_to": _first_name(u["name"]),  # the name we match in the sheet
             "active": u["active"],
             "last_login_at": u["last_login_at"].isoformat() if u["last_login_at"] else None,
             "matched_leads": _matched(u, counts),
@@ -60,7 +60,6 @@ class UserCreate(BaseModel):
     email: EmailStr
     name: str
     role: str = "rm"
-    assignment_name: str | None = None
 
 
 @router.post("/users")
@@ -70,11 +69,9 @@ async def create_user(payload: UserCreate):
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="database not configured")
-    assignment = (payload.assignment_name or _first_name(payload.name) or "").strip() or None
     async with engine.begin() as conn:
         stmt = pg_insert(User).values(
-            email=str(payload.email).lower(), name=payload.name.strip(), role=payload.role,
-            assignment_name=assignment, active=True,
+            email=str(payload.email).lower(), name=payload.name.strip(), role=payload.role, active=True,
         ).on_conflict_do_nothing(index_elements=[User.email]).returning(User.id)
         row = (await conn.execute(stmt)).first()
         if row is None:
@@ -85,7 +82,6 @@ async def create_user(payload: UserCreate):
 class UserUpdate(BaseModel):
     name: str | None = None
     role: str | None = None
-    assignment_name: str | None = None
     active: bool | None = None
 
 
@@ -94,7 +90,7 @@ async def update_user(user_id: UUID, payload: UserUpdate):
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ROLES)}")
     sets, params = [], {"id": user_id}
-    for field in ("name", "role", "assignment_name", "active"):
+    for field in ("name", "role", "active"):
         val = getattr(payload, field)
         if val is not None:
             sets.append(f"{field} = :{field}")

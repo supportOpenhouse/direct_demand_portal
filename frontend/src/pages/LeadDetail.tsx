@@ -182,14 +182,16 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
   return (
     <div className={"opt" + (open ? " open" : "")}>
       <div className="opt-row" onClick={() => setOpen(!open)}>
-        <div
-          className="opt-thumb"
-          style={u.image_url
-            ? { backgroundImage: `url('${u.image_url}')` }
-            : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center", fontSize: 16 }}
-        >
-          {!u.image_url && "🏠"}
-        </div>
+        {!isSupply && (
+          <div
+            className="opt-thumb"
+            style={u.image_url
+              ? { backgroundImage: `url('${u.image_url}')` }
+              : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center", fontSize: 16 }}
+          >
+            {!u.image_url && "🏠"}
+          </div>
+        )}
         <div className="opt-info">
           <div className="opt-name">
             {u.name || "—"} <span className="match-mini">{u.score}%</span>

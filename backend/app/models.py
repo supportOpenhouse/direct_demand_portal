@@ -181,7 +181,29 @@ class User(Base):
     name: Mapped[str | None] = mapped_column(Text)
     picture: Mapped[str | None] = mapped_column(Text)
     role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")  # admin | cm | rm
+    # the name as it appears in the sheet's "Assigned to" column (defaults to the
+    # user's first name); maps this user to their leads
+    assignment_name: Mapped[str | None] = mapped_column(Text)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
     last_login_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class LeadNote(Base):
+    """Conversation thread on a lead. Seeded from the sheet's Remarks / Remarks 2;
+    new notes appended with author + timestamp."""
+
+    __tablename__ = "lead_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="note")  # 'remarks' | 'note'
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )

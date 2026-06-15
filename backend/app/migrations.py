@@ -13,6 +13,8 @@ log = logging.getLogger("migrations")
 # (table, column, type) — additive only
 _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
+    ("users", "assignment_name", "TEXT"),
+    ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
 ]
 
 

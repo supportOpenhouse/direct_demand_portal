@@ -2,47 +2,19 @@
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useLead, useConfirmLead, useLeadMatches, formatPrice } from "../lib/queries";
+import {
+  useLead, useConfirmLead, useLeadMatches, formatPrice,
+  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime,
+} from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
-import { MatchUnit } from "../lib/api";
+import { MatchUnit, api } from "../lib/api";
 import { useToast } from "../components/Toast";
+import { AutocompleteChips } from "../components/Autocomplete";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
 const OFFICE = ["Yes", "No", "Maybe"];
-
-function ChipsInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder: string }) {
-  const [text, setText] = useState("");
-  const add = () => {
-    const t = text.trim();
-    if (t && !value.includes(t)) onChange([...value, t]);
-    setText("");
-  };
-  return (
-    <div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: value.length ? 8 : 0 }}>
-        {value.map((v) => (
-          <span key={v} className="bucket-tag" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            {v}
-            <span style={{ cursor: "pointer" }} onClick={() => onChange(value.filter((x) => x !== v))}>✕</span>
-          </span>
-        ))}
-      </div>
-      <input
-        value={text}
-        placeholder={placeholder}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === ",") {
-            e.preventDefault();
-            add();
-          }
-        }}
-        onBlur={add}
-      />
-    </div>
-  );
-}
+const PLANS = ["Within 30 days", "1–3 months", "3–6 months", "Just exploring"];
 
 const OFFICE_PITCH_EN = [
   "First, we'll help you understand the market.",
@@ -62,6 +34,118 @@ const OFFICE_PITCH_HI = [
   "Agar aap location change karte hain to uske fayde/nuksan kya honge.",
   "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
 ];
+
+function SourceCard({ lead }: { lead: any }) {
+  const patch = usePatchSourceData(lead.id);
+  const toast = useToast();
+  const [edit, setEdit] = useState(false);
+  const [f, setF] = useState({
+    city: lead.city || "", society: lead.society || "", budget_band: lead.budget_band || "",
+    plan_to_buy: lead.plan_to_buy || "", source_remarks: lead.source_remarks || "",
+  });
+  useEffect(() => {
+    setF({ city: lead.city || "", society: lead.society || "", budget_band: lead.budget_band || "",
+      plan_to_buy: lead.plan_to_buy || "", source_remarks: lead.source_remarks || "" });
+  }, [lead]);
+
+  const save = () =>
+    patch.mutate(f, { onSuccess: () => { toast("Source data updated", "green", "✓"); setEdit(false); }, onError: (e: any) => toast(e.message, "gold", "⚠") });
+
+  const ro = (label: string, val: string | null) => (
+    <div className="field"><label>{label}</label><input value={val || "—"} disabled /></div>
+  );
+  const inp = (label: string, key: keyof typeof f, placeholder = "") => (
+    <div className="field"><label>{label}</label>
+      <input value={f[key]} placeholder={placeholder} onChange={(e) => setF({ ...f, [key]: e.target.value })} /></div>
+  );
+
+  return (
+    <div className="card panel-pad meta-card">
+      <div className="panel-title" style={{ justifyContent: "space-between" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>Lead data captured from {srcLabel(lead.source)}</span>
+        {edit ? (
+          <span style={{ display: "flex", gap: 6 }}>
+            <button className="btn ghost sm" onClick={() => setEdit(false)}>Cancel</button>
+            <button className="btn green sm" onClick={save} disabled={patch.isPending}>{patch.isPending ? "Saving…" : "Save"}</button>
+          </span>
+        ) : (
+          <button className="btn ghost sm" onClick={() => setEdit(true)}>✎ Edit</button>
+        )}
+      </div>
+      {edit ? (
+        <>
+          <div className="two">{inp("Budget", "budget_band", "e.g. ₹70L – ₹90L")}{inp("City", "city")}</div>
+          <div className="two">
+            {inp("Society of interest", "society")}
+            <div className="field"><label>Plan to Buy</label>
+              <select value={f.plan_to_buy} onChange={(e) => setF({ ...f, plan_to_buy: e.target.value })}>
+                <option value="">Select…</option>{PLANS.map((p) => <option key={p}>{p}</option>)}
+              </select></div>
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}><label>Source remarks</label>
+            <input value={f.source_remarks} onChange={(e) => setF({ ...f, source_remarks: e.target.value })} /></div>
+        </>
+      ) : (
+        <>
+          <div className="two">{ro("Budget", lead.budget_band)}{ro("City", lead.city)}</div>
+          <div className="two">{ro("Society of interest", lead.society)}{ro("Plan to Buy", lead.plan_to_buy)}</div>
+          {lead.preferred_visit_day && ro("Preferred visit day (from ad)", lead.preferred_visit_day)}
+          {lead.source_remarks && ro("Source remarks", lead.source_remarks)}
+        </>
+      )}
+    </div>
+  );
+}
+
+function NotesThread({ id }: { id: string }) {
+  const { data, isLoading } = useLeadNotes(id);
+  const addNote = useAddNote(id);
+  const toast = useToast();
+  const [text, setText] = useState("");
+  const send = () => {
+    const t = text.trim();
+    if (!t) return;
+    addNote.mutate(t, { onSuccess: () => setText(""), onError: (e: any) => toast(e.message, "gold", "⚠") });
+  };
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>{" "}
+        Conversation &amp; remarks
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 12 }}>
+        {isLoading ? (
+          <div className="empty" style={{ padding: 14 }}>Loading…</div>
+        ) : !data?.items.length ? (
+          <div className="empty" style={{ padding: 14, fontSize: 12 }}>No remarks yet — start the thread below.</div>
+        ) : (
+          data.items.map((n, i) => (
+            <div key={n.id || `seed-${i}`} style={{
+              background: n.source === "remarks" ? "var(--panel-2)" : "var(--blue-soft)",
+              border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px",
+            }}>
+              <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.45 }}>{n.body}</div>
+              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, fontFamily: "'Spline Sans Mono'" }}>
+                {n.author || "—"}{n.created_at ? ` · ${formatDateTime(n.created_at)}` : ""}
+                {n.source === "remarks" && " · imported"}
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <input
+          value={text}
+          placeholder="Add a remark…"
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && send()}
+          style={{ flex: 1 }}
+        />
+        <button className="btn primary sm" onClick={send} disabled={addNote.isPending || !text.trim()}>Send</button>
+      </div>
+    </div>
+  );
+}
 
 function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
   const [open, setOpen] = useState(false);
@@ -85,6 +169,13 @@ function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
             {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
             <b style={{ color: "var(--ink-2)" }}>{formatPrice(u.price_lacs, u.price_text)}</b>
           </div>
+          {u.matched_on.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
+              {u.matched_on.map((r) => (
+                <span key={r} className="match-mini" style={{ background: "var(--emerald-soft)", color: "#06694b" }}>{r}</span>
+              ))}
+            </div>
+          )}
         </div>
         <svg className="opt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="m6 9 6 6 6-6" />
@@ -207,29 +298,12 @@ export default function LeadDetail() {
 
       <div className="detail-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* SOURCE-CAPTURED */}
-          <div className="card panel-pad meta-card">
-            <div className="panel-title" style={{ justifyContent: "space-between" }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                Lead data captured from {srcLabel(lead.source)}
-              </span>
-              <span className="lock-badge">🔒 From source</span>
-            </div>
-            <div className="two">
-              <div className="field"><label>Budget</label><input value={lead.budget_band || "—"} disabled /></div>
-              <div className="field"><label>City</label><input value={lead.city || "—"} disabled /></div>
-            </div>
-            <div className="two">
-              <div className="field"><label>Society of interest</label><input value={lead.society || "—"} disabled /></div>
-              <div className="field"><label>Plan to Buy</label><input value={lead.plan_to_buy || "—"} disabled /></div>
-            </div>
-            {lead.preferred_visit_day && (
-              <div className="field"><label>Preferred visit day (from ad)</label><input value={lead.preferred_visit_day} disabled /></div>
-            )}
-            {lead.source_remarks && (
-              <div className="field" style={{ marginBottom: 0 }}><label>Source remarks</label><input value={lead.source_remarks} disabled /></div>
-            )}
-          </div>
+          {/* SOURCE-CAPTURED — editable */}
+          <SourceCard lead={lead} />
+
+          {/* CONVERSATION / REMARKS THREAD */}
+          <NotesThread id={id} />
+
 
           {/* CONFIRMED Q1-Q6 */}
           <div className="card panel-pad">
@@ -269,13 +343,23 @@ export default function LeadDetail() {
             </div>
 
             <div className="field">
-              <label>Q4. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— type & Enter to add</span></label>
-              <ChipsInput value={societies} onChange={setSocieties} placeholder="e.g. Pivotal Devaan, Sec 84" />
+              <label>Q4. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
+              <AutocompleteChips
+                value={societies}
+                onChange={setSocieties}
+                placeholder="Search societies…"
+                fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", ") }))}
+              />
             </div>
 
             <div className="field">
-              <label>Q5. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— type & Enter to add</span></label>
-              <ChipsInput value={localities} onChange={setLocalities} placeholder="e.g. Dwarka Expressway" />
+              <label>Q5. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
+              <AutocompleteChips
+                value={localities}
+                onChange={setLocalities}
+                placeholder="Search localities…"
+                fetcher={async (q) => (await api.searchLocalities(q)).items.map((l) => ({ label: l }))}
+              />
             </div>
 
             <div className={field(invalid.office)}>

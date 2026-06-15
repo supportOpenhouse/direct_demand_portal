@@ -7,6 +7,7 @@ import Inventory from "./pages/Inventory";
 import Supply from "./pages/Supply";
 import NewLeads from "./pages/NewLeads";
 import LeadDetail from "./pages/LeadDetail";
+import Settings from "./pages/Settings";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -29,7 +30,7 @@ const router = createBrowserRouter([
       { path: "supply", element: <Supply /> },
       { path: "societies", element: <Stub title="Society Insights" /> },
       { path: "goldmine", element: <Stub title="Gold Mine" /> },
-      { path: "settings", element: <Stub title="Settings & Access" /> },
+      { path: "settings", element: <Settings /> },
     ],
   },
 ]);

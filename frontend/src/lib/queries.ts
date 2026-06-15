@@ -26,6 +26,45 @@ export function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+export function formatDateTime(iso: string | null): string {
+  if (!iso) return "";
+  return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+}
+
+export function useLeadNotes(id: string) {
+  return useQuery({ queryKey: ["lead-notes", id], queryFn: () => api.leadNotes(id), staleTime: 15_000 });
+}
+export function useAddNote(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: string) => api.addNote(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["lead-notes", id] }),
+  });
+}
+export function usePatchSourceData(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Parameters<typeof api.patchSourceData>[1]) => api.patchSourceData(id, patch),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["lead-matches", id] });
+    },
+  });
+}
+
+export function useUsers() {
+  return useQuery({ queryKey: ["users"], queryFn: api.users });
+}
+export function useUserMutations() {
+  const qc = useQueryClient();
+  const inv = () => qc.invalidateQueries({ queryKey: ["users"] });
+  return {
+    create: useMutation({ mutationFn: api.createUser, onSuccess: inv }),
+    update: useMutation({ mutationFn: ({ id, patch }: { id: string; patch: any }) => api.updateUser(id, patch), onSuccess: inv }),
+    remove: useMutation({ mutationFn: api.deleteUser, onSuccess: inv }),
+  };
+}
+
 export function useConfirmLead(id: string) {
   const qc = useQueryClient();
   return useMutation({

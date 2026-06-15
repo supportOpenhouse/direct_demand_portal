@@ -6,11 +6,12 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..core.auth import current_user
+from ..core.auth import assignment_aliases, current_user
 from ..db import neon_engine
-from ..models import Lead, LeadConfirmedData
+from ..models import Lead, LeadConfirmedData, LeadNote
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead
+from ..services.societies import search_localities, search_societies
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
@@ -52,17 +53,25 @@ def _lead_row(r) -> dict:
 
 
 @router.get("/leads")
-async def list_leads(segment: str = Query("new")):
+async def list_leads(segment: str = Query("new"), user: dict = Depends(current_user)):
     engine = neon_engine()
     if engine is None:
         return {"status": "not_configured", "detail": "Set DATABASE_URL", "items": [], "sync": None}
     predicate = SEGMENTS.get(segment)
     if predicate is None:
         raise HTTPException(status_code=400, detail=f"unknown segment '{segment}'")
+    # role-scoping: an RM sees only leads assigned to them (Admin/CM see all)
+    params: dict = {}
+    if user.get("role") == "rm":
+        aliases = assignment_aliases(user)
+        if not aliases:
+            return {"status": "ok", "detail": None, "items": [], "sync": await read_leads_state()}
+        predicate += " AND lower(assigned_to) = ANY(:aliases)"
+        params["aliases"] = aliases
     try:
         async with engine.connect() as conn:
             res = await conn.execute(
-                text(f"SELECT * FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC")
+                text(f"SELECT * FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC"), params
             )
             items = [_lead_row(m) for m in res.mappings()]
     except Exception as e:  # table missing / conn error
@@ -194,3 +203,101 @@ async def sync_leads():
     if result["status"] == "error":
         raise HTTPException(status_code=502, detail=result.get("detail"))
     return result
+
+
+# --- editable source-captured card ------------------------------------------
+
+class SourceDataPatch(BaseModel):
+    city: str | None = None
+    society: str | None = None
+    configuration: str | None = None
+    budget_band: str | None = None
+    plan_to_buy: str | None = None
+    source_remarks: str | None = None
+
+
+@router.patch("/leads/{lead_id}/source-data")
+async def patch_source_data(lead_id: UUID, payload: SourceDataPatch):
+    sets, params = [], {"id": lead_id}
+    for field in ("city", "society", "configuration", "budget_band", "plan_to_buy", "source_remarks"):
+        val = getattr(payload, field)
+        if val is not None:
+            sets.append(f"{field} = :{field}")
+            params[field] = val or None
+    if not sets:
+        return {"status": "noop"}
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        res = await conn.execute(text(f"UPDATE leads SET {', '.join(sets)} WHERE id = :id"), params)
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="lead not found")
+    return {"status": "ok"}
+
+
+# --- remarks thread ----------------------------------------------------------
+
+@router.get("/leads/{lead_id}/notes")
+async def list_notes(lead_id: UUID):
+    """Seed messages from the sheet's Remarks / Remarks 2 + appended notes, oldest first."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.connect() as conn:
+        lead = (await conn.execute(
+            text("SELECT source_remarks, received_at, source FROM leads WHERE id = :id"), {"id": lead_id}
+        )).mappings().first()
+        if lead is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        notes = (await conn.execute(
+            text("SELECT id, body, author, source, created_at FROM lead_notes WHERE lead_id = :id ORDER BY created_at"),
+            {"id": lead_id},
+        )).mappings().all()
+
+    thread = []
+    if lead["source_remarks"]:
+        for part in [p.strip() for p in lead["source_remarks"].split(" | ") if p.strip()]:
+            thread.append({
+                "id": None, "body": part, "author": f"From {lead['source']}", "source": "remarks",
+                "created_at": lead["received_at"].isoformat() if lead["received_at"] else None,
+            })
+    for n in notes:
+        thread.append({
+            "id": str(n["id"]), "body": n["body"], "author": n["author"], "source": n["source"],
+            "created_at": n["created_at"].isoformat() if n["created_at"] else None,
+        })
+    return {"items": thread}
+
+
+class NoteCreate(BaseModel):
+    body: str
+
+
+@router.post("/leads/{lead_id}/notes")
+async def add_note(lead_id: UUID, payload: NoteCreate, user: dict = Depends(current_user)):
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(status_code=422, detail="empty note")
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    author = user.get("name") or user.get("email") or "You"
+    async with engine.begin() as conn:
+        exists = (await conn.execute(text("SELECT 1 FROM leads WHERE id = :id"), {"id": lead_id})).first()
+        if exists is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        await conn.execute(pg_insert(LeadNote).values(lead_id=lead_id, body=body, author=author, source="note"))
+    return {"status": "ok"}
+
+
+# --- master_societies autocomplete -------------------------------------------
+
+@router.get("/societies/search")
+async def societies_search(q: str = Query("", min_length=0)):
+    return {"items": await search_societies(q)}
+
+
+@router.get("/localities/search")
+async def localities_search(q: str = Query("", min_length=0)):
+    return {"items": await search_localities(q)}

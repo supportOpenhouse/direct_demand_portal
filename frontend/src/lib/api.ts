@@ -181,4 +181,44 @@ export const api = {
   authGoogle: (credential: string) =>
     request<{ token: string; user: AuthUser }>("/v1/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   me: () => request<AuthUser>("/v1/me"),
+  // source-captured edit + notes thread + autocomplete
+  patchSourceData: (id: string, patch: Partial<Record<"city" | "society" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks", string>>) =>
+    request<{ status: string }>(`/v1/leads/${id}/source-data`, { method: "PATCH", body: JSON.stringify(patch) }),
+  leadNotes: (id: string) => request<{ items: LeadNote[] }>(`/v1/leads/${id}/notes`),
+  addNote: (id: string, body: string) =>
+    request<{ status: string }>(`/v1/leads/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
+  searchSocieties: (q: string) => request<{ items: SocietyHit[] }>(`/v1/societies/search?q=${encodeURIComponent(q)}`),
+  searchLocalities: (q: string) => request<{ items: string[] }>(`/v1/localities/search?q=${encodeURIComponent(q)}`),
+  // users (admin)
+  users: () => request<{ items: ManagedUser[] }>("/v1/users"),
+  createUser: (u: { email: string; name: string; role: string; assignment_name?: string | null }) =>
+    request<{ id: string; status: string }>("/v1/users", { method: "POST", body: JSON.stringify(u) }),
+  updateUser: (id: string, patch: Partial<{ name: string; role: string; assignment_name: string; active: boolean }>) =>
+    request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
 };
+
+export interface LeadNote {
+  id: string | null;
+  body: string;
+  author: string | null;
+  source: "remarks" | "note";
+  created_at: string | null;
+}
+export interface SocietyHit {
+  society: string;
+  locality: string | null;
+  city: string | null;
+  micro_market: string | null;
+}
+export interface ManagedUser {
+  id: string;
+  email: string;
+  name: string | null;
+  picture: string | null;
+  role: string;
+  assignment_name: string | null;
+  active: boolean;
+  last_login_at: string | null;
+  matched_leads: number;
+}

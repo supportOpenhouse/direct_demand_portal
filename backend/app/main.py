@@ -9,7 +9,7 @@ from .config import get_settings
 from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
-from .routers import auth, health, inventory, leads, supply
+from .routers import auth, health, inventory, leads, supply, users
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -56,3 +56,4 @@ app.include_router(auth.router, prefix="/v1")
 app.include_router(inventory.router, prefix="/v1")
 app.include_router(supply.router, prefix="/v1")
 app.include_router(leads.router, prefix="/v1")
+app.include_router(users.router, prefix="/v1")

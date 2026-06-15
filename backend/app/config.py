@@ -54,6 +54,13 @@ class Settings(BaseSettings):
     JWT_EXPIRY_HOURS: int = 12
     # restrict logins to this email domain ("" = any Google account)
     ALLOWED_EMAIL_DOMAIN: str = "openhouse.in"
+    # bootstrap admins — allowed to sign in even before being added, provisioned as
+    # admin. Everyone else must be added via Settings first. Comma-separated.
+    INITIAL_ADMIN_EMAILS: str = "support@openhouse.in"
+
+    @property
+    def initial_admins(self) -> set[str]:
+        return {e.strip().lower() for e in self.INITIAL_ADMIN_EMAILS.split(",") if e.strip()}
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (

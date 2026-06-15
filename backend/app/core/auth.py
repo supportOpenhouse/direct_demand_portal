@@ -48,6 +48,7 @@ def issue_jwt(user: dict) -> str:
     payload = {
         "sub": str(user["id"]), "email": user["email"], "role": user["role"],
         "name": user.get("name"), "picture": user.get("picture"),
+        "assignment_name": user.get("assignment_name"),
         "iat": now, "exp": now + timedelta(hours=settings.JWT_EXPIRY_HOURS),
     }
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
@@ -66,4 +67,22 @@ async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bea
     return {
         "id": payload["sub"], "email": payload["email"], "role": payload.get("role", "rm"),
         "name": payload.get("name"), "picture": payload.get("picture"),
+        "assignment_name": payload.get("assignment_name"),
     }
+
+
+async def require_admin(user: dict = Depends(current_user)) -> dict:
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="admin only")
+    return user
+
+
+def assignment_aliases(user: dict) -> list[str]:
+    """Names this user is known by in the sheet's 'Assigned to' column — used to
+    map leads to the user. Tries assignment_name, full name, and first name."""
+    out = set()
+    for v in (user.get("assignment_name"), user.get("name")):
+        if v and v.strip():
+            out.add(v.strip().lower())
+            out.add(v.strip().split()[0].lower())  # first name
+    return [a for a in out if a]

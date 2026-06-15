@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./api";
+import { api, ConfirmPayload } from "./api";
 
 export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
@@ -7,6 +7,25 @@ export function useInventory() {
 
 export function useSupply() {
   return useQuery({ queryKey: ["supply"], queryFn: api.supply, staleTime: 60_000 });
+}
+
+export function useLeads(segment: string) {
+  return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });
+}
+
+export function useLead(id: string) {
+  return useQuery({ queryKey: ["lead", id], queryFn: () => api.lead(id), staleTime: 30_000 });
+}
+
+export function useConfirmLead(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: ConfirmPayload) => api.confirmLead(id, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
 }
 
 export function useSyncInventory() {

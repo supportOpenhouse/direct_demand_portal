@@ -24,3 +24,4 @@ service-account*.json
 
 # Spartan AI config (contains API keys)
 .spartan/ai.env
+graphify-out

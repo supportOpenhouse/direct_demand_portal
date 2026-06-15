@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import get_settings
 from .db import dispose_engines, neon_engine
 from .models import Base
-from .routers import health, inventory, supply
+from .routers import health, inventory, leads, supply
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -28,11 +28,13 @@ async def lifespan(app: FastAPI):
     else:
         log.warning("DATABASE_URL not set — inventory cache disabled")
 
-    # initial sheet sync: fire-and-forget so boot never blocks on Google
+    # initial syncs: fire-and-forget so boot never blocks on Google
     from .services.inventory_sync import run_sync
+    from .services.leads_sync import run_leads_sync
 
     asyncio.create_task(run_sync(trigger="startup"))
-    start_scheduler(settings.SYNC_INTERVAL_MINUTES)
+    asyncio.create_task(run_leads_sync(trigger="startup"))
+    start_scheduler(settings.SYNC_INTERVAL_MINUTES, settings.LEADS_SYNC_INTERVAL_HOURS)
     yield
     stop_scheduler()
     await dispose_engines()
@@ -50,3 +52,4 @@ app.add_middleware(
 app.include_router(health.router, prefix="/v1")
 app.include_router(inventory.router, prefix="/v1")
 app.include_router(supply.router, prefix="/v1")
+app.include_router(leads.router, prefix="/v1")

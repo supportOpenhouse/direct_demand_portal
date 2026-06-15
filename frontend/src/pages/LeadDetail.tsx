@@ -1,0 +1,274 @@
+/* Lead Detail — source-captured data + the Q1-Q6 call-confirm form (saves to
+   POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
+import { useEffect, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { useLead, useConfirmLead } from "../lib/queries";
+import { srcClass, srcLabel, initials } from "../lib/leads";
+import { useToast } from "../components/Toast";
+
+const PURPOSES = ["Self-use", "Investment"];
+const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
+const OFFICE = ["Yes", "No", "Maybe"];
+
+function ChipsInput({ value, onChange, placeholder }: { value: string[]; onChange: (v: string[]) => void; placeholder: string }) {
+  const [text, setText] = useState("");
+  const add = () => {
+    const t = text.trim();
+    if (t && !value.includes(t)) onChange([...value, t]);
+    setText("");
+  };
+  return (
+    <div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: value.length ? 8 : 0 }}>
+        {value.map((v) => (
+          <span key={v} className="bucket-tag" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+            {v}
+            <span style={{ cursor: "pointer" }} onClick={() => onChange(value.filter((x) => x !== v))}>✕</span>
+          </span>
+        ))}
+      </div>
+      <input
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            add();
+          }
+        }}
+        onBlur={add}
+      />
+    </div>
+  );
+}
+
+const OFFICE_PITCH_EN = [
+  "First, we'll help you understand the market.",
+  "We'll give an overview of the city in half an hour.",
+  "We'll show on a map how long it takes to travel to different locations.",
+  "Areas & options available for you within your budget.",
+  "This gives you clarity — then we visit properties.",
+  "Advantages / disadvantages if you change your location.",
+  "Far better than roaming different properties & wasting 1–2 months on the ground.",
+];
+const OFFICE_PITCH_HI = [
+  "Sabse pehle hum aapko market samjhayenge.",
+  "Sheher ka pura overview aadhe ghante mein de denge.",
+  "Map pe dikhayenge ki alag-alag locations tak pahunchne mein kitna time lagega.",
+  "Aapke budget mein kaunse areas aur options available hain.",
+  "Isse aapko clarity milegi — phir properties visit karenge.",
+  "Agar aap location change karte hain to uske fayde/nuksan kya honge.",
+  "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
+];
+
+export default function LeadDetail() {
+  const { id = "" } = useParams();
+  const nav = useNavigate();
+  const toast = useToast();
+  const { data: lead, isLoading } = useLead(id);
+  const confirm = useConfirmLead(id);
+
+  const [purpose, setPurpose] = useState("");
+  const [budget, setBudget] = useState("");
+  const [config, setConfig] = useState("");
+  const [societies, setSocieties] = useState<string[]>([]);
+  const [localities, setLocalities] = useState<string[]>([]);
+  const [office, setOffice] = useState("");
+  const [officeDate, setOfficeDate] = useState("");
+  const [remark, setRemark] = useState("");
+  const [showErr, setShowErr] = useState(false);
+
+  // prefill from existing confirmed data + source-captured society
+  useEffect(() => {
+    if (!lead) return;
+    const c = lead.confirmed_data;
+    setPurpose(c?.purpose || "");
+    setBudget(c?.budget_value_lacs != null ? String(c.budget_value_lacs) : "");
+    setConfig(c?.configuration || lead.configuration || "");
+    setSocieties(c?.shortlisted_societies?.length ? c.shortlisted_societies : lead.society ? [lead.society] : []);
+    setLocalities(c?.preferred_localities || []);
+    setOffice(c?.office_willing || "");
+    setOfficeDate(c?.office_preferred_date || "");
+    setRemark(c?.remark || "");
+  }, [lead]);
+
+  if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
+  if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
+
+  const budgetNum = parseFloat(budget);
+  const invalid = { purpose: !purpose, budget: !(budgetNum > 0), config: !config, office: !office };
+  const anyInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
+
+  const save = () => {
+    if (anyInvalid) {
+      setShowErr(true);
+      toast("Please fill the required (*) fields", "gold", "⚠");
+      return;
+    }
+    confirm.mutate(
+      {
+        purpose,
+        budget_value_lacs: budgetNum,
+        configuration: config,
+        shortlisted_societies: societies,
+        preferred_localities: localities,
+        office_willing: office,
+        office_preferred_date: office === "Yes" || office === "Maybe" ? officeDate || null : null,
+        remark: remark || null,
+      },
+      {
+        onSuccess: () => toast("Lead confirmed & qualified", "green", "✓"),
+        onError: (e) => toast(e.message, "gold", "⚠"),
+      }
+    );
+  };
+
+  const field = (bad: boolean) => "field" + (showErr && bad ? " invalid" : "");
+
+  return (
+    <>
+      <div className="back" onClick={() => nav(-1)}>← Back</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
+        <div className="lead-head">
+          <div className="av">{initials(lead.name)}</div>
+          <div>
+            <h2>{lead.name}{lead.is_test && <span className="bucket-tag" style={{ marginLeft: 8, verticalAlign: "middle" }}>TEST</span>}</h2>
+            <div className="meta">
+              {lead.phone} &nbsp;·&nbsp;{" "}
+              <span className={`src ${srcClass(lead.source)}`} style={{ verticalAlign: "middle" }}>{srcLabel(lead.source)}</span>
+              {lead.assigned_to && <> &nbsp;·&nbsp; {lead.assigned_to}</>}
+              {lead.confirmed && <> &nbsp;·&nbsp; <span className="stage contacted">Qualified</span></>}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="detail-grid">
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* SOURCE-CAPTURED */}
+          <div className="card panel-pad meta-card">
+            <div className="panel-title" style={{ justifyContent: "space-between" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                Lead data captured from {srcLabel(lead.source)}
+              </span>
+              <span className="lock-badge">🔒 From source</span>
+            </div>
+            <div className="two">
+              <div className="field"><label>Budget</label><input value={lead.budget_band || "—"} disabled /></div>
+              <div className="field"><label>City</label><input value={lead.city || "—"} disabled /></div>
+            </div>
+            <div className="two">
+              <div className="field"><label>Society of interest</label><input value={lead.society || "—"} disabled /></div>
+              <div className="field"><label>Plan to Buy</label><input value={lead.plan_to_buy || "—"} disabled /></div>
+            </div>
+            {lead.preferred_visit_day && (
+              <div className="field"><label>Preferred visit day (from ad)</label><input value={lead.preferred_visit_day} disabled /></div>
+            )}
+            {lead.source_remarks && (
+              <div className="field" style={{ marginBottom: 0 }}><label>Source remarks</label><input value={lead.source_remarks} disabled /></div>
+            )}
+          </div>
+
+          {/* CONFIRMED Q1-Q6 */}
+          <div className="card panel-pad">
+            <div className="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
+              </svg>{" "}
+              Lead data confirmed on call
+            </div>
+
+            <div className={field(invalid.purpose)}>
+              <label>Q1. Purpose of buying property <span className="req">*</span></label>
+              <select value={purpose} onChange={(e) => setPurpose(e.target.value)}>
+                <option value="">Select…</option>
+                {PURPOSES.map((p) => <option key={p}>{p}</option>)}
+              </select>
+            </div>
+
+            <div className="two">
+              <div className={field(invalid.budget)}>
+                <label>Q2. Budget <span className="req">*</span></label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontWeight: 600 }}>₹</span>
+                  <input type="number" min="0" placeholder="e.g. 85" value={budget} onChange={(e) => setBudget(e.target.value)} style={{ paddingLeft: 24 }} />
+                </div>
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--emerald)", marginTop: 5 }}>
+                  {budgetNum > 0 ? `= ₹${budgetNum} lacs` : "in lacs"}
+                </div>
+              </div>
+              <div className={field(invalid.config)}>
+                <label>Q3. Configuration <span className="req">*</span></label>
+                <select value={config} onChange={(e) => setConfig(e.target.value)}>
+                  <option value="">Select…</option>
+                  {CONFIGS.map((c) => <option key={c}>{c}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="field">
+              <label>Q4. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— type & Enter to add</span></label>
+              <ChipsInput value={societies} onChange={setSocieties} placeholder="e.g. Pivotal Devaan, Sec 84" />
+            </div>
+
+            <div className="field">
+              <label>Q5. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— type & Enter to add</span></label>
+              <ChipsInput value={localities} onChange={setLocalities} placeholder="e.g. Dwarka Expressway" />
+            </div>
+
+            <div className={field(invalid.office)}>
+              <label>Q6. Willing to come to office? <span className="req">*</span></label>
+              <select value={office} onChange={(e) => setOffice(e.target.value)}>
+                <option value="">Select…</option>
+                {OFFICE.map((o) => <option key={o}>{o}</option>)}
+              </select>
+            </div>
+
+            {(office === "Yes" || office === "Maybe") && (
+              <div className="field">
+                <label>Preferred date</label>
+                <input type="date" value={officeDate} onChange={(e) => setOfficeDate(e.target.value)} />
+              </div>
+            )}
+
+            {(office === "No" || office === "Maybe") && (
+              <div className="office-pitch">
+                <div className="op-head">💬 Pitch the office visit — why it helps</div>
+                <ul className="op-list">{OFFICE_PITCH_EN.map((x, i) => <li key={i}>{x}</li>)}</ul>
+                <div className="op-sub">Hinglish</div>
+                <ul className="op-list hi">{OFFICE_PITCH_HI.map((x, i) => <li key={i}>{x}</li>)}</ul>
+              </div>
+            )}
+
+            <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
+              <label>Remark</label>
+              <textarea rows={2} value={remark} placeholder="Anything notable from the call" onChange={(e) => setRemark(e.target.value)} />
+            </div>
+
+            {showErr && anyInvalid && <div className="mand-flag show">⚠ Please fill all starred (*) fields to confirm the lead.</div>}
+            <div style={{ marginTop: 12 }}>
+              <button className="btn green" onClick={save} disabled={confirm.isPending}>
+                {confirm.isPending ? "Saving…" : lead.confirmed ? "Update confirmed data" : "Confirm & qualify lead"}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT column — matched inventory / supply / recordings come in a later phase */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <div className="card panel-pad">
+            <div className="panel-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /></svg>{" "}
+              Matched inventory
+            </div>
+            <div className="empty" style={{ padding: 18 }}>
+              <div>Matching engine arrives in a later phase</div>
+              <div style={{ fontSize: 12 }}>Once confirmed, this lead's budget &amp; config will rank live inventory here.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}

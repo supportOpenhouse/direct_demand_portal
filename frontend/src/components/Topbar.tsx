@@ -22,9 +22,13 @@ export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
   const { query, setQuery } = useSearch();
+  const title =
+    TITLES[pathname] ||
+    (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details" : "Dashboard");
+
   return (
     <div className="topbar">
-      <h1 id="page-title">{TITLES[pathname] || "Dashboard"}</h1>
+      <h1 id="page-title">{title}</h1>
       <div className="search">
         <IconSearch />
         <input

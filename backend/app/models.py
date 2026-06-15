@@ -1,7 +1,19 @@
 """Neon tables. Mapped columns are a projection of `raw` — the full sheet row
 always lands in `raw` JSONB, so sheet column changes never break the sync."""
-from sqlalchemy import BigInteger, Integer, Numeric, Text, TIMESTAMP, func
-from sqlalchemy.dialects.postgresql import JSONB
+import uuid
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    ForeignKey,
+    Integer,
+    Numeric,
+    Text,
+    TIMESTAMP,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -38,3 +50,119 @@ class SyncState(Base):
     last_status: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text)
     row_count: Mapped[int | None] = mapped_column(Integer)
+
+
+# ============================================================
+# LEADS — two raw ingest tables (insert-only, one per source category) feeding a
+# unified `leads` spine. The 4-hourly cron only ever INSERTs new rows here; it
+# never updates or deletes. `dedupe_key` (normalized phone) is UNIQUE so re-runs
+# skip leads already ingested.
+# ============================================================
+
+
+class MetaLead(Base):
+    """Raw rows from the 'Meta Affordable_New' sheet (source = Meta)."""
+
+    __tablename__ = "meta_leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dedupe_key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    full_name: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    budget_range: Mapped[str | None] = mapped_column(Text)
+    plan_to_buy: Mapped[str | None] = mapped_column(Text)
+    preferred_visit_day: Mapped[str | None] = mapped_column(Text)
+    is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    ingested_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class ListingLead(Base):
+    """Raw rows from the 'Listing Leads_New' sheet (source = 99acres | MagicBricks)."""
+
+    __tablename__ = "listing_leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dedupe_key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(Text)  # '99acres' | 'magicbricks'
+    city: Mapped[str | None] = mapped_column(Text)
+    property: Mapped[str | None] = mapped_column(Text)  # society of interest from portal
+    lead_type: Mapped[str | None] = mapped_column(Text)  # Individual | Dealer
+    phone_verification_status: Mapped[str | None] = mapped_column(Text)
+    assigned_to: Mapped[str | None] = mapped_column(Text)
+    lead_date: Mapped[str | None] = mapped_column(Text)
+    remarks: Mapped[str | None] = mapped_column(Text)
+    is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    ingested_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Lead(Base):
+    """Unified lifecycle spine — one row per ingested lead, normalized across
+    sources. New Leads / segments read this. Source-captured fields are filled at
+    ingest; confirmed (Q1-Q6) fields live in lead_confirmed_data."""
+
+    __tablename__ = "leads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # origin_key = "<category>:<dedupe_key>" — UNIQUE so the cron never double-creates a spine row
+    origin_key: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    source_category: Mapped[str] = mapped_column(Text, nullable=False)  # 'meta' | 'listing'
+    source: Mapped[str] = mapped_column(Text, nullable=False)  # 'meta' | '99acres' | 'magicbricks'
+
+    name: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    email: Mapped[str | None] = mapped_column(Text)
+    assigned_to: Mapped[str | None] = mapped_column(Text)
+
+    # source-captured (what the ad form / portal gave us — locked, admin-editable later)
+    city: Mapped[str | None] = mapped_column(Text)
+    society: Mapped[str | None] = mapped_column(Text)
+    configuration: Mapped[str | None] = mapped_column(Text)
+    budget_band: Mapped[str | None] = mapped_column(Text)
+    plan_to_buy: Mapped[str | None] = mapped_column(Text)
+    preferred_visit_day: Mapped[str | None] = mapped_column(Text)
+    source_remarks: Mapped[str | None] = mapped_column(Text)
+    source_meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+
+    # lifecycle
+    stage: Mapped[str] = mapped_column(Text, nullable=False, server_default="new")
+    tat_deadline: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    qualified_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True), onupdate=func.now())
+
+
+class LeadConfirmedData(Base):
+    """The Q1-Q6 call-confirmed form (1:1 with leads). Written only by the
+    confirm endpoint — a user action, never the cron."""
+
+    __tablename__ = "lead_confirmed_data"
+
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), primary_key=True
+    )
+    purpose: Mapped[str | None] = mapped_column(Text)  # Q1: Self-use | Investment
+    budget_value_lacs: Mapped[float | None] = mapped_column(Numeric)  # Q2
+    configuration: Mapped[str | None] = mapped_column(Text)  # Q3
+    shortlisted_societies: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # Q4
+    preferred_localities: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # Q5
+    office_willing: Mapped[str | None] = mapped_column(Text)  # Q6: Yes | No | Maybe
+    office_preferred_date: Mapped[str | None] = mapped_column(Date)
+    remark: Mapped[str | None] = mapped_column(Text)
+    confirmed_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )

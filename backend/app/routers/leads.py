@@ -1,0 +1,174 @@
+from datetime import date
+from uuid import UUID
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from ..db import neon_engine
+from ..models import Lead, LeadConfirmedData
+from ..services.leads_sync import read_leads_state, run_leads_sync
+
+router = APIRouter(tags=["leads"])
+
+# segment → SQL predicate on the leads spine
+SEGMENTS = {
+    "new": "stage = 'new'",
+    "qualified": "confirmed = true AND stage NOT IN ('won','lost','future_prospect','timepass') "
+                 "AND qualified_at IS NOT NULL AND now() - qualified_at < interval '7 days'",
+    "pipeline": "confirmed = true AND stage NOT IN ('won','lost','future_prospect','timepass') "
+                "AND qualified_at IS NOT NULL AND now() - qualified_at >= interval '7 days'",
+    "converted": "stage = 'won'",
+}
+
+
+def _lead_row(r) -> dict:
+    return {
+        "id": str(r["id"]),
+        "source_category": r["source_category"],
+        "source": r["source"],
+        "name": r["name"],
+        "phone": r["phone"],
+        "email": r["email"],
+        "assigned_to": r["assigned_to"],
+        "city": r["city"],
+        "society": r["society"],
+        "configuration": r["configuration"],
+        "budget_band": r["budget_band"],
+        "plan_to_buy": r["plan_to_buy"],
+        "preferred_visit_day": r["preferred_visit_day"],
+        "source_remarks": r["source_remarks"],
+        "source_meta": r["source_meta"],
+        "stage": r["stage"],
+        "tat_deadline": r["tat_deadline"].isoformat() if r["tat_deadline"] else None,
+        "confirmed": r["confirmed"],
+        "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
+        "is_test": r["is_test"],
+    }
+
+
+@router.get("/leads")
+async def list_leads(segment: str = Query("new")):
+    engine = neon_engine()
+    if engine is None:
+        return {"status": "not_configured", "detail": "Set DATABASE_URL", "items": [], "sync": None}
+    predicate = SEGMENTS.get(segment)
+    if predicate is None:
+        raise HTTPException(status_code=400, detail=f"unknown segment '{segment}'")
+    try:
+        async with engine.connect() as conn:
+            res = await conn.execute(
+                text(f"SELECT * FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC")
+            )
+            items = [_lead_row(m) for m in res.mappings()]
+    except Exception as e:  # table missing / conn error
+        return {"status": "error", "detail": str(e), "items": [], "sync": None}
+    return {"status": "ok", "detail": None, "items": items, "sync": await read_leads_state()}
+
+
+@router.get("/leads/{lead_id}")
+async def get_lead(lead_id: UUID):
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.connect() as conn:
+        res = await conn.execute(text("SELECT * FROM leads WHERE id = :id"), {"id": lead_id})
+        row = res.mappings().first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        lead = _lead_row(row)
+        cres = await conn.execute(
+            text("SELECT * FROM lead_confirmed_data WHERE lead_id = :id"), {"id": lead_id}
+        )
+        c = cres.mappings().first()
+    lead["confirmed_data"] = (
+        {
+            "purpose": c["purpose"],
+            "budget_value_lacs": float(c["budget_value_lacs"]) if c["budget_value_lacs"] is not None else None,
+            "configuration": c["configuration"],
+            "shortlisted_societies": c["shortlisted_societies"],
+            "preferred_localities": c["preferred_localities"],
+            "office_willing": c["office_willing"],
+            "office_preferred_date": c["office_preferred_date"].isoformat() if c["office_preferred_date"] else None,
+            "remark": c["remark"],
+            "confirmed_at": c["confirmed_at"].isoformat() if c["confirmed_at"] else None,
+        }
+        if c
+        else None
+    )
+    return lead
+
+
+class ConfirmPayload(BaseModel):
+    purpose: str
+    budget_value_lacs: float
+    configuration: str
+    shortlisted_societies: list[str] = []
+    preferred_localities: list[str] = []
+    office_willing: str
+    office_preferred_date: str | None = None
+    remark: str | None = None
+
+
+@router.post("/leads/{lead_id}/confirm")
+async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
+    """Save the Q1-Q6 call form and qualify the lead (new → contacted)."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    # mandatory fields (HANDOVER §6.6): Q1 purpose, Q2 budget, Q3 config, Q6 office-willing
+    missing = [
+        f for f, v in [("purpose", payload.purpose), ("budget_value_lacs", payload.budget_value_lacs),
+                       ("configuration", payload.configuration), ("office_willing", payload.office_willing)]
+        if v in (None, "", 0)
+    ]
+    if missing:
+        raise HTTPException(status_code=422, detail={"fields": missing})
+    office_date: date | None = None
+    if payload.office_preferred_date:
+        try:
+            office_date = date.fromisoformat(payload.office_preferred_date)
+        except ValueError:
+            raise HTTPException(status_code=422, detail={"fields": ["office_preferred_date"]})
+    async with engine.begin() as conn:
+        exists = await conn.execute(text("SELECT stage FROM leads WHERE id = :id"), {"id": lead_id})
+        cur = exists.first()
+        if cur is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        stmt = pg_insert(LeadConfirmedData).values(
+            lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=payload.budget_value_lacs,
+            configuration=payload.configuration, shortlisted_societies=payload.shortlisted_societies,
+            preferred_localities=payload.preferred_localities, office_willing=payload.office_willing,
+            office_preferred_date=office_date, remark=payload.remark,
+        ).on_conflict_do_update(
+            index_elements=[LeadConfirmedData.lead_id],
+            set_={
+                "purpose": payload.purpose, "budget_value_lacs": payload.budget_value_lacs,
+                "configuration": payload.configuration, "shortlisted_societies": payload.shortlisted_societies,
+                "preferred_localities": payload.preferred_localities, "office_willing": payload.office_willing,
+                "office_preferred_date": office_date, "remark": payload.remark,
+            },
+        )
+        await conn.execute(stmt)
+        # qualify: new → contacted, start the 7-day clock (only on first confirm)
+        await conn.execute(
+            text(
+                "UPDATE leads SET confirmed = true, "
+                "stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END, "
+                "tat_deadline = NULL, "
+                "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
+            ),
+            {"id": lead_id},
+        )
+    return {"status": "ok"}
+
+
+@router.post("/leads/sync")
+async def sync_leads():
+    result = await run_leads_sync(trigger="manual")
+    if result["status"] == "not_configured":
+        raise HTTPException(status_code=503, detail=result.get("detail"))
+    if result["status"] == "error":
+        raise HTTPException(status_code=502, detail=result.get("detail"))
+    return result

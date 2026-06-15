@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15
     CORS_ORIGINS: str = "http://localhost:5173"
+    # Leads source spreadsheet (separate from the inventory sheet). Two worksheets:
+    # listing portals (99acres/MagicBricks) and Meta. Synced insert-only every 4h.
+    LEADS_SHEET_ID: str = "18FTnKh2bwwmMNXZNnxPZsep_ZcDthSFOnCC8zfbQViU"
+    LEADS_LISTING_WORKSHEET: str = "Listing Leads_New"
+    LEADS_META_WORKSHEET: str = "Meta Affordable_New"
+    LEADS_SYNC_INTERVAL_HOURS: int = 4
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (
@@ -66,6 +72,10 @@ class Settings(BaseSettings):
     @property
     def sheets_configured(self) -> bool:
         return bool(self.SHEET_ID) and bool(self.service_account_info)
+
+    @property
+    def leads_sheet_configured(self) -> bool:
+        return bool(self.LEADS_SHEET_ID) and bool(self.service_account_info)
 
     @property
     def service_account_info(self) -> dict | None:

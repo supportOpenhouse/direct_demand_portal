@@ -13,6 +13,10 @@ export function useLeads(segment: string) {
   return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });
 }
 
+export function useDashboard() {
+  return useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard, staleTime: 60_000 });
+}
+
 export function useLead(id: string) {
   return useQuery({ queryKey: ["lead", id], queryFn: () => api.lead(id), staleTime: 30_000 });
 }

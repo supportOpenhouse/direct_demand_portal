@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import Inventory from "./pages/Inventory";
 import Supply from "./pages/Supply";
+import Dashboard from "./pages/Dashboard";
 import NewLeads from "./pages/NewLeads";
 import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
@@ -20,7 +21,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <Stub title="Dashboard" /> },
+      { index: true, element: <Dashboard /> },
       { path: "leads/new", element: <NewLeads /> },
       { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
       { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },

@@ -80,6 +80,18 @@ export interface AuthUser {
   role: string;
 }
 
+export interface DashboardMetrics {
+  status: string;
+  totals: { new: number; qualified: number; pipeline: number; converted: number; immediate: number; unassigned: number; confirmed_total: number; total: number };
+  conversion_rate: number;
+  by_source: { source: string; c: number }[];
+  by_city: { city: string; c: number }[];
+  by_stage: { stage: string; c: number }[];
+  by_assignee: { name: string; c: number }[];
+  by_day: { day: string; c: number }[];
+  recent: { id: string; name: string | null; source: string; city: string | null; society: string | null; stage: string; assigned_to: string | null; received_at: string | null }[];
+}
+
 export interface Lead {
   id: string;
   source_category: "meta" | "listing";
@@ -192,6 +204,7 @@ export const api = {
   authGoogle: (credential: string) =>
     request<{ token: string; user: AuthUser }>("/v1/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   me: () => request<AuthUser>("/v1/me"),
+  dashboard: () => request<DashboardMetrics>("/v1/metrics/dashboard"),
   // source-captured edit + notes thread + autocomplete
   patchSourceData: (id: string, patch: Partial<Record<"city" | "society" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks", string>>) =>
     request<{ status: string }>(`/v1/leads/${id}/source-data`, { method: "PATCH", body: JSON.stringify(patch) }),

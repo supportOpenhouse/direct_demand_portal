@@ -144,15 +144,21 @@ export interface MatchPreviewReq {
   city?: string | null;
   societies?: string[];
   localities?: string[];
+  micromarkets?: string[];
   configuration?: string | null;
-  budget_value_lacs?: number | null;
+  size_sqft?: number | null;
+  budget_min_lacs?: number | null;
+  budget_max_lacs?: number | null;
   budget_band?: string | null;
 }
 
 export interface ConfirmedData {
   purpose: string | null;
-  budget_value_lacs: number | null;
+  budget_min_lacs: number | null;
+  budget_max_lacs: number | null;
   configuration: string | null;
+  size_sqft: number | null;
+  preferred_micromarkets: string[];
   shortlisted_societies: string[];
   preferred_localities: string[];
   office_willing: string | null;
@@ -178,8 +184,11 @@ interface SyncMeta {
 
 export interface ConfirmPayload {
   purpose: string;
-  budget_value_lacs: number;
+  budget_min_lacs: number;
+  budget_max_lacs: number;
   configuration: string;
+  size_sqft: number | null;
+  preferred_micromarkets: string[];
   shortlisted_societies: string[];
   preferred_localities: string[];
   office_willing: string;
@@ -213,6 +222,9 @@ export const api = {
     request<{ status: string }>(`/v1/leads/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
   searchSocieties: (q: string) => request<{ items: SocietyHit[] }>(`/v1/societies/search?q=${encodeURIComponent(q)}`),
   searchLocalities: (q: string) => request<{ items: string[] }>(`/v1/localities/search?q=${encodeURIComponent(q)}`),
+  searchMicromarkets: (q: string) => request<{ items: { micro_market: string; city: string | null }[] }>(`/v1/micromarkets/search?q=${encodeURIComponent(q)}`),
+  localitiesByMicromarket: (mm: string) => request<{ items: string[] }>(`/v1/localities/by-micromarket?micro_market=${encodeURIComponent(mm)}`),
+  societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),

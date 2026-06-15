@@ -82,3 +82,50 @@ async def search_localities(q: str, limit: int = 12) -> list[str]:
         elif ql in loc.lower():
             contains.append(loc)
     return (starts + contains)[:limit]
+
+
+async def search_micromarkets(q: str, limit: int = 12) -> list[dict]:
+    rows = await _load()
+    ql = q.strip().lower()
+    if not ql:
+        return []
+    seen, starts, contains = set(), [], []
+    for r in rows:
+        mm = (r.get("micro_market") or "").strip()
+        if not mm or mm.lower() in seen:
+            continue
+        seen.add(mm.lower())
+        hit = {"micro_market": mm, "city": r.get("city")}
+        if mm.lower().startswith(ql):
+            starts.append(hit)
+        elif ql in mm.lower():
+            contains.append(hit)
+    return (starts + contains)[:limit]
+
+
+async def localities_in_micromarket(mm: str) -> list[str]:
+    rows = await _load()
+    mml = (mm or "").strip().lower()
+    seen, out = set(), []
+    for r in rows:
+        if (r.get("micro_market") or "").strip().lower() != mml:
+            continue
+        loc = (r.get("locality") or "").strip()
+        if loc and loc.lower() not in seen:
+            seen.add(loc.lower())
+            out.append(loc)
+    return sorted(out)
+
+
+async def societies_in_locality(loc: str) -> list[str]:
+    rows = await _load()
+    ll = (loc or "").strip().lower()
+    seen, out = set(), []
+    for r in rows:
+        if (r.get("locality") or "").strip().lower() != ll:
+            continue
+        s = (r.get("society_name") or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return sorted(out)

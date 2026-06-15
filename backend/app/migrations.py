@@ -15,6 +15,10 @@ _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
     ("users", "assignment_name", "TEXT"),
     ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
+    ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
+    ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
+    ("lead_confirmed_data", "size_sqft", "NUMERIC"),
+    ("lead_confirmed_data", "preferred_micromarkets", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
 ]
 
 

@@ -159,11 +159,15 @@ class LeadConfirmedData(Base):
         UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), primary_key=True
     )
     purpose: Mapped[str | None] = mapped_column(Text)  # Q1: Self-use | Investment
-    budget_value_lacs: Mapped[float | None] = mapped_column(Numeric)  # Q2
+    budget_value_lacs: Mapped[float | None] = mapped_column(Numeric)  # legacy single value
+    budget_min_lacs: Mapped[float | None] = mapped_column(Numeric)  # Q2 range
+    budget_max_lacs: Mapped[float | None] = mapped_column(Numeric)
     configuration: Mapped[str | None] = mapped_column(Text)  # Q3
-    shortlisted_societies: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # Q4
-    preferred_localities: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # Q5
-    office_willing: Mapped[str | None] = mapped_column(Text)  # Q6: Yes | No | Maybe
+    size_sqft: Mapped[float | None] = mapped_column(Numeric)  # Q4 target size
+    preferred_micromarkets: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    shortlisted_societies: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    preferred_localities: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    office_willing: Mapped[str | None] = mapped_column(Text)  # Yes | No | Maybe
     office_preferred_date: Mapped[str | None] = mapped_column(Date)
     remark: Mapped[str | None] = mapped_column(Text)
     confirmed_at: Mapped[str] = mapped_column(

@@ -170,7 +170,6 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
     ["Super area", u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : null],
     ["Ask price", formatPrice(u.price_lacs, u.price_text)],
     isSupply ? ["Stage", u.stage] : ["Status", u.status],
-    ["Matched on", u.matched_on.join(" + ")],
   ];
   const share = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -200,13 +199,6 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
             {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
             <b style={{ color: "var(--ink-2)" }}>{formatPrice(u.price_lacs, u.price_text)}</b>
           </div>
-          {u.matched_on.length > 0 && (
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 5 }}>
-              {u.matched_on.map((r) => (
-                <span key={r} className="match-mini" style={{ background: "var(--emerald-soft)", color: "#06694b" }}>{r}</span>
-              ))}
-            </div>
-          )}
         </div>
         <button className="wa-ico" title="Share on WhatsApp" onClick={share}><WhatsAppIcon /></button>
         <svg className="opt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -214,6 +206,13 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
         </svg>
       </div>
       <div className="opt-detail">
+        {u.matched_on.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
+            {u.matched_on.map((r) => (
+              <span key={r} className="match-mini" style={{ background: "var(--emerald-soft)", color: "#06694b" }}>{r}</span>
+            ))}
+          </div>
+        )}
         <div className="opt-dl">
           {detail.map(([k, v]) => (
             <div key={k} style={{ display: "contents" }}>
@@ -259,8 +258,11 @@ export default function LeadDetail() {
   const confirm = useConfirmLead(id);
 
   const [purpose, setPurpose] = useState("");
-  const [budget, setBudget] = useState("");
+  const [budgetMin, setBudgetMin] = useState("");
+  const [budgetMax, setBudgetMax] = useState("");
   const [config, setConfig] = useState("");
+  const [size, setSize] = useState("");
+  const [micromarkets, setMicromarkets] = useState<string[]>([]);
   const [societies, setSocieties] = useState<string[]>([]);
   const [localities, setLocalities] = useState<string[]>([]);
   const [office, setOffice] = useState("");
@@ -273,8 +275,11 @@ export default function LeadDetail() {
     if (!lead) return;
     const c = lead.confirmed_data;
     setPurpose(c?.purpose || "");
-    setBudget(c?.budget_value_lacs != null ? String(c.budget_value_lacs) : "");
+    setBudgetMin(c?.budget_min_lacs != null ? String(c.budget_min_lacs) : "");
+    setBudgetMax(c?.budget_max_lacs != null ? String(c.budget_max_lacs) : "");
     setConfig(c?.configuration || lead.configuration || "");
+    setSize(c?.size_sqft != null ? String(c.size_sqft) : "");
+    setMicromarkets(c?.preferred_micromarkets || []);
     setSocieties(c?.shortlisted_societies?.length ? c.shortlisted_societies : lead.society ? [lead.society] : []);
     setLocalities(c?.preferred_localities || []);
     setOffice(c?.office_willing || "");
@@ -282,14 +287,37 @@ export default function LeadDetail() {
     setRemark(c?.remark || "");
   }, [lead]);
 
-  // live matching — recomputes (debounced) as budget/config/societies/localities change
-  const budgetLive = parseFloat(budget);
+  // cascade: adding a micro-market auto-fills its localities; a locality auto-fills its societies
+  const onMicromarketsChange = (next: string[]) => {
+    const added = next.filter((m) => !micromarkets.includes(m));
+    setMicromarkets(next);
+    added.forEach(async (mm) => {
+      try {
+        const locs = (await api.localitiesByMicromarket(mm)).items;
+        setLocalities((prev) => Array.from(new Set([...prev, ...locs])));
+      } catch { /* ignore */ }
+    });
+  };
+  const onLocalitiesChange = (next: string[]) => {
+    const added = next.filter((l) => !localities.includes(l));
+    setLocalities(next);
+    added.forEach(async (loc) => {
+      try {
+        const socs = (await api.societiesByLocality(loc)).items;
+        setSocieties((prev) => Array.from(new Set([...prev, ...socs])));
+      } catch { /* ignore */ }
+    });
+  };
+
+  // live matching — recomputes (debounced) as any requirement field changes
+  const bMin = parseFloat(budgetMin), bMax = parseFloat(budgetMax), sizeNum = parseFloat(size);
   const reqKey = JSON.stringify({
     city: lead?.city ?? null,
-    societies,
-    localities,
+    societies, localities, micromarkets,
     configuration: config || null,
-    budget_value_lacs: budgetLive > 0 ? budgetLive : null,
+    size_sqft: sizeNum > 0 ? sizeNum : null,
+    budget_min_lacs: bMin > 0 ? bMin : null,
+    budget_max_lacs: bMax > 0 ? bMax : null,
     budget_band: lead?.budget_band ?? null,
   });
   const debouncedReq = useDebounce(reqKey, 350);
@@ -298,8 +326,7 @@ export default function LeadDetail() {
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
 
-  const budgetNum = parseFloat(budget);
-  const invalid = { purpose: !purpose, budget: !(budgetNum > 0), config: !config, office: !office };
+  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office };
   const anyInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
 
   const save = () => {
@@ -311,8 +338,11 @@ export default function LeadDetail() {
     confirm.mutate(
       {
         purpose,
-        budget_value_lacs: budgetNum,
+        budget_min_lacs: bMin,
+        budget_max_lacs: bMax,
         configuration: config,
+        size_sqft: sizeNum > 0 ? sizeNum : null,
+        preferred_micromarkets: micromarkets,
         shortlisted_societies: societies,
         preferred_localities: localities,
         office_willing: office,
@@ -378,17 +408,26 @@ export default function LeadDetail() {
               </select>
             </div>
 
-            <div className="two">
-              <div className={field(invalid.budget)}>
-                <label>Q2. Budget <span className="req">*</span></label>
+            <div className={field(invalid.budget)}>
+              <label>Q2. Budget range <span className="req">*</span> <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— in lacs (we show up to ₹10L above max)</span></label>
+              <div className="two" style={{ gap: 10 }}>
                 <div style={{ position: "relative" }}>
                   <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontWeight: 600 }}>₹</span>
-                  <input type="number" min="0" placeholder="e.g. 85" value={budget} onChange={(e) => setBudget(e.target.value)} style={{ paddingLeft: 24 }} />
+                  <input type="number" min="0" placeholder="min" value={budgetMin} onChange={(e) => setBudgetMin(e.target.value)} style={{ paddingLeft: 24 }} />
                 </div>
-                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--emerald)", marginTop: 5 }}>
-                  {budgetNum > 0 ? `= ₹${budgetNum} lacs` : "in lacs"}
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "var(--muted)", fontWeight: 600 }}>₹</span>
+                  <input type="number" min="0" placeholder="max" value={budgetMax} onChange={(e) => setBudgetMax(e.target.value)} style={{ paddingLeft: 24 }} />
                 </div>
               </div>
+              {bMin > 0 && bMax > 0 && (
+                <div style={{ fontSize: 11.5, fontWeight: 600, color: "var(--emerald)", marginTop: 5 }}>
+                  ₹{bMin}L – ₹{bMax}L (shows up to ₹{bMax + 10}L)
+                </div>
+              )}
+            </div>
+
+            <div className="two">
               <div className={field(invalid.config)}>
                 <label>Q3. Configuration <span className="req">*</span></label>
                 <select value={config} onChange={(e) => setConfig(e.target.value)}>
@@ -396,10 +435,34 @@ export default function LeadDetail() {
                   {CONFIGS.map((c) => <option key={c}>{c}</option>)}
                 </select>
               </div>
+              <div className="field">
+                <label>Q4. Size <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— sq.ft</span></label>
+                <input type="number" min="0" placeholder="e.g. 1600" value={size} onChange={(e) => setSize(e.target.value)} />
+              </div>
             </div>
 
             <div className="field">
-              <label>Q4. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
+              <label>Q5. Micro-markets <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— picking one auto-fills its localities</span></label>
+              <AutocompleteChips
+                value={micromarkets}
+                onChange={onMicromarketsChange}
+                placeholder="Search micro-markets…"
+                fetcher={async (q) => (await api.searchMicromarkets(q)).items.map((h) => ({ label: h.micro_market, sub: h.city }))}
+              />
+            </div>
+
+            <div className="field">
+              <label>Q6. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— picking one auto-fills its societies</span></label>
+              <AutocompleteChips
+                value={localities}
+                onChange={onLocalitiesChange}
+                placeholder="Search localities…"
+                fetcher={async (q) => (await api.searchLocalities(q)).items.map((l) => ({ label: l }))}
+              />
+            </div>
+
+            <div className="field">
+              <label>Q7. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
               <AutocompleteChips
                 value={societies}
                 onChange={setSocieties}
@@ -408,18 +471,8 @@ export default function LeadDetail() {
               />
             </div>
 
-            <div className="field">
-              <label>Q5. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
-              <AutocompleteChips
-                value={localities}
-                onChange={setLocalities}
-                placeholder="Search localities…"
-                fetcher={async (q) => (await api.searchLocalities(q)).items.map((l) => ({ label: l }))}
-              />
-            </div>
-
             <div className={field(invalid.office)}>
-              <label>Q6. Willing to come to office? <span className="req">*</span></label>
+              <label>Q8. Willing to come to office? <span className="req">*</span></label>
               <select value={office} onChange={(e) => setOffice(e.target.value)}>
                 <option value="">Select…</option>
                 {OFFICE.map((o) => <option key={o}>{o}</option>)}

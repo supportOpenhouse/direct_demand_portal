@@ -57,37 +57,45 @@ def parse_band(band: str | None) -> tuple[float | None, float | None]:
     return (nums[0], nums[0])
 
 
+BUDGET_TOP_TOLERANCE = 10  # show units up to ₹10L above the buyer's max
+SIZE_TOLERANCE = 0.15      # ±15% on sqft = full size match
+
+
 async def build_requirement(
     city: str | None,
     societies: list[str] | None,
     localities: list[str] | None,
+    micromarkets: list[str] | None,
     config: str | None,
-    budget_value_lacs: float | None,
+    size_sqft: float | None,
+    budget_min_lacs: float | None,
+    budget_max_lacs: float | None,
     budget_band: str | None,
 ) -> dict:
-    """Shared requirement builder for both saved-lead matching and live preview.
-    Resolves society micro_markets for the geo anchor."""
+    """Shared requirement builder for saved-lead matching and live preview.
+    Budget is a RANGE (top priority); micro_markets come from explicit selection
+    plus the buyer's societies."""
     societies = [s for s in (societies or []) if s]
     localities = [l for l in (localities or []) if l]
-    micromarkets = set()
-    for s in societies:
+    mms = {m for m in (micromarkets or []) if m}
+    for s in societies:  # enrich with the societies' own micro-markets
         meta = await society_meta(s)
         if meta and meta.get("micro_market"):
-            micromarkets.add(meta["micro_market"])
-    if budget_value_lacs:
-        b = float(budget_value_lacs)
-        center, bmin, bmax = b, b * (1 - BUDGET_TOLERANCE), b * (1 + BUDGET_TOLERANCE)
-    else:
+            mms.add(meta["micro_market"])
+
+    bmin, bmax = budget_min_lacs, budget_max_lacs
+    if bmin is None and bmax is None:
         bmin, bmax = parse_band(budget_band)
-        center = (bmin + bmax) / 2 if (bmin and bmax) else (bmax or bmin)
+    bmin = float(bmin) if bmin is not None else None
+    bmax = float(bmax) if bmax is not None else None
     return {
         "city": city,
         "societies": societies,
         "society_lc": {s.lower() for s in societies},
         "localities_lc": {l.lower() for l in localities},
-        "micromarkets": micromarkets,
+        "micromarkets": mms,
         "config": config,
-        "center": center,
+        "size": float(size_sqft) if size_sqft else None,
         "bmin": bmin,
         "bmax": bmax,
     }
@@ -95,42 +103,65 @@ async def build_requirement(
 
 async def lead_requirement(lead: dict, confirmed: dict | None) -> dict:
     """Confirmed data wins over source-captured."""
-    if confirmed and confirmed.get("shortlisted_societies"):
-        societies = confirmed["shortlisted_societies"]
-    else:
-        societies = [lead["society"]] if lead.get("society") else []
-    localities = (confirmed and confirmed.get("preferred_localities")) or []
-    config = (confirmed and confirmed.get("configuration")) or lead.get("configuration")
-    budget_value = confirmed.get("budget_value_lacs") if confirmed else None
+    c = confirmed or {}
+    societies = c.get("shortlisted_societies") or ([lead["society"]] if lead.get("society") else [])
+    bmin = c.get("budget_min_lacs")
+    bmax = c.get("budget_max_lacs")
+    if bmin is None and bmax is None and c.get("budget_value_lacs"):  # legacy single value
+        v = float(c["budget_value_lacs"])
+        bmin, bmax = v * 0.9, v
     return await build_requirement(
-        lead.get("city"), societies, localities, config, budget_value, lead.get("budget_band")
+        lead.get("city"), societies, c.get("preferred_localities"), c.get("preferred_micromarkets"),
+        c.get("configuration") or lead.get("configuration"), c.get("size_sqft"),
+        bmin, bmax, lead.get("budget_band"),
     )
 
 
-def _price_closeness(req: dict, price) -> float:
-    """1.0 at the budget center, decaying to 0 at the window edge; 0 outside."""
-    if price is None or req["center"] is None:
-        return 0.0
+def _budget_closeness(req: dict, price) -> tuple[float, bool]:
+    """Budget is the top signal. In-range → 1.0; up to ₹10L above max decays 1.0→0.5;
+    cheaper than min is fine (down to a floor). Returns (closeness, in_budget)."""
+    if price is None or (req["bmin"] is None and req["bmax"] is None):
+        return (0.0, False)
     p = float(price)
-    lo = req["bmin"] if req["bmin"] is not None else req["center"] * (1 - BUDGET_TOLERANCE)
-    hi = req["bmax"] if req["bmax"] is not None else req["center"] * (1 + BUDGET_TOLERANCE)
-    if p < lo * 0.9 or p > hi * 1.1:
+    lo = req["bmin"]
+    hi = req["bmax"] if req["bmax"] is not None else p  # no max → only a floor
+    if lo is not None and hi is not None and lo <= p <= hi:
+        return (1.0, True)
+    if hi is not None and p > hi:                       # above max — allow +10L
+        over = p - hi
+        if over <= BUDGET_TOP_TOLERANCE:
+            return (max(0.5, 1 - 0.5 * over / BUDGET_TOP_TOLERANCE), True)
+        return (0.0, False)
+    if lo is not None and p < lo:                       # cheaper than min — acceptable
+        if p >= lo * 0.7:
+            return (max(0.75, 1 - (lo - p) / lo), True)
+        return (0.0, False)
+    return (1.0, True)
+
+
+def _size_closeness(req: dict, area) -> float:
+    if not req.get("size") or area is None:
         return 0.0
-    span = max(hi - req["center"], req["center"] - lo, 1)
-    return max(0.0, 1 - abs(p - req["center"]) / span)
+    diff = abs(float(area) - req["size"]) / req["size"]
+    if diff <= SIZE_TOLERANCE:
+        return 1.0
+    if diff <= SIZE_TOLERANCE * 2:
+        return 1 - (diff - SIZE_TOLERANCE) / SIZE_TOLERANCE * 0.5
+    return 0.0
 
 
-def _tier(req: dict, unit: dict, society_hit: bool, geo_hit: bool, budget_ok: bool, config_hit: bool) -> int:
-    """Lower = stronger. Mirrors the v2 fill-ladder priority (geo = micromarket OR locality)."""
-    if society_hit:
-        return 1
-    if geo_hit and (budget_ok or config_hit):
-        return 2
-    if req["city"] and unit.get("city") == req["city"] and budget_ok and config_hit:
-        return 3
-    if req["city"] and unit.get("city") == req["city"] and (budget_ok or config_hit):
+def _tier(req: dict, unit: dict, in_budget: bool, society_hit: bool, geo_hit: bool, fit_hit: bool) -> int:
+    """Budget is the gate (highest priority): in-budget units always rank above
+    out-of-budget ones. Within budget: society > area > config/size > just-budget."""
+    if in_budget:
+        if society_hit:
+            return 1
+        if geo_hit:
+            return 2
+        if fit_hit:  # config and/or size
+            return 3
         return 4
-    return 5  # same-city filler (city filter applied upstream)
+    return 5  # out of budget — filler (same city)
 
 
 def score_unit(req: dict, unit: dict) -> dict:
@@ -138,23 +169,26 @@ def score_unit(req: dict, unit: dict) -> dict:
     mm_hit = bool(unit.get("micro_market") and unit["micro_market"] in req["micromarkets"])
     locality_hit = bool(unit.get("locality") and unit["locality"].lower() in req.get("localities_lc", set()))
     geo_hit = mm_hit or locality_hit
-    closeness = _price_closeness(req, unit.get("price_lacs"))
-    budget_ok = closeness > 0
+    budget_close, in_budget = _budget_closeness(req, unit.get("price_lacs"))
+    size_close = _size_closeness(req, unit.get("area_sqft"))
     config_hit = bool(req["config"] and unit.get("configuration") == req["config"])
     city_hit = bool(req["city"] and unit.get("city") == req["city"])
 
-    # continuous score (v2 weighting, adapted)
+    # budget is the dominant weight, then BHK/size/society/area
     score = (
-        3.0 * society_hit
-        + 2.0 * closeness
-        + 1.5 * mm_hit
-        + 1.2 * locality_hit
-        + 1.0 * config_hit
+        3.5 * budget_close
+        + 2.0 * society_hit
+        + 1.5 * config_hit
+        + 1.5 * size_close
+        + 1.2 * mm_hit
+        + 1.0 * locality_hit
         + 0.5 * city_hit
     )
-    tier = _tier(req, unit, society_hit, geo_hit, budget_ok, config_hit)
+    tier = _tier(req, unit, in_budget, society_hit, geo_hit, config_hit or size_close > 0)
 
     reasons = []
+    if in_budget and unit.get("price_lacs") is not None:
+        reasons.append(f"In budget — ₹{unit['price_lacs']}L")
     if society_hit:
         reasons.append(f"Same society — {unit['society']}")
     elif mm_hit:
@@ -165,10 +199,10 @@ def score_unit(req: dict, unit: dict) -> dict:
         reasons.append(f"Same city — {unit['city']}")
     if config_hit:
         reasons.append(f"Same config — {unit['configuration']}")
-    if budget_ok and unit.get("price_lacs") is not None:
-        reasons.append(f"In budget — ₹{unit['price_lacs']}L")
-    return {"tier": tier, "score": round(score, 3), "reasons": reasons[:3],
-            "pct": min(60 + int(score * 8), 99)}
+    if size_close > 0 and unit.get("area_sqft"):
+        reasons.append(f"Size fit — {int(unit['area_sqft'])} sq.ft")
+    return {"tier": tier, "score": round(score, 3), "reasons": reasons[:4],
+            "pct": min(58 + int(score * 8), 99)}
 
 
 async def _rank(req: dict, units: list[dict], limit: int = 5) -> list[dict]:
@@ -285,7 +319,7 @@ async def _match(req: dict) -> dict:
     return {
         "requirement": {
             "city": req["city"], "societies": req["societies"], "config": req["config"],
-            "localities": sorted(req.get("localities_lc", set())),
+            "size": req.get("size"), "localities": sorted(req.get("localities_lc", set())),
             "micromarkets": sorted(req["micromarkets"]), "bmin": req["bmin"], "bmax": req["bmax"],
         },
         "inventory": inv,
@@ -301,6 +335,7 @@ async def match_preview(payload: dict) -> dict:
     """Live preview from in-progress form fields (no save needed)."""
     req = await build_requirement(
         payload.get("city"), payload.get("societies"), payload.get("localities"),
-        payload.get("configuration"), payload.get("budget_value_lacs"), payload.get("budget_band"),
+        payload.get("micromarkets"), payload.get("configuration"), payload.get("size_sqft"),
+        payload.get("budget_min_lacs"), payload.get("budget_max_lacs"), payload.get("budget_band"),
     )
     return await _match(req)

@@ -11,7 +11,13 @@ from ..db import neon_engine
 from ..models import Lead, LeadConfirmedData, LeadNote
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
-from ..services.societies import search_localities, search_societies
+from ..services.societies import (
+    localities_in_micromarket,
+    search_localities,
+    search_micromarkets,
+    search_societies,
+    societies_in_locality,
+)
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
@@ -96,11 +102,16 @@ async def get_lead(lead_id: UUID):
             text("SELECT * FROM lead_confirmed_data WHERE lead_id = :id"), {"id": lead_id}
         )
         c = cres.mappings().first()
+    def _num(v):
+        return float(v) if v is not None else None
     lead["confirmed_data"] = (
         {
             "purpose": c["purpose"],
-            "budget_value_lacs": float(c["budget_value_lacs"]) if c["budget_value_lacs"] is not None else None,
+            "budget_min_lacs": _num(c["budget_min_lacs"]),
+            "budget_max_lacs": _num(c["budget_max_lacs"]),
             "configuration": c["configuration"],
+            "size_sqft": _num(c["size_sqft"]),
+            "preferred_micromarkets": c["preferred_micromarkets"],
             "shortlisted_societies": c["shortlisted_societies"],
             "preferred_localities": c["preferred_localities"],
             "office_willing": c["office_willing"],
@@ -137,8 +148,11 @@ class MatchPreview(BaseModel):
     city: str | None = None
     societies: list[str] = []
     localities: list[str] = []
+    micromarkets: list[str] = []
     configuration: str | None = None
-    budget_value_lacs: float | None = None
+    size_sqft: float | None = None
+    budget_min_lacs: float | None = None
+    budget_max_lacs: float | None = None
     budget_band: str | None = None
 
 
@@ -150,8 +164,11 @@ async def leads_match_preview(payload: MatchPreview):
 
 class ConfirmPayload(BaseModel):
     purpose: str
-    budget_value_lacs: float
+    budget_min_lacs: float
+    budget_max_lacs: float
     configuration: str
+    size_sqft: float | None = None
+    preferred_micromarkets: list[str] = []
     shortlisted_societies: list[str] = []
     preferred_localities: list[str] = []
     office_willing: str
@@ -161,42 +178,42 @@ class ConfirmPayload(BaseModel):
 
 @router.post("/leads/{lead_id}/confirm")
 async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
-    """Save the Q1-Q6 call form and qualify the lead (new → contacted)."""
+    """Save the call form and qualify the lead (new → contacted)."""
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
-    # mandatory fields (HANDOVER §6.6): Q1 purpose, Q2 budget, Q3 config, Q6 office-willing
+    # mandatory: purpose, budget range, config, office-willing
     missing = [
-        f for f, v in [("purpose", payload.purpose), ("budget_value_lacs", payload.budget_value_lacs),
+        f for f, v in [("purpose", payload.purpose), ("budget_min_lacs", payload.budget_min_lacs),
+                       ("budget_max_lacs", payload.budget_max_lacs),
                        ("configuration", payload.configuration), ("office_willing", payload.office_willing)]
         if v in (None, "", 0)
     ]
     if missing:
         raise HTTPException(status_code=422, detail={"fields": missing})
+    if payload.budget_min_lacs > payload.budget_max_lacs:
+        raise HTTPException(status_code=422, detail={"fields": ["budget_max_lacs"], "message": "max must be ≥ min"})
     office_date: date | None = None
     if payload.office_preferred_date:
         try:
             office_date = date.fromisoformat(payload.office_preferred_date)
         except ValueError:
             raise HTTPException(status_code=422, detail={"fields": ["office_preferred_date"]})
+    values = dict(
+        lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=None,
+        budget_min_lacs=payload.budget_min_lacs, budget_max_lacs=payload.budget_max_lacs,
+        configuration=payload.configuration, size_sqft=payload.size_sqft,
+        preferred_micromarkets=payload.preferred_micromarkets,
+        shortlisted_societies=payload.shortlisted_societies, preferred_localities=payload.preferred_localities,
+        office_willing=payload.office_willing, office_preferred_date=office_date, remark=payload.remark,
+    )
     async with engine.begin() as conn:
         exists = await conn.execute(text("SELECT stage FROM leads WHERE id = :id"), {"id": lead_id})
-        cur = exists.first()
-        if cur is None:
+        if exists.first() is None:
             raise HTTPException(status_code=404, detail="lead not found")
-        stmt = pg_insert(LeadConfirmedData).values(
-            lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=payload.budget_value_lacs,
-            configuration=payload.configuration, shortlisted_societies=payload.shortlisted_societies,
-            preferred_localities=payload.preferred_localities, office_willing=payload.office_willing,
-            office_preferred_date=office_date, remark=payload.remark,
-        ).on_conflict_do_update(
+        stmt = pg_insert(LeadConfirmedData).values(**values).on_conflict_do_update(
             index_elements=[LeadConfirmedData.lead_id],
-            set_={
-                "purpose": payload.purpose, "budget_value_lacs": payload.budget_value_lacs,
-                "configuration": payload.configuration, "shortlisted_societies": payload.shortlisted_societies,
-                "preferred_localities": payload.preferred_localities, "office_willing": payload.office_willing,
-                "office_preferred_date": office_date, "remark": payload.remark,
-            },
+            set_={k: v for k, v in values.items() if k != "lead_id"},
         )
         await conn.execute(stmt)
         # qualify: new → contacted, start the 7-day clock (only on first confirm)
@@ -348,3 +365,20 @@ async def societies_search(q: str = Query("", min_length=0)):
 @router.get("/localities/search")
 async def localities_search(q: str = Query("", min_length=0)):
     return {"items": await search_localities(q)}
+
+
+@router.get("/micromarkets/search")
+async def micromarkets_search(q: str = Query("", min_length=0)):
+    return {"items": await search_micromarkets(q)}
+
+
+@router.get("/localities/by-micromarket")
+async def localities_by_mm(micro_market: str = Query(...)):
+    """All localities inside a micro-market (for cascade auto-populate)."""
+    return {"items": await localities_in_micromarket(micro_market)}
+
+
+@router.get("/societies/by-locality")
+async def societies_by_locality(locality: str = Query(...)):
+    """All societies inside a locality (for cascade auto-populate)."""
+    return {"items": await societies_in_locality(locality)}

@@ -66,6 +66,20 @@ export function usePatchSourceData(id: string) {
 export function useUsers() {
   return useQuery({ queryKey: ["users"], queryFn: api.users });
 }
+
+export function useAssignees() {
+  return useQuery({ queryKey: ["assignees"], queryFn: api.assignees, staleTime: 60_000 });
+}
+export function useAssignLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, assigned_to }: { id: string; assigned_to: string | null }) => api.assignLead(id, assigned_to),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead"] });
+    },
+  });
+}
 export function useUserMutations() {
   const qc = useQueryClient();
   const inv = () => qc.invalidateQueries({ queryKey: ["users"] });

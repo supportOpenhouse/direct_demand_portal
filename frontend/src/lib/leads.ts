@@ -38,3 +38,16 @@ export const initials = (n: string | null) =>
     .slice(0, 2)
     .join("")
     .toUpperCase();
+
+// our backend stage keys → prototype label + .stage.<class>
+const STAGE_LABEL: Record<string, string> = {
+  new: "New", contacted: "Contacted", visit_scheduled: "Visit Scheduled",
+  visit_feedback: "Visit Feedback", negotiation: "Negotiation", won: "Won",
+  lost: "Lost", future_prospect: "Future Prospect", timepass: "Timepass",
+};
+const STAGE_CLASS: Record<string, string> = {
+  new: "new", contacted: "contacted", visit_scheduled: "visit", visit_feedback: "feedback",
+  negotiation: "nego", won: "won", lost: "lost", future_prospect: "future", timepass: "timepass",
+};
+export const stageLabel = (s: string) => STAGE_LABEL[s] || s;
+export const stageClass = (s: string) => STAGE_CLASS[s] || "new";

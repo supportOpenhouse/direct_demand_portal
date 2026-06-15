@@ -1,6 +1,70 @@
-/* Debounced async-search chips input. Type → suggestions from the backend; pick
-   or free-type + Enter to add. Used for Q4 societies / Q5 localities. */
+/* Debounced async-search inputs. Type → suggestions from the backend.
+   - AutocompleteChips: multi-value (Q4 societies / Q5 localities)
+   - AutocompleteInput: single value (source-card society) */
 import { useEffect, useRef, useState } from "react";
+
+export function AutocompleteInput({
+  value,
+  onPick,
+  fetcher,
+  placeholder,
+}: {
+  value: string;
+  onPick: (label: string, hit?: { label: string; sub?: string | null; meta?: any }) => void;
+  fetcher: (q: string) => Promise<{ label: string; sub?: string | null; meta?: any }[]>;
+  placeholder: string;
+}) {
+  const [text, setText] = useState(value);
+  const [hits, setHits] = useState<{ label: string; sub?: string | null; meta?: any }[]>([]);
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => setText(value), [value]);
+
+  useEffect(() => {
+    if (!text.trim() || text === value) {
+      setHits([]);
+      return;
+    }
+    clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      try {
+        setHits(await fetcher(text.trim()));
+        setOpen(true);
+      } catch {
+        setHits([]);
+      }
+    }, 200);
+    return () => clearTimeout(timer.current);
+  }, [text]);
+
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => box.current && !box.current.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("click", onDoc);
+    return () => document.removeEventListener("click", onDoc);
+  }, []);
+
+  return (
+    <div className="ms" ref={box} style={{ position: "relative" }}>
+      <input
+        value={text}
+        placeholder={placeholder}
+        onChange={(e) => { setText(e.target.value); onPick(e.target.value); }}
+        onFocus={() => hits.length && setOpen(true)}
+      />
+      {open && hits.length > 0 && (
+        <div className="ms-panel" style={{ display: "block" }}>
+          {hits.map((h) => (
+            <label key={h.label} className="ms-opt" onClick={() => { onPick(h.label, h); setText(h.label); setOpen(false); }}>
+              <span>{h.label}{h.sub && <span style={{ color: "var(--muted)", fontSize: 11 }}> · {h.sub}</span>}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function AutocompleteChips({
   value,

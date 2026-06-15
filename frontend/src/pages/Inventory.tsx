@@ -7,40 +7,58 @@ import { useToast } from "../components/Toast";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort } from "../lib/useSort";
+import { waShare } from "../lib/whatsapp";
 
 function fmtArea(a: number | null): string | null {
   if (a == null) return null;
   return `${a.toLocaleString("en-IN")} sq.ft`;
 }
 
+function imagesOf(p: InventoryItem): string[] {
+  const imgs = (p.raw as any)?.images;
+  if (Array.isArray(imgs) && imgs.length) return imgs.filter(Boolean);
+  return p.image_url ? [p.image_url] : [];
+}
+
 function InvCard({ p }: { p: InventoryItem }) {
   const toast = useToast();
   const name = p.name || p.society || "—";
   const loc = [p.locality, p.city].filter(Boolean).join(", ") || "—";
-  const photoCount = (() => {
-    try {
-      const imgs = p.raw.images;
-      return Array.isArray(imgs) ? imgs.length : 0;
-    } catch {
-      return 0;
-    }
-  })();
+  const imgs = imagesOf(p);
+  const [idx, setIdx] = useState(0);
+  const cur = imgs[idx];
+  const go = (e: React.MouseEvent, d: number) => {
+    e.stopPropagation();
+    setIdx((i) => (i + d + imgs.length) % imgs.length);
+  };
+
+  const share = () => {
+    const text = `🏠 ${name}\n📍 ${loc}\n${formatPrice(p.price_lacs, p.price_text)} · ${p.configuration || ""} ${fmtArea(p.area_sqft) || ""}`.trim()
+      + (cur ? `\n${cur}` : "");
+    waShare(text);
+  };
+
   return (
     <div className="inv-card">
       <div
         className="inv-img"
-        style={
-          p.image_url
-            ? { backgroundImage: `url('${p.image_url}')` }
-            : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center" }
-        }
+        style={cur
+          ? { backgroundImage: `url('${cur}')` }
+          : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center" }}
       >
-        {!p.image_url && <span style={{ fontSize: 28, opacity: 0.45 }}>🏠</span>}
+        {!cur && <span style={{ fontSize: 28, opacity: 0.45 }}>🏠</span>}
         {p.status && <span className="tag">{p.status}</span>}
-        {photoCount > 1 && (
-          <span className="tag" style={{ right: 9, left: "auto", top: 9 }}>
-            📷 {photoCount}
-          </span>
+        {imgs.length > 1 && (
+          <>
+            <button className="carousel-btn" style={{ left: 8 }} title="Previous photo" onClick={(e) => go(e, -1)}>‹</button>
+            <button className="carousel-btn" style={{ right: 8 }} title="Next photo" onClick={(e) => go(e, 1)}>›</button>
+            <div style={{ position: "absolute", bottom: 8, left: 0, right: 0, display: "flex", justifyContent: "center", gap: 4 }}>
+              {imgs.map((_, i) => (
+                <span key={i} style={{ width: 5, height: 5, borderRadius: "50%", background: i === idx ? "#fff" : "rgba(255,255,255,.5)" }} />
+              ))}
+            </div>
+            <span className="tag" style={{ right: 9, left: "auto", top: 9 }}>📷 {idx + 1}/{imgs.length}</span>
+          </>
         )}
       </div>
       <div className="inv-body">
@@ -53,12 +71,8 @@ function InvCard({ p }: { p: InventoryItem }) {
           {p.city && <span>{p.city}</span>}
         </div>
         <div className="inv-actions">
-          <button className="btn wa sm" style={{ flex: 1 }} onClick={() => toast(`Brochure for ${name} sent on WhatsApp`, "wa", "↗")}>
-            ↗ Share brochure
-          </button>
-          <button className="btn ghost sm" onClick={() => toast(`Opening ${name} details`, "blue", "🏠")}>
-            Details
-          </button>
+          <button className="btn wa sm" style={{ flex: 1 }} onClick={share}>↗ Share brochure</button>
+          <button className="btn ghost sm" onClick={() => toast(`Opening ${name} details`, "blue", "🏠")}>Details</button>
         </div>
       </div>
     </div>

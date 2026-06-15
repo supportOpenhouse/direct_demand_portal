@@ -60,14 +60,16 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
     predicate = SEGMENTS.get(segment)
     if predicate is None:
         raise HTTPException(status_code=400, detail=f"unknown segment '{segment}'")
-    # role-scoping: an RM sees only leads assigned to them (Admin/CM see all)
+    # role-scoping: an RM sees their own leads PLUS any unassigned lead (those are
+    # up for grabs by everyone). Admin/CM see all.
     params: dict = {}
     if user.get("role") == "rm":
         aliases = assignment_aliases(user)
-        if not aliases:
-            return {"status": "ok", "detail": None, "items": [], "sync": await read_leads_state()}
-        predicate += " AND lower(assigned_to) = ANY(:aliases)"
-        params["aliases"] = aliases
+        if aliases:
+            predicate += " AND (assigned_to IS NULL OR lower(assigned_to) = ANY(:aliases))"
+            params["aliases"] = aliases
+        else:
+            predicate += " AND assigned_to IS NULL"
     try:
         async with engine.connect() as conn:
             res = await conn.execute(
@@ -304,6 +306,36 @@ async def add_note(lead_id: UUID, payload: NoteCreate, user: dict = Depends(curr
             raise HTTPException(status_code=404, detail="lead not found")
         await conn.execute(pg_insert(LeadNote).values(lead_id=lead_id, body=body, author=author, source="note"))
     return {"status": "ok"}
+
+
+# --- assignment ---------------------------------------------------------------
+
+@router.get("/assignees")
+async def list_assignees():
+    """Active users a lead can be assigned to (for the assign dropdown)."""
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    async with engine.connect() as conn:
+        res = await conn.execute(text("SELECT name, email FROM users WHERE active AND name IS NOT NULL ORDER BY name"))
+        return {"items": [{"name": r[0], "email": r[1]} for r in res]}
+
+
+class AssignPayload(BaseModel):
+    assigned_to: str | None = None  # null → unassign
+
+
+@router.post("/leads/{lead_id}/assign")
+async def assign_lead(lead_id: UUID, payload: AssignPayload):
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    name = (payload.assigned_to or "").strip() or None
+    async with engine.begin() as conn:
+        res = await conn.execute(text("UPDATE leads SET assigned_to = :a WHERE id = :id"), {"a": name, "id": lead_id})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="lead not found")
+    return {"status": "ok", "assigned_to": name}
 
 
 # --- master_societies autocomplete -------------------------------------------

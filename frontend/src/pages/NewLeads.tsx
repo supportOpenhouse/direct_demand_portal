@@ -7,8 +7,10 @@ import { srcLabel, planClass, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { WhatsAppIcon } from "../components/icons";
+import { AssignControl } from "../components/AssignControl";
 import { useToast } from "../components/Toast";
 import { useSort, SortTh } from "../lib/useSort";
+import { waChat } from "../lib/whatsapp";
 import { useState } from "react";
 
 function PlanChip({ plan }: { plan: string | null }) {
@@ -44,7 +46,8 @@ export default function NewLeads() {
 
   const wa = (e: React.MouseEvent, l: Lead) => {
     e.stopPropagation();
-    toast(`Opening WhatsApp chat with ${l.name}`, "wa", "↗");
+    if (!l.phone) { toast("No phone number for this lead", "gold", "⚠"); return; }
+    waChat(l.phone, `Hi ${l.name || ""}, this is Openhouse Direct Demand regarding your property enquiry.`);
   };
 
   return (
@@ -141,7 +144,7 @@ export default function NewLeads() {
                   <td style={{ fontSize: 12.5 }}>{l.budget_band || "—"}</td>
                   <td><PlanChip plan={l.plan_to_buy} /></td>
                   <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>{formatDate(l.received_at)}</td>
-                  <td style={{ fontSize: 12.5 }}>{l.assigned_to || <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
                   <td style={{ textAlign: "right" }}>
                     <button className="wa-ico" title={`WhatsApp ${l.name}`} onClick={(e) => wa(e, l)}>
                       <WhatsAppIcon />

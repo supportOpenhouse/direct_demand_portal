@@ -200,6 +200,9 @@ export const api = {
     request<{ status: string }>(`/v1/leads/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),
   searchSocieties: (q: string) => request<{ items: SocietyHit[] }>(`/v1/societies/search?q=${encodeURIComponent(q)}`),
   searchLocalities: (q: string) => request<{ items: string[] }>(`/v1/localities/search?q=${encodeURIComponent(q)}`),
+  assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
+  assignLead: (id: string, assigned_to: string | null) =>
+    request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   createUser: (u: { email: string; name: string; role: string }) =>

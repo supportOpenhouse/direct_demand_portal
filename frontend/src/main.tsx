@@ -6,6 +6,7 @@ import App from "./App";
 import Inventory from "./pages/Inventory";
 import Supply from "./pages/Supply";
 import NewLeads from "./pages/NewLeads";
+import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Stub from "./pages/Stub";
@@ -21,10 +22,10 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Stub title="Dashboard" /> },
       { path: "leads/new", element: <NewLeads /> },
+      { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
+      { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },
+      { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
       { path: "leads/:id", element: <LeadDetail /> },
-      { path: "leads/qualified", element: <Stub title="Qualified Leads" /> },
-      { path: "leads/pipeline", element: <Stub title="Pipeline Leads" /> },
-      { path: "leads/converted", element: <Stub title="Converted Leads" /> },
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "supply", element: <Supply /> },

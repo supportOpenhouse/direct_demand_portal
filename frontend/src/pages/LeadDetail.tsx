@@ -9,7 +9,10 @@ import {
 import { srcClass, srcLabel, initials } from "../lib/leads";
 import { MatchUnit, api } from "../lib/api";
 import { useToast } from "../components/Toast";
-import { AutocompleteChips } from "../components/Autocomplete";
+import { AutocompleteChips, AutocompleteInput } from "../components/Autocomplete";
+import { AssignControl } from "../components/AssignControl";
+import { WhatsAppIcon } from "../components/icons";
+import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
 
 const PURPOSES = ["Self-use", "Investment"];
@@ -76,12 +79,21 @@ function SourceCard({ lead }: { lead: any }) {
       {edit ? (
         <>
           <div className="two">{inp("Budget", "budget_band", "e.g. ₹70L – ₹90L")}{inp("City", "city")}</div>
+          <div className="field">
+            <label>Society of interest <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
+            <AutocompleteInput
+              value={f.society}
+              placeholder="Search societies…"
+              onPick={(label, hit) => setF((s) => ({ ...s, society: label, city: hit?.meta?.city || s.city }))}
+              fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", "), meta: h }))}
+            />
+          </div>
           <div className="two">
-            {inp("Society of interest", "society")}
             <div className="field"><label>Plan to Buy</label>
               <select value={f.plan_to_buy} onChange={(e) => setF({ ...f, plan_to_buy: e.target.value })}>
                 <option value="">Select…</option>{PLANS.map((p) => <option key={p}>{p}</option>)}
               </select></div>
+            <div></div>
           </div>
           <div className="field" style={{ marginBottom: 0 }}><label>Source remarks</label>
             <input value={f.source_remarks} onChange={(e) => setF({ ...f, source_remarks: e.target.value })} /></div>
@@ -148,8 +160,9 @@ function NotesThread({ id }: { id: string }) {
   );
 }
 
-function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
+function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply: boolean; leadPhone: string | null; leadName: string | null }) {
   const [open, setOpen] = useState(false);
+  const toast = useToast();
   const detail: [string, string | null | undefined][] = [
     ["Society", u.society],
     ["City", u.city],
@@ -159,9 +172,24 @@ function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
     isSupply ? ["Stage", u.stage] : ["Status", u.status],
     ["Matched on", u.matched_on.join(" + ")],
   ];
+  const share = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!leadPhone) { toast("No phone number for this lead", "gold", "⚠"); return; }
+    const text = `Hi ${leadName || ""}, sharing a property that matches your requirement:\n\n🏠 ${u.name}\n📍 ${[u.locality, u.city].filter(Boolean).join(", ")}\n${formatPrice(u.price_lacs, u.price_text)} · ${u.configuration || ""}`
+      + (u.image_url ? `\n${u.image_url}` : "");
+    waChat(leadPhone, text);
+  };
   return (
     <div className={"opt" + (open ? " open" : "")}>
       <div className="opt-row" onClick={() => setOpen(!open)}>
+        <div
+          className="opt-thumb"
+          style={u.image_url
+            ? { backgroundImage: `url('${u.image_url}')` }
+            : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center", fontSize: 16 }}
+        >
+          {!u.image_url && "🏠"}
+        </div>
         <div className="opt-info">
           <div className="opt-name">
             {u.name || "—"} <span className="match-mini">{u.score}%</span>
@@ -178,6 +206,7 @@ function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
             </div>
           )}
         </div>
+        <button className="wa-ico" title="Share on WhatsApp" onClick={share}><WhatsAppIcon /></button>
         <svg className="opt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -196,7 +225,7 @@ function MatchRow({ u, isSupply }: { u: MatchUnit; isSupply: boolean }) {
   );
 }
 
-function MatchPanel({ title, tag, units, loading }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; }) {
+function MatchPanel({ title, tag, units, loading, leadPhone, leadName }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; leadPhone: string | null; leadName: string | null }) {
   return (
     <div className="card panel-pad">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
@@ -214,7 +243,7 @@ function MatchPanel({ title, tag, units, loading }: { title: string; tag: string
       {units.length === 0 ? (
         <div className="empty" style={{ padding: 16 }}>{loading ? "Matching…" : "No matches yet — add budget, config or a society to surface more."}</div>
       ) : (
-        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} />)
+        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} leadPhone={leadPhone} leadName={leadName} />)
       )}
     </div>
   );
@@ -305,13 +334,19 @@ export default function LeadDetail() {
           <div className="av">{initials(lead.name)}</div>
           <div>
             <h2>{lead.name}{lead.is_test && <span className="bucket-tag" style={{ marginLeft: 8, verticalAlign: "middle" }}>TEST</span>}</h2>
-            <div className="meta">
-              {lead.phone} &nbsp;·&nbsp;{" "}
-              <span className={`src ${srcClass(lead.source)}`} style={{ verticalAlign: "middle" }}>{srcLabel(lead.source)}</span>
-              {lead.assigned_to && <> &nbsp;·&nbsp; {lead.assigned_to}</>}
-              {lead.confirmed && <> &nbsp;·&nbsp; <span className="stage contacted">Qualified</span></>}
+            <div className="meta" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {lead.phone}
+              <span className={`src ${srcClass(lead.source)}`}>{srcLabel(lead.source)}</span>
+              <span style={{ color: "var(--muted)" }}>Assigned:</span>
+              <AssignControl leadId={lead.id} assignedTo={lead.assigned_to} />
+              {lead.confirmed && <span className="stage contacted">Qualified</span>}
             </div>
           </div>
+        </div>
+        <div className="lead-actions">
+          <button className="btn wa" onClick={() => lead.phone ? waChat(lead.phone, `Hi ${lead.name || ""}, this is Openhouse Direct Demand.`) : toast("No phone number", "gold", "⚠")}>
+            <WhatsAppIcon /> WhatsApp
+          </button>
         </div>
       </div>
 
@@ -421,8 +456,8 @@ export default function LeadDetail() {
 
         {/* RIGHT column — live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} />
-          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} />
+          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
+          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
         </div>
       </div>
     </>

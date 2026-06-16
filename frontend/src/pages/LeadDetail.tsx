@@ -14,6 +14,7 @@ import { AssignControl } from "../components/AssignControl";
 import { WhatsAppIcon } from "../components/icons";
 import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
+import { VisitPlanner } from "../features/VisitPlanner";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
@@ -256,6 +257,7 @@ export default function LeadDetail() {
   const toast = useToast();
   const { data: lead, isLoading } = useLead(id);
   const confirm = useConfirmLead(id);
+  const [planner, setPlanner] = useState(false);
 
   const [purpose, setPurpose] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
@@ -382,11 +384,13 @@ export default function LeadDetail() {
           </div>
         </div>
         <div className="lead-actions">
+          <button className="btn ghost" onClick={() => setPlanner(true)}>📅 Plan visits</button>
           <button className="btn wa" onClick={() => lead.phone ? waChat(lead.phone, `Hi ${lead.name || ""}, this is Openhouse Direct Demand.`) : toast("No phone number", "gold", "⚠")}>
             <WhatsAppIcon /> WhatsApp
           </button>
         </div>
       </div>
+      {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} onClose={() => setPlanner(false)} />}
 
       <div className="detail-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>

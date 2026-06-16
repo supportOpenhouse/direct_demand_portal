@@ -36,8 +36,23 @@ class InventoryUnit(Base):
     price_lacs: Mapped[float | None] = mapped_column(Numeric)
     status: Mapped[str | None] = mapped_column(Text)
     image_url: Mapped[str | None] = mapped_column(Text)
+    lat: Mapped[float | None] = mapped_column(Numeric)
+    lng: Mapped[float | None] = mapped_column(Numeric)
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     synced_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class GeocodeCache(Base):
+    """Address → lat/lng, so we geocode each unique address only once."""
+
+    __tablename__ = "geocode_cache"
+
+    address: Mapped[str] = mapped_column(Text, primary_key=True)
+    lat: Mapped[float | None] = mapped_column(Numeric)
+    lng: Mapped[float | None] = mapped_column(Numeric)
+    geocoded_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
@@ -173,6 +188,28 @@ class LeadConfirmedData(Base):
     office_preferred_date: Mapped[str | None] = mapped_column(Date)
     remark: Mapped[str | None] = mapped_column(Text)
     confirmed_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Visit(Base):
+    """A saved multi-stop visit plan for a lead (from the visit planner)."""
+
+    __tablename__ = "visits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    trip_date: Mapped[str | None] = mapped_column(Date)
+    rm: Mapped[str | None] = mapped_column(Text)
+    start_lat: Mapped[float | None] = mapped_column(Numeric)
+    start_lng: Mapped[float | None] = mapped_column(Numeric)
+    total_km: Mapped[float | None] = mapped_column(Numeric)
+    total_min: Mapped[float | None] = mapped_column(Numeric)
+    route_source: Mapped[str | None] = mapped_column(Text)  # 'google' | 'est'
+    stops: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 

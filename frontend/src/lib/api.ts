@@ -18,7 +18,30 @@ export interface InventoryItem {
   price_lacs: number | null;
   status: string | null;
   image_url: string | null;
+  lat: number | null;
+  lng: number | null;
   raw: Record<string, unknown>; // full sheet row + images[] from the photos API
+}
+
+export interface VisitStop {
+  inventory_id?: number | null;
+  name?: string | null;
+  society?: string | null;
+  locality?: string | null;
+  price_text?: string | null;
+  lat?: number | null;
+  lng?: number | null;
+}
+export interface VisitPlan {
+  trip_date?: string | null;
+  rm?: string | null;
+  start_lat?: number | null;
+  start_lng?: number | null;
+  total_km?: number | null;
+  total_min?: number | null;
+  route_source?: string | null;
+  stops: VisitStop[];
+  created_at?: string | null;
 }
 
 export interface InventoryResponse {
@@ -228,6 +251,9 @@ export const api = {
   searchMicromarkets: (q: string) => request<{ items: { micro_market: string; city: string | null }[] }>(`/v1/micromarkets/search?q=${encodeURIComponent(q)}`),
   localitiesByMicromarket: (mm: string) => request<{ items: string[] }>(`/v1/localities/by-micromarket?micro_market=${encodeURIComponent(mm)}`),
   societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
+  saveVisit: (id: string, plan: VisitPlan) =>
+    request<{ status: string }>(`/v1/leads/${id}/visits`, { method: "POST", body: JSON.stringify(plan) }),
+  latestVisit: (id: string) => request<{ plan: VisitPlan | null }>(`/v1/leads/${id}/visits`),
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),

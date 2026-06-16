@@ -41,6 +41,8 @@ async def get_inventory():
                     "price_lacs": float(u["price_lacs"]) if u["price_lacs"] is not None else None,
                     "status": u["status"],
                     "image_url": u["image_url"],
+                    "lat": float(u["lat"]) if u["lat"] is not None else None,
+                    "lng": float(u["lng"]) if u["lng"] is not None else None,
                     "raw": {k: v for k, v in (u["raw"] or {}).items() if k not in PRIVATE_RAW_KEYS},
                 }
                 for u in res.mappings()
@@ -65,3 +67,11 @@ async def sync_inventory():
         raise HTTPException(status_code=502, detail=result.get("detail"))
     state = await read_state()
     return {"status": "ok", "rows": result.get("rows"), "synced_at": state.get("last_synced_at")}
+
+
+@router.post("/inventory/geocode")
+async def geocode_inventory_endpoint():
+    """Fill lat/lng for inventory units missing coordinates (for the visit planner)."""
+    from ..services.geocode import geocode_inventory
+
+    return await geocode_inventory()

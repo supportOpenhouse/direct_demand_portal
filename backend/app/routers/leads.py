@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user
 from ..db import neon_engine
-from ..models import Lead, LeadConfirmedData, LeadNote
+from ..models import Lead, LeadConfirmedData, LeadNote, Visit
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
 from ..services.societies import (
@@ -327,6 +327,77 @@ async def add_note(lead_id: UUID, payload: NoteCreate, user: dict = Depends(curr
             raise HTTPException(status_code=404, detail="lead not found")
         await conn.execute(pg_insert(LeadNote).values(lead_id=lead_id, body=body, author=author, source="note"))
     return {"status": "ok"}
+
+
+# --- visit planner -------------------------------------------------------------
+
+class VisitStop(BaseModel):
+    inventory_id: int | None = None
+    name: str | None = None
+    society: str | None = None
+    locality: str | None = None
+    price_text: str | None = None
+    lat: float | None = None
+    lng: float | None = None
+
+
+class VisitPlan(BaseModel):
+    trip_date: str | None = None
+    rm: str | None = None
+    start_lat: float | None = None
+    start_lng: float | None = None
+    total_km: float | None = None
+    total_min: float | None = None
+    route_source: str | None = None
+    stops: list[VisitStop] = []
+
+
+@router.post("/leads/{lead_id}/visits")
+async def save_visit(lead_id: UUID, payload: VisitPlan):
+    if not payload.stops:
+        raise HTTPException(status_code=422, detail="add at least one stop")
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    trip = None
+    if payload.trip_date:
+        try:
+            trip = date.fromisoformat(payload.trip_date)
+        except ValueError:
+            trip = None
+    async with engine.begin() as conn:
+        if (await conn.execute(text("SELECT 1 FROM leads WHERE id = :id"), {"id": lead_id})).first() is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        await conn.execute(pg_insert(Visit).values(
+            lead_id=lead_id, trip_date=trip, rm=payload.rm,
+            start_lat=payload.start_lat, start_lng=payload.start_lng,
+            total_km=payload.total_km, total_min=payload.total_min, route_source=payload.route_source,
+            stops=[s.model_dump() for s in payload.stops],
+        ))
+        # advance to Visit Scheduled unless the lead is already in a terminal stage
+        await conn.execute(text(
+            "UPDATE leads SET stage = CASE WHEN stage IN ('won','lost','future_prospect','timepass') "
+            "THEN stage ELSE 'visit_scheduled' END WHERE id = :id"), {"id": lead_id})
+    return {"status": "ok"}
+
+
+@router.get("/leads/{lead_id}/visits")
+async def latest_visit(lead_id: UUID):
+    engine = neon_engine()
+    if engine is None:
+        return {"plan": None}
+    async with engine.connect() as conn:
+        v = (await conn.execute(text(
+            "SELECT * FROM visits WHERE lead_id = :id ORDER BY created_at DESC LIMIT 1"), {"id": lead_id})).mappings().first()
+    if v is None:
+        return {"plan": None}
+    return {"plan": {
+        "trip_date": v["trip_date"].isoformat() if v["trip_date"] else None, "rm": v["rm"],
+        "total_km": float(v["total_km"]) if v["total_km"] is not None else None,
+        "total_min": float(v["total_min"]) if v["total_min"] is not None else None,
+        "route_source": v["route_source"], "stops": v["stops"],
+        "created_at": v["created_at"].isoformat() if v["created_at"] else None,
+    }}
 
 
 # --- assignment ---------------------------------------------------------------

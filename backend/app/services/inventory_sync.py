@@ -176,8 +176,19 @@ async def run_sync(trigger: str = "manual") -> dict:
             await conn.execute(delete(InventoryUnit))
             if rows:
                 await conn.execute(InventoryUnit.__table__.insert(), rows)
+            # re-apply already-known coords from the geocode cache (instant, no API)
+            await conn.execute(text(
+                "UPDATE inventory_units u SET lat = gc.lat, lng = gc.lng FROM geocode_cache gc "
+                "WHERE gc.lat IS NOT NULL AND gc.address = "
+                "concat_ws(', ', nullif(btrim(u.society),''), nullif(btrim(u.locality),''), "
+                "nullif(btrim(u.city),'')) || ', India'"
+            ))
         await _write_state("ok", f"{len(rows)} rows via {trigger}", len(rows))
         log.info("inventory sync ok (%s): %d rows", trigger, len(rows))
+        # geocode any units that still lack coordinates (background, best-effort)
+        from .geocode import geocode_inventory
+
+        asyncio.create_task(geocode_inventory())
         return {"status": "ok", "rows": len(rows)}
     except Exception as e:  # noqa: BLE001 — sync must never crash the app
         log.exception("inventory sync failed (%s)", trigger)

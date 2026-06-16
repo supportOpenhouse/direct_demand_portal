@@ -13,6 +13,7 @@ import { useToast } from "../components/Toast";
 import { WhatsAppIcon } from "../components/icons";
 import { AssignControl } from "../components/AssignControl";
 import { waChat } from "../lib/whatsapp";
+import { VisitPlanner } from "../features/VisitPlanner";
 
 const SUBS: Record<string, string> = {
   qualified: "Confirmed on call, within 7 days of qualifying. After 7 days a lead auto-moves to Pipeline.",
@@ -37,6 +38,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
+  const [planner, setPlanner] = useState<Lead | null>(null);
 
   const all = data?.items ?? [];
   const filtered = all.filter(
@@ -112,7 +114,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                         <WhatsAppIcon />
                       </button>
                       <button className="btn ghost sm" title="Plan site visits"
-                        onClick={(e) => { e.stopPropagation(); toast("Visit planner arrives in a later phase", "blue", "📅"); }}>
+                        onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
                         📅 Visits
                       </button>
                     </span>
@@ -123,6 +125,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </tbody>
         </table>
       </div>
+      {planner && (
+        <VisitPlanner leadId={planner.id} leadName={planner.name} leadCity={planner.city} onClose={() => setPlanner(null)} />
+      )}
     </>
   );
 }

@@ -26,6 +26,27 @@ export function loadGoogleMaps(): Promise<any> {
   return promise;
 }
 
+/** Build a Google Maps directions URL (opens the app on mobile, maps.google on web).
+   Stops are visited in the given (optimized) order. Origin defaults to the device's
+   live location when `start` is null. */
+export function mapsDirectionsUrl(
+  start: { lat: number; lng: number } | null,
+  stops: { lat?: number | null; lng?: number | null }[]
+): string | null {
+  const pts = stops.filter((s) => s.lat != null && s.lng != null).map((s) => `${s.lat},${s.lng}`);
+  if (!pts.length) return null;
+  const params = new URLSearchParams({ api: "1", travelmode: "driving", destination: pts[pts.length - 1] });
+  if (start) params.set("origin", `${start.lat},${start.lng}`);
+  const waypoints = pts.slice(0, -1);
+  if (waypoints.length) params.set("waypoints", waypoints.join("|"));
+  return `https://www.google.com/maps/dir/?${params.toString()}`;
+}
+
+export function openInMaps(start: { lat: number; lng: number } | null, stops: { lat?: number | null; lng?: number | null }[]) {
+  const url = mapsDirectionsUrl(start, stops);
+  if (url) window.open(url, "_blank", "noopener");
+}
+
 /** Get the RM's current location; falls back to null if denied/unavailable. */
 export function getCurrentLocation(): Promise<{ lat: number; lng: number } | null> {
   return new Promise((resolve) => {

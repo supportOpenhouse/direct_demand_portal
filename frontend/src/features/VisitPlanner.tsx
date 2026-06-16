@@ -10,7 +10,7 @@ import { useInventory, useAssignees, formatPrice } from "../lib/queries";
 import { InventoryItem, api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { optimizeRoute, estimateLeg, pathKm, fmtMin, Pt } from "../lib/geo";
-import { loadGoogleMaps, getCurrentLocation, MAPS_API_KEY } from "../lib/maps";
+import { loadGoogleMaps, getCurrentLocation, openInMaps, MAPS_API_KEY } from "../lib/maps";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -281,6 +281,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}>↗ Open in Google Maps</button>
           <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
         </div>
       </div>

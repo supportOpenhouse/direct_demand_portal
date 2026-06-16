@@ -25,6 +25,10 @@ export function useLeadMatches(id: string) {
   return useQuery({ queryKey: ["lead-matches", id], queryFn: () => api.leadMatches(id), staleTime: 60_000 });
 }
 
+export function useLatestVisit(id: string) {
+  return useQuery({ queryKey: ["visit", id], queryFn: () => api.latestVisit(id), staleTime: 30_000 });
+}
+
 /** Live matching from in-progress form fields. Keyed on the requirement so
     react-query caches identical requirements; keepPreviousData avoids flicker. */
 export function useMatchPreview(req: MatchPreviewReq) {

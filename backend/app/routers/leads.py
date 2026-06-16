@@ -393,6 +393,8 @@ async def latest_visit(lead_id: UUID):
         return {"plan": None}
     return {"plan": {
         "trip_date": v["trip_date"].isoformat() if v["trip_date"] else None, "rm": v["rm"],
+        "start_lat": float(v["start_lat"]) if v["start_lat"] is not None else None,
+        "start_lng": float(v["start_lng"]) if v["start_lng"] is not None else None,
         "total_km": float(v["total_km"]) if v["total_km"] is not None else None,
         "total_min": float(v["total_min"]) if v["total_min"] is not None else None,
         "route_source": v["route_source"], "stops": v["stops"],

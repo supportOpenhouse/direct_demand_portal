@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   useLead, useConfirmLead, useMatchPreview, formatPrice,
-  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime,
+  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate,
 } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
 import { MatchUnit, api } from "../lib/api";
@@ -14,6 +14,7 @@ import { AssignControl } from "../components/AssignControl";
 import { WhatsAppIcon } from "../components/icons";
 import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
+import { openInMaps } from "../lib/maps";
 import { VisitPlanner } from "../features/VisitPlanner";
 
 const PURPOSES = ["Self-use", "Investment"];
@@ -223,6 +224,39 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
           ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SavedVisitCard({ id, onEdit }: { id: string; onEdit: () => void }) {
+  const { data, isLoading } = useLatestVisit(id);
+  const plan = data?.plan;
+  if (isLoading || !plan) return null;
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title" style={{ justifyContent: "space-between" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>📅 Planned site visits</span>
+        <span style={{ display: "flex", gap: 6 }}>
+          <button className="btn ghost sm" onClick={() => openInMaps(plan.start_lat != null && plan.start_lng != null ? { lat: plan.start_lat, lng: plan.start_lng } : null, plan.stops)}>↗ Maps</button>
+          <button className="btn ghost sm" onClick={onEdit}>Edit plan</button>
+        </span>
+      </div>
+      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
+        {plan.rm ? `${plan.rm} · ` : ""}{plan.trip_date ? formatDate(plan.trip_date) : "—"} ·{" "}
+        <b style={{ color: "var(--ink-2)" }}>
+          {plan.total_km != null ? `${plan.total_km} km` : "—"}{plan.total_min != null ? ` · ${Math.round(plan.total_min)} min` : ""}
+        </b>{" "}
+        {plan.route_source === "google" ? "(Google route)" : "(est.)"}
+      </div>
+      {plan.stops.map((s, i) => (
+        <div key={i} className="itin-stop" style={{ marginBottom: 8 }}>
+          <div className="num">{i + 1}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="sn">Visit {i + 1} · {s.name || s.society || "—"}</div>
+            <div className="sl">{[s.locality].filter(Boolean).join(", ")}{s.price_text ? ` · ${s.price_text}` : ""}</div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -518,8 +552,9 @@ export default function LeadDetail() {
           </div>
         </div>
 
-        {/* RIGHT column — live matched inventory + supply */}
+        {/* RIGHT column — saved visit plan + live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          <SavedVisitCard id={id} onEdit={() => setPlanner(true)} />
           <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
           <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
         </div>

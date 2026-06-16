@@ -115,6 +115,25 @@ This is adapted from the seller-flow "Similar Properties v2" ladder, kept to the
 buyer-lead matching (tiered fill so we always surface up to 5, continuous budget closeness,
 micro-market geo anchor, match reasons) and dropping the seller-only bits.
 
+## Visit planner (Google Maps)
+
+The 📅 Visits button (on the lead lists and lead detail) opens a multi-stop route planner:
+
+- **Start = the RM's current location** (browser geolocation).
+- **Stops** are picked from **live inventory** — units are geocoded server-side
+  (`backend/app/services/geocode.py`, Google Geocoding API, cached in `geocode_cache`)
+  so they have coordinates; the sync re-applies cached coords instantly on every run.
+- **"Optimize route"** reorders the stops for the shortest trip from the start, regardless of
+  the order they were picked (nearest-neighbour + 2-opt, `frontend/src/lib/geo.ts`).
+- The **Google Map** draws the live driving route via the Directions API and shows total
+  distance/time; without a key it falls back to a straight-line estimate.
+- Saving stores the plan (`visits` table) and moves the lead to **Visit Scheduled**.
+
+**Keys** (Google Cloud Console — one key with all three APIs enabled is fine):
+`MAPS_API_KEY` (backend, **Geocoding API**) and `VITE_MAPS_API_KEY` (frontend, **Maps
+JavaScript API** + **Directions API**). Add the Vercel domain + `http://localhost:5173` to the
+frontend key's HTTP-referrer restrictions.
+
 ## The prototype (UI reference)
 
 `index.html` is the single-file design prototype — the pixel spec for every screen. The React

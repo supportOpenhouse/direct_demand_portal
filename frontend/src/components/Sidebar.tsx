@@ -13,6 +13,7 @@ import {
   IconBars,
   IconStar,
   IconSettings,
+  IconReject,
 } from "./icons";
 
 const navClass = ({ isActive }: { isActive: boolean }) => "nav-item" + (isActive ? " active" : "");
@@ -45,6 +46,9 @@ export default function Sidebar() {
         </NavLink>
         <NavLink to="/leads/converted" className={navClass}>
           <IconCheckCircle /> Converted Leads
+        </NavLink>
+        <NavLink to="/leads/rejected" className={navClass}>
+          <IconReject /> Rejected Leads
         </NavLink>
         <div className="nav-label">Discovery</div>
         <NavLink to="/inventory" className={navClass}>

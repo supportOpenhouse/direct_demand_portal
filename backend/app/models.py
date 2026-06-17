@@ -157,6 +157,10 @@ class Lead(Base):
     confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     qualified_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # rejection
+    reject_reason: Mapped[str | None] = mapped_column(Text)
+    reject_notes: Mapped[str | None] = mapped_column(Text)
+    rejected_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
 
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

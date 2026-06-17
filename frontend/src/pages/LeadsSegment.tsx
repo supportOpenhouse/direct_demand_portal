@@ -3,7 +3,7 @@
    for all three segments, switched by the `segment` prop. */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLeads } from "../lib/queries";
+import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, stageClass, stageLabel, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
@@ -21,8 +21,9 @@ const SUBS: Record<string, string> = {
   qualified: "Confirmed on call, within 7 days of qualifying. After 7 days a lead auto-moves to Pipeline.",
   pipeline: "Qualified leads that have aged 7+ days in the funnel — still active.",
   converted: "Won — token received.",
+  rejected: "Leads rejected with a reason and notes.",
 };
-const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads" };
+const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
 
 // minutes from a TAT deadline → the prototype's ok/warn/breach chip (null → —)
 function TatChip({ deadline }: { deadline: string | null }) {
@@ -33,7 +34,8 @@ function TatChip({ deadline }: { deadline: string | null }) {
   return <span className="tat ok">{mins}m left</span>;
 }
 
-export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "converted" }) {
+export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "converted" | "rejected" }) {
+  const rejected = segment === "rejected";
   const { data, isLoading } = useLeads(segment);
   const nav = useNavigate();
   const toast = useToast();
@@ -58,6 +60,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     tat: (l) => (l.tat_deadline ? Date.parse(l.tat_deadline) : null),
     society: (l) => l.society,
     assigned: (l) => l.assigned_to,
+    reason: (l) => l.reject_reason,
+    rejected: (l) => (l.rejected_at ? Date.parse(l.rejected_at) : null),
   });
   const sel = useRowSelection(list.map((l) => l.id));
 
@@ -90,9 +94,19 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               </th>
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="TAT" sortKey="tat" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
+              {rejected ? (
+                <>
+                  <SortTh label="Reason" sortKey="reason" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <th>Notes</th>
+                  <SortTh label="Rejected" sortKey="rejected" activeKey={sortKey} dir={dir} onSort={onSort} />
+                </>
+              ) : (
+                <>
+                  <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <SortTh label="TAT" sortKey="tat" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
+                </>
+              )}
               <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>
@@ -120,9 +134,19 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     </div>
                   </td>
                   <td><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
-                  <td><span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span></td>
-                  <td><TatChip deadline={l.tat_deadline} /></td>
-                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                  {rejected ? (
+                    <>
+                      <td><span className="stage lost">{l.reject_reason || "—"}</span></td>
+                      <td style={{ fontSize: 12.5, color: "var(--ink-2)", maxWidth: 280, whiteSpace: "normal" }}>{l.reject_notes || "—"}</td>
+                      <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", color: "var(--muted)", whiteSpace: "nowrap" }}>{l.rejected_at ? formatDate(l.rejected_at) : "—"}</td>
+                    </>
+                  ) : (
+                    <>
+                      <td><span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span></td>
+                      <td><TatChip deadline={l.tat_deadline} /></td>
+                      <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
+                    </>
+                  )}
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
@@ -130,10 +154,12 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                         onClick={(e) => { e.stopPropagation(); l.phone ? waChat(l.phone) : toast("No phone number", "gold", "⚠"); }}>
                         <WhatsAppIcon />
                       </button>
-                      <button className="btn ghost sm" title="Plan site visits"
-                        onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
-                        📅 Visits
-                      </button>
+                      {!rejected && (
+                        <button className="btn ghost sm" title="Plan site visits"
+                          onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
+                          📅 Visits
+                        </button>
+                      )}
                     </span>
                   </td>
                 </tr>

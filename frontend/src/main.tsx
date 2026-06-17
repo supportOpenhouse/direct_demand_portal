@@ -26,6 +26,7 @@ const router = createBrowserRouter([
       { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
       { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },
       { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
+      { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
       { path: "leads/:id", element: <LeadDetail /> },
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },

@@ -10,6 +10,7 @@ const TITLES: Record<string, string> = {
   "/leads/qualified": "Qualified Leads",
   "/leads/pipeline": "Pipeline Leads",
   "/leads/converted": "Converted Leads",
+  "/leads/rejected": "Rejected Leads",
   "/reminders": "Reminders",
   "/inventory": "Live Inventory",
   "/supply": "Supply Pipeline",

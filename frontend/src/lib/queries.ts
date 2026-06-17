@@ -119,6 +119,18 @@ export function useConfirmLead(id: string) {
   });
 }
 
+export function useRejectLead(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ reason, notes }: { reason: string; notes: string }) => api.rejectLead(id, reason, notes),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 export function useSyncInventory() {
   const qc = useQueryClient();
   return useMutation({

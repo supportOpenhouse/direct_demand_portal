@@ -23,6 +23,9 @@ _ADD_COLUMNS = [
     ("lead_confirmed_data", "preferred_micromarkets", "JSONB NOT NULL DEFAULT '[]'::jsonb"),
     ("inventory_units", "lat", "NUMERIC"),
     ("inventory_units", "lng", "NUMERIC"),
+    ("leads", "reject_reason", "TEXT"),
+    ("leads", "reject_notes", "TEXT"),
+    ("leads", "rejected_at", "TIMESTAMPTZ"),
 ]
 
 

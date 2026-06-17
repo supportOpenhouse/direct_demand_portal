@@ -17,15 +17,18 @@ async def dashboard(user: dict = Depends(current_user)):
     if engine is None:
         return {"status": "not_configured"}
 
-    # role scope: RM sees own + unassigned; admin/cm see all
+    # role scope: unassigned visible to admins only; RM → own, CM → all assigned
     scope, params = "TRUE", {}
-    if user.get("role") == "rm":
+    role = user.get("role")
+    if role == "cm":
+        scope = "assigned_to IS NOT NULL"
+    elif role == "rm":
         aliases = assignment_aliases(user)
         if aliases:
-            scope = "(assigned_to IS NULL OR lower(assigned_to) = ANY(:aliases))"
+            scope = "lower(assigned_to) = ANY(:aliases)"
             params["aliases"] = aliases
         else:
-            scope = "assigned_to IS NULL"
+            scope = "false"
 
     async with engine.connect() as conn:
         totals = (await conn.execute(text(f"""

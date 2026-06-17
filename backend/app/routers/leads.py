@@ -21,14 +21,18 @@ from ..services.societies import (
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
+# stages that take a lead out of the active funnel
+_TERMINAL = "('won','lost','rejected','future_prospect','timepass')"
+
 # segment → SQL predicate on the leads spine
 SEGMENTS = {
     "new": "stage = 'new'",
-    "qualified": "confirmed = true AND stage NOT IN ('won','lost','future_prospect','timepass') "
+    "qualified": f"confirmed = true AND stage NOT IN {_TERMINAL} "
                  "AND qualified_at IS NOT NULL AND now() - qualified_at < interval '7 days'",
-    "pipeline": "confirmed = true AND stage NOT IN ('won','lost','future_prospect','timepass') "
+    "pipeline": f"confirmed = true AND stage NOT IN {_TERMINAL} "
                 "AND qualified_at IS NOT NULL AND now() - qualified_at >= interval '7 days'",
     "converted": "stage = 'won'",
+    "rejected": "stage = 'rejected'",
 }
 
 
@@ -52,6 +56,9 @@ def _lead_row(r) -> dict:
         "received_at": r["received_at"].isoformat() if r["received_at"] else None,
         "stage": r["stage"],
         "tat_deadline": r["tat_deadline"].isoformat() if r["tat_deadline"] else None,
+        "reject_reason": r["reject_reason"],
+        "reject_notes": r["reject_notes"],
+        "rejected_at": r["rejected_at"].isoformat() if r["rejected_at"] else None,
         "confirmed": r["confirmed"],
         "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
         "is_test": r["is_test"],
@@ -66,16 +73,19 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
     predicate = SEGMENTS.get(segment)
     if predicate is None:
         raise HTTPException(status_code=400, detail=f"unknown segment '{segment}'")
-    # role-scoping: an RM sees their own leads PLUS any unassigned lead (those are
-    # up for grabs by everyone). Admin/CM see all.
+    # role-scoping: unassigned leads are visible to admins only. RM → own assigned
+    # leads only; CM → all assigned leads (no unassigned); Admin → everything.
     params: dict = {}
-    if user.get("role") == "rm":
+    role = user.get("role")
+    if role == "cm":
+        predicate += " AND assigned_to IS NOT NULL"
+    elif role == "rm":
         aliases = assignment_aliases(user)
         if aliases:
-            predicate += " AND (assigned_to IS NULL OR lower(assigned_to) = ANY(:aliases))"
+            predicate += " AND lower(assigned_to) = ANY(:aliases)"
             params["aliases"] = aliases
         else:
-            predicate += " AND assigned_to IS NULL"
+            predicate += " AND false"
     try:
         async with engine.connect() as conn:
             res = await conn.execute(
@@ -231,6 +241,32 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
             ),
             {"id": lead_id},
         )
+    return {"status": "ok"}
+
+
+REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch"}
+
+
+class RejectPayload(BaseModel):
+    reason: str
+    notes: str
+
+
+@router.post("/leads/{lead_id}/reject")
+async def reject_lead(lead_id: UUID, payload: RejectPayload):
+    if payload.reason not in REJECT_REASONS:
+        raise HTTPException(status_code=422, detail={"fields": ["reason"]})
+    if not payload.notes.strip():
+        raise HTTPException(status_code=422, detail={"fields": ["notes"], "message": "notes are required"})
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        res = await conn.execute(text(
+            "UPDATE leads SET stage='rejected', reject_reason=:r, reject_notes=:n, rejected_at=now() WHERE id=:id"),
+            {"r": payload.reason, "n": payload.notes.strip(), "id": lead_id})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="lead not found")
     return {"status": "ok"}
 
 

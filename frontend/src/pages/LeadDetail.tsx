@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
-  useLead, useConfirmLead, useMatchPreview, formatPrice,
+  useLead, useConfirmLead, useRejectLead, useMatchPreview, formatPrice,
   useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate,
 } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
@@ -40,6 +40,55 @@ const OFFICE_PITCH_HI = [
   "Agar aap location change karte hain to uske fayde/nuksan kya honge.",
   "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
 ];
+
+// only one reason for now — preselected (re-add Broker/Budget/Location here later)
+const REJECT_REASONS = ["Requirement Mismatch"];
+
+function RejectModal({ id, name, onClose }: { id: string; name: string | null; onClose: () => void }) {
+  const reject = useRejectLead(id);
+  const toast = useToast();
+  const [reason, setReason] = useState(REJECT_REASONS[0]);
+  const [notes, setNotes] = useState("");
+  const [err, setErr] = useState(false);
+
+  const submit = () => {
+    if (!reason || !notes.trim()) { setErr(true); return; }
+    reject.mutate({ reason, notes: notes.trim() }, {
+      onSuccess: () => { toast("Lead rejected", "blue", "✕"); onClose(); },
+      onError: (e: any) => toast(e.message, "gold", "⚠"),
+    });
+  };
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="mh"><h3>Reject {name}</h3><div className="icon-btn" onClick={onClose}>✕</div></div>
+        <div className="mb">
+          <div className={"field" + (err && !reason ? " invalid" : "")}>
+            <label>Reason for rejection <span className="req">*</span></label>
+            <select value={reason} onChange={(e) => setReason(e.target.value)}>
+              <option value="">Select…</option>
+              {REJECT_REASONS.map((r) => <option key={r}>{r}</option>)}
+            </select>
+          </div>
+          {reason && (
+            <div className={"field" + (err && !notes.trim() ? " invalid" : "")} style={{ marginBottom: 0 }}>
+              <label>Notes <span className="req">*</span></label>
+              <textarea rows={3} value={notes} placeholder="Why is this lead being rejected?" onChange={(e) => setNotes(e.target.value)} />
+            </div>
+          )}
+          {err && (!reason || !notes.trim()) && <div className="mand-flag show">⚠ A reason and notes are required.</div>}
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn" style={{ background: "var(--coral)", color: "#fff" }} onClick={submit} disabled={reject.isPending}>
+            {reject.isPending ? "Rejecting…" : "Reject lead"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function SourceCard({ lead }: { lead: any }) {
   const patch = usePatchSourceData(lead.id);
@@ -292,6 +341,7 @@ export default function LeadDetail() {
   const { data: lead, isLoading } = useLead(id);
   const confirm = useConfirmLead(id);
   const [planner, setPlanner] = useState(false);
+  const [rejecting, setRejecting] = useState(false);
 
   const [purpose, setPurpose] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
@@ -425,6 +475,7 @@ export default function LeadDetail() {
         </div>
       </div>
       {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} onClose={() => setPlanner(false)} />}
+      {rejecting && <RejectModal id={id} name={lead.name} onClose={() => setRejecting(false)} />}
 
       <div className="detail-grid">
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
@@ -544,7 +595,14 @@ export default function LeadDetail() {
             </div>
 
             {showErr && anyInvalid && <div className="mand-flag show">⚠ Please fill all starred (*) fields to confirm the lead.</div>}
-            <div style={{ marginTop: 12 }}>
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              {lead.stage === "rejected" ? (
+                <span className="stage lost">Rejected — {lead.reject_reason}</span>
+              ) : (
+                <button className="btn" style={{ background: "var(--coral)", color: "#fff" }} onClick={() => setRejecting(true)}>
+                  ✕ Reject lead
+                </button>
+              )}
               <button className="btn green" onClick={save} disabled={confirm.isPending}>
                 {confirm.isPending ? "Saving…" : lead.confirmed ? "Update confirmed data" : "Confirm & qualify lead"}
               </button>

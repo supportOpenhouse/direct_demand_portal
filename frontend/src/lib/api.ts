@@ -134,6 +134,9 @@ export interface Lead {
   received_at: string | null;
   stage: string;
   tat_deadline: string | null;
+  reject_reason: string | null;
+  reject_notes: string | null;
+  rejected_at: string | null;
   confirmed: boolean;
   qualified_at: string | null;
   is_test: boolean;
@@ -236,6 +239,8 @@ export const api = {
     request<{ status: string; meta_new: number; listing_new: number }>("/v1/leads/sync", { method: "POST" }),
   confirmLead: (id: string, payload: ConfirmPayload) =>
     request<{ status: string }>(`/v1/leads/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }),
+  rejectLead: (id: string, reason: string, notes: string) =>
+    request<{ status: string }>(`/v1/leads/${id}/reject`, { method: "POST", body: JSON.stringify({ reason, notes }) }),
   authGoogle: (credential: string) =>
     request<{ token: string; user: AuthUser }>("/v1/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   me: () => request<AuthUser>("/v1/me"),

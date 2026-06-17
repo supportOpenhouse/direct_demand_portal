@@ -5,6 +5,7 @@ import { SupplyItem } from "../lib/api";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { useAuth } from "../components/AuthContext";
 
 /* closest-to-landing first — 'Visited' dominates the table (900+ rows), so the
    advanced stages must surface above it */
@@ -22,6 +23,8 @@ function unitText(s: SupplyItem): string {
 export default function Supply() {
   const { data, isLoading } = useSupply();
   const { query } = useSearch();
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
   const [stage, setStage] = useState("");
   const [city, setCity] = useState("");
   const [config, setConfig] = useState("");
@@ -125,7 +128,9 @@ export default function Supply() {
                 <SortTh label="Config" sortKey="config" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <SortTh label="Area" sortKey="area" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <th>Tower / Unit</th>
-                <SortTh label="Demand Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
+                {isAdmin && (
+                  <SortTh label="Demand Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
+                )}
                 <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
               </tr>
             </thead>
@@ -141,7 +146,7 @@ export default function Supply() {
                     {s.area_sqft != null ? `${s.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"}
                   </td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{unitText(s)}</td>
-                  <td style={{ fontWeight: 600 }}>{formatPrice(s.price_lacs, s.price_text)}</td>
+                  {isAdmin && <td style={{ fontWeight: 600 }}>{formatPrice(s.price_lacs, s.price_text)}</td>}
                   <td>
                     <span className={`sup-stage ${s.stage_key}`}>{s.stage}</span>
                   </td>

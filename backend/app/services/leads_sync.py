@@ -17,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..db import neon_engine
 from ..models import Lead, ListingLead, MetaLead, SyncState
+from .normalize import normalize_city
 
 log = logging.getLogger("leads_sync")
 
@@ -197,7 +198,7 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict]]:
         if not phone or not name:
             continue
         source = map_source(r.get("source"))
-        city = r.get("city") or None
+        city = normalize_city(r.get("city"))
         prop = r.get("property") or None
         ltype = r.get("type") or None
         assigned = r.get("assigned_to") or None

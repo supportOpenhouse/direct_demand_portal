@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..db import neon_engine
 from ..models import InventoryUnit, SyncState
+from .normalize import normalize_city, normalize_config
 from .sheets import fetch_sheet_values, normalize_header, parse_price_lacs
 
 log = logging.getLogger("inventory_sync")
@@ -81,8 +82,8 @@ def map_rows(values: list[list[str]]) -> list[dict]:
                 "name": get("name"),
                 "society": get("society"),
                 "locality": get("locality"),
-                "city": get("city"),
-                "configuration": get("configuration"),
+                "city": normalize_city(get("city")),
+                "configuration": normalize_config(get("configuration")),
                 "area_sqft": area_num,
                 "price_text": get("price_text"),
                 "price_lacs": parse_price_lacs(get("price_text")),

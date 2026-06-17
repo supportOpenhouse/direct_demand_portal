@@ -20,6 +20,7 @@ import time
 from sqlalchemy import text
 
 from ..db import neon_engine, properties_engine
+from .normalize import normalize_city, normalize_config
 from .societies import society_meta
 from .supply import STAGES, stage_key
 
@@ -87,12 +88,12 @@ async def build_requirement(
     if bmin is None and bmax is None:
         bmin, bmax = parse_band(budget_band)
     return {
-        "city": city,
+        "city": normalize_city(city),
         "societies": societies,
         "society_lc": {s.lower() for s in societies},
         "localities_lc": {l.lower() for l in localities},
         "micromarkets": mms,
-        "config": config,
+        "config": normalize_config(config),
         "size_min": float(size_min_sqft) if size_min_sqft else None,
         "size_max": float(size_max_sqft) if size_max_sqft else None,
         "bmin": float(bmin) if bmin is not None else None,

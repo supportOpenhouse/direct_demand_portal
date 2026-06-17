@@ -68,7 +68,9 @@ async def _get_columns(engine) -> list[str]:
 
 
 def _row_to_item(row: dict) -> dict:
-    cfg = (row.get("configuration") or "").strip() or None
+    from .normalize import normalize_city, normalize_config
+
+    cfg = normalize_config(row.get("configuration"))
     society = (row.get("society_name") or row.get("society") or "").strip() or None
     name = " · ".join(x for x in (cfg, society) if x) or society or str(row.get("uid") or row.get("id"))
     from .sheets import parse_price_lacs
@@ -82,7 +84,7 @@ def _row_to_item(row: dict) -> dict:
         "name": name,
         "society": society,
         "locality": row.get("locality"),
-        "city": row.get("city"),
+        "city": normalize_city(row.get("city")),
         "stage": stage,
         "stage_key": stage_key(stage or ""),
         "configuration": cfg,

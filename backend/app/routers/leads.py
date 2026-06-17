@@ -202,10 +202,11 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
             office_date = date.fromisoformat(payload.office_preferred_date)
         except ValueError:
             raise HTTPException(status_code=422, detail={"fields": ["office_preferred_date"]})
+    from ..services.normalize import normalize_config
     values = dict(
         lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=None, size_sqft=None,
         budget_min_lacs=payload.budget_min_lacs, budget_max_lacs=payload.budget_max_lacs,
-        configuration=payload.configuration,
+        configuration=normalize_config(payload.configuration),
         size_min_sqft=payload.size_min_sqft, size_max_sqft=payload.size_max_sqft,
         preferred_micromarkets=payload.preferred_micromarkets,
         shortlisted_societies=payload.shortlisted_societies, preferred_localities=payload.preferred_localities,

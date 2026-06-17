@@ -54,6 +54,12 @@ async def run_migrations(engine) -> None:
                 )
             # everything still null (meta has no source date) → use ingest time
             await conn.execute(text("UPDATE leads SET received_at = created_at WHERE received_at IS NULL"))
+
+            # canonicalize existing lead cities (the cron is insert-only, so it won't
+            # re-normalize old rows; inventory self-heals on sync, supply is live)
+            await conn.execute(text("UPDATE leads SET city='Noida' WHERE city ILIKE '%noida%' AND city <> 'Noida'"))
+            await conn.execute(text("UPDATE leads SET city='Gurgaon' WHERE (city ILIKE '%gurgaon%' OR city ILIKE '%gurugram%') AND city <> 'Gurgaon'"))
+            await conn.execute(text("UPDATE leads SET city='Ghaziabad' WHERE city ILIKE '%ghaziabad%' AND city <> 'Ghaziabad'"))
         log.info("migrations applied (%d listing dates back-filled)", len(updates))
     except Exception:
         log.exception("migrations failed — continuing (additive only)")

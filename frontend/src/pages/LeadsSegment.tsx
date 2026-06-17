@@ -9,6 +9,8 @@ import { srcClass, srcLabel, stageClass, stageLabel, initials } from "../lib/lea
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { useRowSelection } from "../lib/useRowSelection";
+import { BulkAssignBar } from "../components/BulkAssignBar";
 import { useToast } from "../components/Toast";
 import { WhatsAppIcon } from "../components/icons";
 import { AssignControl } from "../components/AssignControl";
@@ -38,6 +40,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
+  const [owner, setOwner] = useState("");
   const [planner, setPlanner] = useState<Lead | null>(null);
 
   const all = data?.items ?? [];
@@ -45,6 +48,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     (l) =>
       (!source || l.source === source) &&
       (!city || l.city === city) &&
+      (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       matches(query, l.name, l.phone, l.city, l.society, srcLabel(l.source), stageLabel(l.stage))
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
@@ -55,6 +59,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     society: (l) => l.society,
     assigned: (l) => l.assigned_to,
   });
+  const sel = useRowSelection(list.map((l) => l.id));
 
   return (
     <>
@@ -63,17 +68,26 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
           {NOUN[segment]} · {SUBS[segment]}
         </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
-            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={140} />
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={130} />
+            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
+          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
+          <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
+          {(source || city || owner) && (
+            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); }}>Clear</button>
+          )}
         </div>
       </div>
+
+      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
 
       <div className="card">
         <table>
           <thead>
             <tr>
+              <th style={{ width: 30 }}>
+                <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
+              </th>
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -85,14 +99,17 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={7}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={7}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
               list.map((l) => (
                 <tr key={l.id} className="lead-row" onClick={() => nav(`/leads/${l.id}`)}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
+                  </td>
                   <td>
                     <div className="who">
                       <div className="av">{initials(l.name)}</div>

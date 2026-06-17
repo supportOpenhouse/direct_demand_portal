@@ -10,6 +10,8 @@ import { WhatsAppIcon } from "../components/icons";
 import { AssignControl } from "../components/AssignControl";
 import { useToast } from "../components/Toast";
 import { useSort, SortTh } from "../lib/useSort";
+import { useRowSelection } from "../lib/useRowSelection";
+import { BulkAssignBar } from "../components/BulkAssignBar";
 import { waChat } from "../lib/whatsapp";
 import { useState } from "react";
 
@@ -25,12 +27,16 @@ export default function NewLeads() {
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
+  const [owner, setOwner] = useState("");
+  const [plan, setPlan] = useState("");
 
   const all = data?.items ?? [];
   const filtered = all.filter(
     (l) =>
       (!source || l.source === source) &&
       (!city || l.city === city) &&
+      (!plan || l.plan_to_buy === plan) &&
+      (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       matches(query, l.name, l.phone, l.city, l.society, l.budget_band, srcLabel(l.source))
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
@@ -43,6 +49,7 @@ export default function NewLeads() {
     date: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     assigned: (l) => l.assigned_to,
   });
+  const sel = useRowSelection(list.map((l) => l.id));
 
   const wa = (e: React.MouseEvent, l: Lead) => {
     e.stopPropagation();
@@ -65,12 +72,19 @@ export default function NewLeads() {
             </>
           )}
         </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
-            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={140} />
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={130} />
+            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
+          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
+          <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
+          <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
+          {(source || city || plan || owner) && (
+            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); }}>Clear</button>
+          )}
         </div>
       </div>
+
+      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
 
       <div className="card panel-pad" id="needing-action">
         <div className="section-head">
@@ -92,6 +106,9 @@ export default function NewLeads() {
         <table>
           <thead>
             <tr>
+              <th style={{ width: 30 }}>
+                <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
+              </th>
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Society (from source)" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -106,13 +123,13 @@ export default function NewLeads() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <div className="empty" style={{ padding: 24 }}>Loading leads…</div>
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <div className="empty" style={{ padding: 24 }}>
                     {all.length === 0 ? "No new leads right now. 🎉" : "No leads match the search / filters."}
                   </div>
@@ -121,6 +138,9 @@ export default function NewLeads() {
             ) : (
               list.map((l) => (
                 <tr key={l.id} className="lead-row" onClick={() => nav(`/leads/${l.id}`)}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
+                  </td>
                   <td>
                     <div className="who">
                       <div className="av">{initials(l.name)}</div>

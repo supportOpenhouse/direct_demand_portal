@@ -88,6 +88,16 @@ export function useAssignLead() {
     },
   });
 }
+export function useBulkAssign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ ids, assigned_to }: { ids: string[]; assigned_to: string | null }) => api.bulkAssign(ids, assigned_to),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
 export function useUserMutations() {
   const qc = useQueryClient();
   const inv = () => qc.invalidateQueries({ queryKey: ["users"] });

@@ -257,6 +257,8 @@ export const api = {
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),
+  bulkAssign: (lead_ids: string[], assigned_to: string | null) =>
+    request<{ status: string; updated: number; assigned_to: string | null }>("/v1/leads/bulk-assign", { method: "POST", body: JSON.stringify({ lead_ids, assigned_to }) }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   createUser: (u: { email: string; name: string; role: string }) =>

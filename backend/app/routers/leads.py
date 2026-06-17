@@ -432,6 +432,27 @@ async def assign_lead(lead_id: UUID, payload: AssignPayload):
     return {"status": "ok", "assigned_to": name}
 
 
+class BulkAssign(BaseModel):
+    lead_ids: list[UUID]
+    assigned_to: str | None = None  # null → unassign all
+
+
+@router.post("/leads/bulk-assign")
+async def bulk_assign(payload: BulkAssign):
+    if not payload.lead_ids:
+        raise HTTPException(status_code=422, detail="no leads selected")
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    name = (payload.assigned_to or "").strip() or None
+    async with engine.begin() as conn:
+        res = await conn.execute(
+            text("UPDATE leads SET assigned_to = :a WHERE id = ANY(:ids)"),
+            {"a": name, "ids": payload.lead_ids},
+        )
+    return {"status": "ok", "updated": res.rowcount, "assigned_to": name}
+
+
 # --- master_societies autocomplete -------------------------------------------
 
 @router.get("/societies/search")

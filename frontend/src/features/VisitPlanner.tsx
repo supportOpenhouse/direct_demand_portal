@@ -56,13 +56,15 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
     ? { km: googleMetrics.km, min: googleMetrics.min, source: "google" as const }
     : { km: est.totalKm, min: est.totalMin, source: "est" as const };
 
-  useEffect(() => {
+  const locate = () => {
+    setLocating(true);
     getCurrentLocation().then((loc) => {
       setStart(loc);
       setLocating(false);
-      if (!loc) toast("Location blocked — using map without a start point", "gold", "📍");
+      if (!loc) toast("📍 Allow location permission to optimize the route — then retry", "gold", "📍");
     });
-  }, []);
+  };
+  useEffect(() => { locate(); }, []);
 
   useEffect(() => {
     if (rm === "" && assignees?.items.length) setRm(assignees.items[0].name);
@@ -149,7 +151,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
   };
 
   const optimize = () => {
-    if (!start) { toast("Need your location to optimize from a start point", "gold", "📍"); return; }
+    if (!start) { toast("📍 Allow location permission to optimize the route from your location", "gold", "📍"); return; }
     if (stops.length < 2) { toast("Add 2+ stops to optimize", "gold", "⚠"); return; }
     const before = pathKm(start, stops as Pt[]);
     const ordered = optimizeRoute(start, stops as (InventoryItem & Pt)[]);
@@ -191,6 +193,12 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
             <b>{locating ? "your location…" : start ? "your current location" : "(location unavailable)"}</b> and the map
             plots the optimized driving route.
           </div>
+          {!locating && !start && (
+            <div className="mand-flag show" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
+              <span>⚠ Location permission is off — allow it in your browser to optimize the route from your location.</span>
+              <button className="btn ghost sm" onClick={locate}>📍 Allow / retry</button>
+            </div>
+          )}
           <div className="two">
             <div className="field" style={{ marginBottom: 12 }}><label>Trip date</label>
               <input type="date" value={tripDate} onChange={(e) => setTripDate(e.target.value)} /></div>

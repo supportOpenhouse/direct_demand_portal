@@ -11,10 +11,10 @@ import { useAuth } from "../components/AuthContext";
    advanced stages must surface above it */
 const STAGE_ORDER = ["Token Req", "AMA Signed", "AMA Req", "Deal Terms", "Visited"];
 
-function unitText(s: SupplyItem): string {
+function unitText(s: SupplyItem, showUnit: boolean): string {
   const parts = [
     s.raw.tower_no?.trim() && `Tower ${s.raw.tower_no.trim()}`,
-    s.raw.unit_no?.trim() && `Unit ${s.raw.unit_no.trim()}`,
+    showUnit && s.raw.unit_no?.trim() && `Unit ${s.raw.unit_no.trim()}`,
     s.raw.floor?.trim() && `Floor ${s.raw.floor.trim()}`,
   ].filter(Boolean);
   return parts.length ? parts.join(" · ") : "—";
@@ -121,7 +121,7 @@ export default function Supply() {
           <table>
             <thead>
               <tr>
-                <SortTh label="UID" sortKey="uid" activeKey={sortKey} dir={dir} onSort={onSort} />
+                {isAdmin && <SortTh label="UID" sortKey="uid" activeKey={sortKey} dir={dir} onSort={onSort} />}
                 <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <SortTh label="Locality" sortKey="locality" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -137,7 +137,7 @@ export default function Supply() {
             <tbody>
               {items.map((s) => (
                 <tr key={s.id}>
-                  <td style={{ fontFamily: "'Spline Sans Mono'", fontSize: 12 }}>{s.id}</td>
+                  {isAdmin && <td style={{ fontFamily: "'Spline Sans Mono'", fontSize: 12 }}>{s.id}</td>}
                   <td style={{ fontWeight: 600 }}>{s.society || "—"}</td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{s.locality || "—"}</td>
                   <td style={{ fontSize: 12.5 }}>{s.city || "—"}</td>
@@ -145,7 +145,7 @@ export default function Supply() {
                   <td style={{ fontSize: 12.5 }}>
                     {s.area_sqft != null ? `${s.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"}
                   </td>
-                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{unitText(s)}</td>
+                  <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{unitText(s, isAdmin)}</td>
                   {isAdmin && <td style={{ fontWeight: 600 }}>{formatPrice(s.price_lacs, s.price_text)}</td>}
                   <td>
                     <span className={`sup-stage ${s.stage_key}`}>{s.stage}</span>

@@ -20,6 +20,9 @@ function PlanChip({ plan }: { plan: string | null }) {
   return <span className={`plan-chip ${planClass(plan)}`}>{plan}</span>;
 }
 
+// freshly-synced lead (ingested within the last 24h)
+const isFreshLead = (l: Lead) => !!l.created_at && Date.now() - Date.parse(l.created_at) < 24 * 3600 * 1000;
+
 export default function NewLeads() {
   const { data, isLoading } = useLeads("new");
   const nav = useNavigate();
@@ -150,6 +153,12 @@ export default function NewLeads() {
                           <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>
                             ({srcLabel(l.source)})
                           </span>
+                          {isFreshLead(l) && (
+                            <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, letterSpacing: ".04em",
+                              padding: "1px 6px", borderRadius: 20, background: "var(--emerald)", color: "#fff", verticalAlign: "middle" }}>
+                              NEW
+                            </span>
+                          )}
                           {l.is_test && (
                             <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>
                           )}

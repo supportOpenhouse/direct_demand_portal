@@ -132,6 +132,7 @@ export interface Lead {
   source_remarks: string | null;
   source_meta: Record<string, unknown>;
   received_at: string | null;
+  created_at: string | null;
   stage: string;
   tat_deadline: string | null;
   reject_reason: string | null;

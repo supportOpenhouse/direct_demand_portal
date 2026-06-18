@@ -54,6 +54,7 @@ def _lead_row(r) -> dict:
         "source_remarks": r["source_remarks"],
         "source_meta": r["source_meta"],
         "received_at": r["received_at"].isoformat() if r["received_at"] else None,
+        "created_at": r["created_at"].isoformat() if r["created_at"] else None,
         "stage": r["stage"],
         "tat_deadline": r["tat_deadline"].isoformat() if r["tat_deadline"] else None,
         "reject_reason": r["reject_reason"],
@@ -443,12 +444,13 @@ async def latest_visit(lead_id: UUID):
 
 @router.get("/assignees")
 async def list_assignees():
-    """Active users a lead can be assigned to (for the assign dropdown)."""
+    """Active non-admin users a lead can be assigned to (admins don't work leads)."""
     engine = neon_engine()
     if engine is None:
         return {"items": []}
     async with engine.connect() as conn:
-        res = await conn.execute(text("SELECT name, email FROM users WHERE active AND name IS NOT NULL ORDER BY name"))
+        res = await conn.execute(text(
+            "SELECT name, email FROM users WHERE active AND name IS NOT NULL AND role <> 'admin' ORDER BY name"))
         return {"items": [{"name": r[0], "email": r[1]} for r in res]}
 
 

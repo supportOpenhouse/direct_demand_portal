@@ -18,12 +18,16 @@ STAGES = ["AMA Req", "Deal Terms", "Draft", "AMA Signed", "Visited", "Token Req"
 # display under 'Token Req' (DB filter above still matches the raw 'Draft' rows)
 DISPLAY_STAGE = {"Draft": "Token Req"}
 
+# the Direct Demand priority flag we add to the external properties table
+PRIORITY_COLUMN = "direct_demand_priority"
+
 # columns we will SELECT if they exist (superset; intersected with reality)
 CANDIDATE_COLUMNS = [
     "uid", "id", "stage", "society_name", "society", "locality", "city",
     "configuration", "area_sqft", "demand_price", "offer_price",
     "tower_no", "unit_no", "floor", "additional_images", "image_url",
     "is_high_priority", "is_dead", "status_override", "source", "created_at",
+    PRIORITY_COLUMN,
 ]
 
 # never expose these even if present in raw
@@ -92,8 +96,44 @@ def _row_to_item(row: dict) -> dict:
         "price_text": price_text,
         "price_lacs": parse_price_lacs(price_text),
         "image_url": _first_image(row.get("additional_images") or row.get("image_url")),
+        "priority": bool(row.get(PRIORITY_COLUMN)),
         "raw": raw,
     }
+
+
+async def ensure_priority_column() -> None:
+    """Add the Direct Demand priority flag to the external properties table.
+    Idempotent; needs ALTER permission on that DB."""
+    engine = properties_engine()
+    if engine is None:
+        return
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(text(
+                f"ALTER TABLE properties ADD COLUMN IF NOT EXISTS {PRIORITY_COLUMN} BOOLEAN NOT NULL DEFAULT false"))
+        global _columns_cache
+        _columns_cache = None  # force re-introspect so the new column is picked up
+        log.info("ensured properties.%s column", PRIORITY_COLUMN)
+    except Exception:
+        log.exception("could not add %s to properties (need ALTER permission?)", PRIORITY_COLUMN)
+
+
+async def set_priority(uid: str, value: bool) -> dict:
+    """Set/unset Direct Demand priority on a property. Returns {status}."""
+    engine = properties_engine()
+    if engine is None:
+        return {"status": "not_configured"}
+    try:
+        async with engine.begin() as conn:
+            res = await conn.execute(
+                text(f"UPDATE properties SET {PRIORITY_COLUMN} = :v WHERE uid = :uid"),
+                {"v": value, "uid": uid})
+        if res.rowcount == 0:
+            return {"status": "not_found"}
+        return {"status": "ok", "priority": value}
+    except Exception as e:  # noqa: BLE001
+        log.exception("set_priority failed for %s", uid)
+        return {"status": "error", "detail": str(e)}
 
 
 async def fetch_supply() -> dict:

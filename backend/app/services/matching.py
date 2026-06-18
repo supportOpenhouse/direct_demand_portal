@@ -254,11 +254,17 @@ async def _supply_units() -> list[dict]:
     if engine is None:
         return []
     try:
+        from .supply import PRIORITY_COLUMN
+
         async with engine.connect() as conn:
+            has_priority = (await conn.execute(text(
+                "SELECT 1 FROM information_schema.columns WHERE table_name='properties' AND column_name=:c"),
+                {"c": PRIORITY_COLUMN})).first() is not None
+            pcol = f", {PRIORITY_COLUMN}" if has_priority else ""
             res = await conn.execute(
                 text(
                     "SELECT uid, society_name, locality, city, configuration, area_sqft, "
-                    "demand_price, stage FROM properties WHERE stage = ANY(:stages)"
+                    f"demand_price, stage{pcol} FROM properties WHERE stage = ANY(:stages)"
                 ),
                 {"stages": STAGES},
             )
@@ -282,6 +288,7 @@ async def _supply_units() -> list[dict]:
             "price_lacs": parse_price_lacs(r.get("demand_price")),
             "stage": r.get("stage"),
             "stage_key": stage_key(r.get("stage") or ""),
+            "priority": bool(r.get("direct_demand_priority")),
         })
     await _enrich_micromarket(out)
     return out
@@ -299,10 +306,16 @@ def _shape(u: dict, supply: bool) -> dict:
     if supply:
         base["stage"] = u.get("stage")
         base["stage_key"] = u.get("stage_key")
+        base["priority"] = bool(u.get("priority"))
     else:
         base["status"] = u.get("status")
         base["image_url"] = u.get("image_url")
     return base
+
+
+def invalidate_units_cache() -> None:
+    """Force the next match to reload units (e.g. after a priority change)."""
+    _cache["at"] = 0.0
 
 
 async def _load_units(force: bool = False) -> tuple[list[dict], list[dict]]:

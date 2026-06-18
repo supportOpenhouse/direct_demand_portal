@@ -36,6 +36,10 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(run_sync(trigger="startup"))
     asyncio.create_task(run_leads_sync(trigger="startup"))
+    # ensure the Direct Demand priority column exists on the external properties table
+    from .services.supply import ensure_priority_column
+
+    asyncio.create_task(ensure_priority_column())
     start_scheduler(settings.SYNC_INTERVAL_MINUTES, settings.LEADS_SYNC_INTERVAL_HOURS)
     yield
     stop_scheduler()

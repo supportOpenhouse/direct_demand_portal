@@ -29,6 +29,18 @@ export function useLatestVisit(id: string) {
   return useQuery({ queryKey: ["visit", id], queryFn: () => api.latestVisit(id), staleTime: 30_000 });
 }
 
+export function useMarkPriority(leadId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ uid, priority }: { uid: string; priority: boolean }) => api.markPriority(uid, priority),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead-matches", leadId] });
+      qc.invalidateQueries({ queryKey: ["match-preview"] });
+      qc.invalidateQueries({ queryKey: ["supply"] });
+    },
+  });
+}
+
 /** Live matching from in-progress form fields. Keyed on the requirement so
     react-query caches identical requirements; keepPreviousData avoids flicker. */
 export function useMatchPreview(req: MatchPreviewReq) {

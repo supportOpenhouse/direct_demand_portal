@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   useLead, useConfirmLead, useRejectLead, useMatchPreview, formatPrice,
-  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate,
+  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate, useMarkPriority,
 } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
 import { MatchUnit, api } from "../lib/api";
@@ -211,9 +211,20 @@ function NotesThread({ id }: { id: string }) {
   );
 }
 
-function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply: boolean; leadPhone: string | null; leadName: string | null }) {
+function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; isSupply: boolean; leadId: string; leadPhone: string | null; leadName: string | null }) {
   const [open, setOpen] = useState(false);
   const toast = useToast();
+  const markPriority = useMarkPriority(leadId);
+  const onMark = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    markPriority.mutate(
+      { uid: u.id, priority: true },
+      {
+        onSuccess: () => toast("Marked as Direct Demand priority", "green", "★"),
+        onError: (err) => toast(err instanceof Error ? err.message : "Could not mark priority", "gold", "⚠"),
+      },
+    );
+  };
   const detail: [string, string | null | undefined][] = [
     ["Society", u.society],
     ["City", u.city],
@@ -245,6 +256,9 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
         <div className="opt-info">
           <div className="opt-name">
             {u.name || "—"} <span className="match-mini">{u.score}%</span>
+            {isSupply && u.priority && (
+              <span className="match-mini" style={{ background: "var(--gold-soft)", color: "var(--gold)", marginLeft: 4 }}>★ Priority</span>
+            )}
           </div>
           <div className="opt-meta">
             {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
@@ -272,6 +286,24 @@ function MatchRow({ u, isSupply, leadPhone, leadName }: { u: MatchUnit; isSupply
             </div>
           ))}
         </div>
+        {isSupply && (
+          <div style={{ marginTop: 12 }}>
+            {u.priority ? (
+              <span className="btn sm" style={{ background: "var(--gold-soft)", color: "var(--gold)", cursor: "default", fontWeight: 700 }}>
+                ★ Marked Priority
+              </span>
+            ) : (
+              <button
+                className="btn sm"
+                style={{ background: "var(--gold)", color: "#fff", boxShadow: "0 6px 16px -8px var(--gold)" }}
+                onClick={onMark}
+                disabled={markPriority.isPending}
+              >
+                {markPriority.isPending ? "Marking…" : "★ Mark as Priority"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -310,7 +342,7 @@ function SavedVisitCard({ id, onEdit }: { id: string; onEdit: () => void }) {
   );
 }
 
-function MatchPanel({ title, tag, units, loading, leadPhone, leadName }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; leadPhone: string | null; leadName: string | null }) {
+function MatchPanel({ title, tag, units, loading, leadId, leadPhone, leadName }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; leadId: string; leadPhone: string | null; leadName: string | null }) {
   return (
     <div className="card panel-pad">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
@@ -328,7 +360,7 @@ function MatchPanel({ title, tag, units, loading, leadPhone, leadName }: { title
       {units.length === 0 ? (
         <div className="empty" style={{ padding: 16 }}>{loading ? "Matching…" : "No matches yet — add budget, config or a society to surface more."}</div>
       ) : (
-        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} leadPhone={leadPhone} leadName={leadName} />)
+        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} leadId={leadId} leadPhone={leadPhone} leadName={leadName} />)
       )}
     </div>
   );
@@ -613,8 +645,8 @@ export default function LeadDetail() {
         {/* RIGHT column — saved visit plan + live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <SavedVisitCard id={id} onEdit={() => setPlanner(true)} />
-          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
-          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadPhone={lead.phone} leadName={lead.name} />
+          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
+          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
         </div>
       </div>
     </>

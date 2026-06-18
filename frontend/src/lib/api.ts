@@ -156,6 +156,7 @@ export interface MatchUnit {
   status?: string | null;
   stage?: string;
   stage_key?: string;
+  priority?: boolean;
   image_url?: string | null;
   score: number;
   matched_on: string[];
@@ -231,6 +232,8 @@ export const api = {
   syncInventory: () =>
     request<{ status: string; rows: number; synced_at: string }>("/v1/inventory/sync", { method: "POST" }),
   supply: () => request<SupplyResponse>("/v1/supply"),
+  markPriority: (uid: string, priority: boolean) =>
+    request<{ status: string; priority: boolean }>(`/v1/supply/${encodeURIComponent(uid)}/priority`, { method: "POST", body: JSON.stringify({ priority }) }),
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),
   lead: (id: string) => request<LeadDetail>(`/v1/leads/${id}`),
   leadMatches: (id: string) => request<LeadMatches>(`/v1/leads/${id}/matches`),

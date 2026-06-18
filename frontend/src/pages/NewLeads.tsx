@@ -20,8 +20,11 @@ function PlanChip({ plan }: { plan: string | null }) {
   return <span className={`plan-chip ${planClass(plan)}`}>{plan}</span>;
 }
 
-// freshly-synced lead (ingested within the last 24h)
-const isFreshLead = (l: Lead) => !!l.created_at && Date.now() - Date.parse(l.created_at) < 24 * 3600 * 1000;
+// "NEW" = the lead's date (the one shown in the Date column) is today
+const isFreshLead = (l: Lead) => {
+  if (!l.received_at) return false;
+  return new Date(l.received_at).toDateString() === new Date().toDateString();
+};
 
 export default function NewLeads() {
   const { data, isLoading } = useLeads("new");

@@ -1,6 +1,6 @@
 /* Book Visits — DESIGN ONLY (no API wired yet).
    A focused, guided 3-step checkout drawer (Details → Review → Done) for booking
-   1–10 OpenHouse app visits on behalf of a Channel Partner. Slot/date logic is real
+   1–10 Openhouse app visits on behalf of a Channel Partner. Slot/date logic is real
    (lib/slots); the Channel-Partner list and the confirm/result step are mocked so the
    whole flow is reviewable before any server-to-server integration is built. */
 import { useMemo, useState } from "react";
@@ -190,7 +190,7 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
           {step === 1 && (
             <>
               <div className="bv-danger">
-                <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the OpenHouse app and
+                <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the Openhouse app and
                 <b> cannot be edited or undone</b>. The buyer &amp; CP are notified immediately.
               </div>
               <div className="bv-sec-label">Direct Leads · Broker #{FIXED_CP.brokerId} · {date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>

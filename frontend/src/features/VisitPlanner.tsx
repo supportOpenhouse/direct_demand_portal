@@ -28,7 +28,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
   const [rm, setRm] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleMetrics, setGoogleMetrics] = useState<{ km: number; min: number } | null>(null);
-  const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on OpenHouse" section
+  const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on Openhouse" section
   const [booking, setBooking] = useState(false); // the booking drawer is open
 
   const mapEl = useRef<HTMLDivElement>(null);
@@ -178,7 +178,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
         qc.invalidateQueries({ queryKey: ["lead", leadId] });
         qc.invalidateQueries({ queryKey: ["leads"] });
         qc.invalidateQueries({ queryKey: ["visit", leadId] });
-        setSavedPlan(true); // don't close — reveal the "Book on OpenHouse" section
+        setSavedPlan(true); // don't close — reveal the "Book on Openhouse" section
       })
       .catch((e) => toast(e.message, "gold", "⚠"))
       .finally(() => setSaving(false));
@@ -311,7 +311,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
               <div className="bv-unlock-head">
                 <span className="bv-unlock-tick">✓</span>
                 <div>
-                  <div className="bv-unlock-title">Plan saved · ready to book on the OpenHouse app</div>
+                  <div className="bv-unlock-title">Plan saved · ready to book on the Openhouse app</div>
                   <div className="bv-unlock-sub">Book these {stops.length} visit{stops.length !== 1 ? "s" : ""} for a Channel Partner — single or bulk, in one guided flow.</div>
                 </div>
                 <span className="bv-unlock-beta">Beta</span>
@@ -332,7 +332,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
                 ))}
               </div>
               <button className="btn orange bv-unlock-cta" onClick={() => setBooking(true)}>
-                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on OpenHouse app
+                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on Openhouse app
               </button>
             </div>
           )}

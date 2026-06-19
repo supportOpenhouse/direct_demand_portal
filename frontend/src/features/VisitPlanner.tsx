@@ -186,7 +186,9 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
 
   // the "woosh": once the plan is saved, smoothly scroll the unlocked section into view
   useEffect(() => {
-    if (savedPlan) unlockEl.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (!savedPlan) return;
+    const t = setTimeout(() => unlockEl.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 90);
+    return () => clearTimeout(t);
   }, [savedPlan]);
 
   // the just-planned stops, shaped for the booking drawer (home_id comes off the raw OH row)
@@ -330,7 +332,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
                 ))}
               </div>
               <button className="btn orange bv-unlock-cta" onClick={() => setBooking(true)}>
-                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on OpenHouse
+                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on OpenHouse app
               </button>
             </div>
           )}
@@ -338,9 +340,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>{savedPlan ? "Close" : "Cancel"}</button>
           <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}>↗ Open in Google Maps</button>
-          {savedPlan ? (
-            <button className="btn orange" onClick={() => setBooking(true)} disabled={!stops.length}>📲 Book on OpenHouse</button>
-          ) : (
+          {!savedPlan && (
             <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
           )}
         </div>

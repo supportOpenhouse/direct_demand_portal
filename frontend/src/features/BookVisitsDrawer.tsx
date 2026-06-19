@@ -21,17 +21,8 @@ export interface BookUnit {
   isNew?: boolean;
 }
 
-// ---- mock channel partners (replace with API later) -------------------------
-type Tier = "Platinum" | "Gold" | "Silver";
-interface CP { id: number; name: string; code: string; tier: Tier; }
-const MOCK_CPS: CP[] = [
-  { id: 1, name: "Sterling Realty", code: "CP-1042", tier: "Platinum" },
-  { id: 2, name: "Nest Advisors", code: "CP-2087", tier: "Gold" },
-  { id: 3, name: "Urban Keys", code: "CP-3310", tier: "Silver" },
-  { id: 4, name: "Prime Habitat", code: "CP-4521", tier: "Gold" },
-  { id: 5, name: "Skyline Partners", code: "CP-5099", tier: "Platinum" },
-  { id: 6, name: "Anchor Homes", code: "CP-6730", tier: "Silver" },
-];
+// Channel Partner is fixed to "Direct Leads" (broker #708) — no picker, no source toggle.
+const FIXED_CP = { name: "Direct Leads", brokerId: 708 };
 
 interface Buyer { name: string; mobile: string; }
 type Result = { homeId: string | number; ok: boolean; visitId?: number; reason?: string };
@@ -44,29 +35,23 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
   const [step, setStep] = useState(0);
 
   // step 1 state
-  const [cpQuery, setCpQuery] = useState("");
-  const [cp, setCp] = useState<CP | null>(null);
   const [date, setDate] = useState<DayOption>(days[0]);
   const [slot, setSlot] = useState<string>("");
   const [oneBuyer, setOneBuyer] = useState(true);
   const [shared, setShared] = useState<Buyer>({ name: "", mobile: "" });
   const [perUnit, setPerUnit] = useState<Record<string, Buyer>>({});
-  const [source, setSource] = useState<"channel_partner" | "direct">("channel_partner");
 
   // step 3 state
   const [booking, setBooking] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
 
-  const cpMatches = MOCK_CPS.filter(
-    (c) => !cpQuery || c.name.toLowerCase().includes(cpQuery.toLowerCase()) || c.code.toLowerCase().includes(cpQuery.toLowerCase()),
-  );
   const buyerFor = (u: BookUnit): Buyer => (oneBuyer ? shared : perUnit[String(u.homeId)] || { name: "", mobile: "" });
   const setBuyerFor = (u: BookUnit, patch: Partial<Buyer>) =>
     setPerUnit((p) => ({ ...p, [String(u.homeId)]: { ...(p[String(u.homeId)] || { name: "", mobile: "" }), ...patch } }));
 
   const buyerValid = (b: Buyer) => b.name.trim().length > 0 && b.mobile.replace(/\D/g, "").length >= 5;
   const buyersOk = oneBuyer ? buyerValid(shared) : units.every((u) => buyerValid(buyerFor(u)));
-  const canReview = !!cp && !!slot && !!date && buyersOk;
+  const canReview = !!slot && !!date && buyersOk;
 
   const visits = units.map((u) => ({ unit: u, buyer: buyerFor(u) }));
 
@@ -119,32 +104,13 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
             <>
               <div className="bv-sec-label">Booking for {units.length} unit{units.length !== 1 ? "s" : ""}</div>
 
-              {/* CP picker */}
+              {/* Channel Partner — fixed to Direct Leads (broker #708) */}
               <div className="bv-field">
-                <label>Channel Partner <span className="bv-req">*</span></label>
-                {cp ? (
-                  <div className="bv-cp-selected">
-                    <div>
-                      <b>{cp.name}</b> <span className="bv-cp-code">{cp.code}</span>
-                      <span className={"bv-tier " + cp.tier.toLowerCase()}>{cp.tier}</span>
-                    </div>
-                    <button className="bv-link" onClick={() => setCp(null)}>Change</button>
-                  </div>
-                ) : (
-                  <>
-                    <input className="bv-input" placeholder="Search CP by name or code…" value={cpQuery} onChange={(e) => setCpQuery(e.target.value)} />
-                    <div className="bv-cp-list">
-                      {cpMatches.length === 0 ? (
-                        <div className="bv-empty">No channel partners match.</div>
-                      ) : cpMatches.map((c) => (
-                        <button key={c.id} className="bv-cp-row" onClick={() => { setCp(c); setCpQuery(""); }}>
-                          <span><b>{c.name}</b> <span className="bv-cp-code">{c.code}</span></span>
-                          <span className={"bv-tier " + c.tier.toLowerCase()}>{c.tier}</span>
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
+                <label>Channel Partner</label>
+                <div className="bv-cp-fixed">
+                  <span><b>Direct Leads</b> <span className="bv-cp-code">Broker #{FIXED_CP.brokerId}</span></span>
+                  <span className="bv-fixed-tag">Fixed</span>
+                </div>
               </div>
 
               {/* date chips */}
@@ -181,15 +147,6 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
                   })}
                 </div>
                 {date.isToday && <div className="bv-hint">Today's slots close 1 hour after they start.</div>}
-              </div>
-
-              {/* source */}
-              <div className="bv-field">
-                <label>Source</label>
-                <div className="bv-seg">
-                  <button className={source === "channel_partner" ? "sel" : ""} onClick={() => setSource("channel_partner")}>Channel Partner</button>
-                  <button className={source === "direct" ? "sel" : ""} onClick={() => setSource("direct")}>Direct</button>
-                </div>
               </div>
 
               {/* buyer(s) */}
@@ -236,7 +193,7 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
                 <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the OpenHouse app and
                 <b> cannot be edited or undone</b>. The buyer &amp; CP are notified immediately.
               </div>
-              <div className="bv-sec-label">{cp?.name} · {cp?.code} · {date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>
+              <div className="bv-sec-label">Direct Leads · Broker #{FIXED_CP.brokerId} · {date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>
               {visits.map(({ unit, buyer }) => (
                 <div key={String(unit.homeId)} className="bv-visit-card">
                   <div className="bv-vc-top">
@@ -247,9 +204,9 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
                     <span>Location</span><b>{[unit.locality, unit.city].filter(Boolean).join(", ") || "—"}</b>
                     <span>Config · price</span><b>{unit.configuration || "—"} · {formatPrice(unit.priceLacs, unit.priceText)}</b>
                     <span>Buyer</span><b>{buyer.name || "—"} · {maskMobile(buyer.mobile)}</b>
-                    <span>CP</span><b>{cp?.name} ({cp?.code})</b>
+                    <span>CP</span><b>Direct Leads · Broker #{FIXED_CP.brokerId}</b>
                     <span>When</span><b>{date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</b>
-                    <span>Source</span><b>{source === "channel_partner" ? "Channel Partner" : "Direct"}</b>
+                    <span>Source</span><b>Direct</b>
                   </div>
                 </div>
               ))}

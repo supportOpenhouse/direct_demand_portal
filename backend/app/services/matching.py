@@ -20,7 +20,7 @@ import time
 from sqlalchemy import text
 
 from ..db import neon_engine, properties_engine
-from .normalize import normalize_city, normalize_config
+from .normalize import normalize_city, normalize_config, config_bhk
 from .societies import society_meta
 from .supply import STAGES, stage_key
 
@@ -94,6 +94,7 @@ async def build_requirement(
         "localities_lc": {l.lower() for l in localities},
         "micromarkets": mms,
         "config": normalize_config(config),
+        "bhk": config_bhk(config),  # bedroom count — matches "2 BHK" against "2 BHK + Study"
         "size_min": float(size_min_sqft) if size_min_sqft else None,
         "size_max": float(size_max_sqft) if size_max_sqft else None,
         "bmin": float(bmin) if bmin is not None else None,
@@ -179,7 +180,7 @@ def score_unit(req: dict, unit: dict) -> dict:
     geo_hit = mm_hit or locality_hit
     budget_close, in_budget = _budget_closeness(req, unit.get("price_lacs"))
     size_close = _size_closeness(req, unit.get("area_sqft"))
-    config_hit = bool(req["config"] and unit.get("configuration") == req["config"])
+    config_hit = bool(req.get("bhk") is not None and config_bhk(unit.get("configuration")) == req["bhk"])
     city_hit = bool(req["city"] and unit.get("city") == req["city"])
 
     # budget is the dominant weight, then BHK/size/society/area

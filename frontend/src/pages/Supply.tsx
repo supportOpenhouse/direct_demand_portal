@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useSupply, formatPrice } from "../lib/queries";
 import { SupplyItem } from "../lib/api";
 import { useSearch, matches } from "../components/SearchContext";
-import { FilterSelect, uniqueValues } from "../components/Filters";
+import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { useAuth } from "../components/AuthContext";
 
@@ -28,6 +28,8 @@ export default function Supply() {
   const [stage, setStage] = useState("");
   const [city, setCity] = useState("");
   const [config, setConfig] = useState("");
+  const [budMin, setBudMin] = useState("");
+  const [budMax, setBudMax] = useState("");
 
   const all = data?.items ?? [];
   const base = all
@@ -36,6 +38,7 @@ export default function Supply() {
         (!stage || s.stage === stage) &&
         (!city || s.city === city) &&
         (!config || s.configuration === config) &&
+        inBudget(s.price_lacs, budMin, budMax) &&
         matches(query, s.id, s.society, s.locality, s.city, s.configuration, s.stage)
     )
     .sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
@@ -57,28 +60,20 @@ export default function Supply() {
   return (
     <>
       <div className="section-head">
-        <p className="sec-sub" style={{ margin: 0 }}>
-          Units still in the pipeline — closest to landing first.
-          {data?.status === "ok" && (
-            <>
-              {" "}
-              <b style={{ color: "var(--ink-2)" }}>
-                {items.length !== all.length ? `${items.length} of ${all.length}` : all.length} units
-              </b>{" "}
-              live from the Supply Closure Tracker.
-            </>
-          )}
-        </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="City" value={city} options={uniqueValues(all, (s) => s.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (s) => s.configuration)} onChange={setConfig} width={130} />
-          {(stage || city || config) && (
+          {isAdmin && <BudgetRange min={budMin} max={budMax} onMin={setBudMin} onMax={setBudMax} />}
+          {(stage || city || config || budMin || budMax) && (
             <button
               className="btn ghost sm"
               onClick={() => {
                 setStage("");
                 setCity("");
                 setConfig("");
+                setBudMin("");
+                setBudMax("");
               }}
             >
               Clear

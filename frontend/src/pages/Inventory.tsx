@@ -5,7 +5,7 @@ import { useInventory, useSyncInventory, formatPrice } from "../lib/queries";
 import { InventoryItem } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useSearch, matches } from "../components/SearchContext";
-import { FilterSelect, uniqueValues } from "../components/Filters";
+import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components/Filters";
 import { useSort } from "../lib/useSort";
 import { waShare } from "../lib/whatsapp";
 
@@ -87,6 +87,8 @@ export default function Inventory() {
   const [city, setCity] = useState("");
   const [config, setConfig] = useState("");
   const [status, setStatus] = useState("");
+  const [budMin, setBudMin] = useState("");
+  const [budMax, setBudMax] = useState("");
 
   const all = data?.items ?? [];
   const matched = all.filter(
@@ -94,6 +96,7 @@ export default function Inventory() {
       (!city || p.city === city) &&
       (!config || p.configuration === config) &&
       (!status || p.status === status) &&
+      inBudget(p.price_lacs, budMin, budMax) &&
       matches(query, p.name, p.society, p.locality, p.city, p.configuration, p.status)
   );
   // a card grid has no column headers — drive the shared sort hook from a dropdown
@@ -106,31 +109,15 @@ export default function Inventory() {
     price: (p) => p.price_lacs,
     status: (p) => p.status,
   });
-  const filtered = items.length !== all.length;
-
-  const synced = data?.last_synced_at
-    ? new Date(data.last_synced_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })
-    : null;
-
   return (
     <>
       <div className="section-head">
-        <p className="sec-sub" style={{ margin: 0 }}>
-          Live inventory — synced from the Acquired Property sheet.
-          {synced && (
-            <>
-              {" "}
-              Last synced <b style={{ color: "var(--ink-2)" }}>{synced}</b> ·{" "}
-              <b style={{ color: "var(--ink-2)" }}>
-                {filtered ? `${items.length} of ${all.length}` : all.length} units
-              </b>
-            </>
-          )}
-        </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div />
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="City" value={city} options={uniqueValues(all, (p) => p.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (p) => p.configuration)} onChange={setConfig} width={130} />
           <FilterSelect label="Status" value={status} options={uniqueValues(all, (p) => p.status)} onChange={setStatus} width={140} />
+          <BudgetRange min={budMin} max={budMax} onMin={setBudMin} onMax={setBudMax} />
           <div className="field" style={{ marginBottom: 0, width: 150 }}>
             <select
               value={sortKey || ""}
@@ -150,13 +137,15 @@ export default function Inventory() {
               {dir === "asc" ? "↑" : "↓"}
             </button>
           )}
-          {(city || config || status || query) && (
+          {(city || config || status || budMin || budMax || query) && (
             <button
               className="btn ghost sm"
               onClick={() => {
                 setCity("");
                 setConfig("");
                 setStatus("");
+                setBudMin("");
+                setBudMax("");
               }}
             >
               Clear

@@ -21,6 +21,7 @@ const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
 const OFFICE = ["Yes", "No", "Maybe"];
 const PLANS = ["Within 30 days", "1–3 months", "3–6 months", "Just exploring"];
+const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
 
 const OFFICE_PITCH_EN = [
   "First, we'll help you understand the market.",
@@ -129,7 +130,16 @@ function SourceCard({ lead }: { lead: any }) {
       </div>
       {edit ? (
         <>
-          <div className="two">{inp("Budget", "budget_band", "e.g. ₹70L – ₹90L")}{inp("City", "city")}</div>
+          <div className="two">
+            {inp("Budget", "budget_band", "e.g. ₹70L – ₹90L")}
+            <div className="field"><label>City</label>
+              <select value={f.city} onChange={(e) => setF({ ...f, city: e.target.value })}>
+                <option value="">Select…</option>
+                {CITIES.map((c) => <option key={c}>{c}</option>)}
+                {f.city && !CITIES.includes(f.city) && <option>{f.city}</option>}
+              </select>
+            </div>
+          </div>
           <div className="field">
             <label>Society of interest <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
             <AutocompleteInput

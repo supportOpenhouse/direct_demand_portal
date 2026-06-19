@@ -11,6 +11,7 @@ import { InventoryItem, api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { optimizeRoute, estimateLeg, pathKm, fmtMin, Pt } from "../lib/geo";
 import { loadGoogleMaps, getCurrentLocation, openInMaps, MAPS_API_KEY } from "../lib/maps";
+import { BookVisitsDrawer, BookUnit } from "./BookVisitsDrawer";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -27,8 +28,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
   const [rm, setRm] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleMetrics, setGoogleMetrics] = useState<{ km: number; min: number } | null>(null);
+  const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on OpenHouse" section
+  const [booking, setBooking] = useState(false); // the booking drawer is open
 
   const mapEl = useRef<HTMLDivElement>(null);
+  const unlockEl = useRef<HTMLDivElement>(null);
   const mapObj = useRef<any>(null);
   const markers = useRef<any[]>([]);
   const dirRenderer = useRef<any>(null);
@@ -174,11 +178,24 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
         qc.invalidateQueries({ queryKey: ["lead", leadId] });
         qc.invalidateQueries({ queryKey: ["leads"] });
         qc.invalidateQueries({ queryKey: ["visit", leadId] });
-        onClose();
+        setSavedPlan(true); // don't close — reveal the "Book on OpenHouse" section
       })
       .catch((e) => toast(e.message, "gold", "⚠"))
       .finally(() => setSaving(false));
   };
+
+  // the "woosh": once the plan is saved, smoothly scroll the unlocked section into view
+  useEffect(() => {
+    if (savedPlan) unlockEl.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [savedPlan]);
+
+  // the just-planned stops, shaped for the booking drawer (home_id comes off the raw OH row)
+  const bookUnits: BookUnit[] = stops.map((s) => ({
+    homeId: (s.raw?.home_id as string | number) ?? s.id,
+    name: s.name, society: s.society, locality: s.locality, city: s.city,
+    configuration: s.configuration, priceText: s.price_text, priceLacs: s.price_lacs,
+    status: /ready|available/i.test(s.status || "") ? "ready" : "coming_soon",
+  }));
 
   return (
     <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -286,13 +303,49 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
               </div>
             )}
           </div>
+
+          {savedPlan && (
+            <div className="bv-unlock" ref={unlockEl}>
+              <div className="bv-unlock-head">
+                <span className="bv-unlock-tick">✓</span>
+                <div>
+                  <div className="bv-unlock-title">Plan saved · ready to book on the OpenHouse app</div>
+                  <div className="bv-unlock-sub">Book these {stops.length} visit{stops.length !== 1 ? "s" : ""} for a Channel Partner — single or bulk, in one guided flow.</div>
+                </div>
+                <span className="bv-unlock-beta">Beta</span>
+              </div>
+              <div className="bv-unlock-grid">
+                <div className="bv-ug-head">
+                  <span>Unit</span><span>Home</span><span>Locality</span><span>Config</span><span>Ask</span><span>Status</span>
+                </div>
+                {bookUnits.map((u) => (
+                  <div key={String(u.homeId)} className="bv-ug-row">
+                    <span className="bv-ug-name">{u.name || u.society || "—"}{u.isNew && <span className="bv-newtag">NEW</span>}</span>
+                    <span className="bv-ug-home">#{u.homeId}</span>
+                    <span>{[u.locality, u.city].filter(Boolean).join(", ") || "—"}</span>
+                    <span>{u.configuration || "—"}</span>
+                    <span>{formatPrice(u.priceLacs, u.priceText)}</span>
+                    <span><span className={"bv-pill " + (u.status === "ready" ? "ready" : "soon")}>{u.status === "ready" ? "Ready" : "Coming soon"}</span></span>
+                  </div>
+                ))}
+              </div>
+              <button className="btn orange bv-unlock-cta" onClick={() => setBooking(true)}>
+                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on OpenHouse
+              </button>
+            </div>
+          )}
         </div>
         <div className="mf">
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn ghost" onClick={onClose}>{savedPlan ? "Close" : "Cancel"}</button>
           <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}>↗ Open in Google Maps</button>
-          <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
+          {savedPlan ? (
+            <button className="btn orange" onClick={() => setBooking(true)} disabled={!stops.length}>📲 Book on OpenHouse</button>
+          ) : (
+            <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
+          )}
         </div>
       </div>
+      {booking && <BookVisitsDrawer units={bookUnits} onClose={() => setBooking(false)} />}
     </div>
   );
 }

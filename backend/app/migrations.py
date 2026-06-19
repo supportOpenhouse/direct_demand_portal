@@ -15,6 +15,7 @@ _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
     ("users", "assignment_name", "TEXT"),
     ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
+    ("users", "smid", "INTEGER"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),
@@ -27,6 +28,15 @@ _ADD_COLUMNS = [
     ("leads", "reject_notes", "TEXT"),
     ("leads", "rejected_at", "TIMESTAMPTZ"),
 ]
+
+# Openhouse Core SalesManager.id per booking-team member (name → smid)
+SMID_SEED = {
+    "Saransh": 82,
+    "Saumya Behera": 30,
+    "Varun Matrey": 97,
+    "Rahul Singh": 83,
+    "Ashish": 105,
+}
 
 
 async def run_migrations(engine) -> None:
@@ -57,6 +67,15 @@ async def run_migrations(engine) -> None:
                 )
             # everything still null (meta has no source date) → use ingest time
             await conn.execute(text("UPDATE leads SET received_at = created_at WHERE received_at IS NULL"))
+
+            # seed Openhouse SalesManager ids (smid) for the booking team by name —
+            # only fills blanks, so admin edits via Settings are never clobbered. Runs
+            # every boot, so a seed user added later still gets mapped on next deploy.
+            for full_name, smid in SMID_SEED.items():
+                await conn.execute(text(
+                    "UPDATE users SET smid = :smid WHERE smid IS NULL AND "
+                    "(lower(name) = lower(:full) OR lower(split_part(name, ' ', 1)) = lower(:fn))"),
+                    {"smid": smid, "full": full_name, "fn": full_name.split()[0]})
 
             # canonicalize existing lead cities (the cron is insert-only, so it won't
             # re-normalize old rows; inventory self-heals on sync, supply is live)

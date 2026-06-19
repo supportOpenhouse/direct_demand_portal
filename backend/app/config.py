@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
 
+    # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
+    # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.
+    CRM_BOOKING_API_BASE_URL: str = ""
+    CRM_API_KEY: str = ""
+
     # --- Google OAuth (optional; app stays open until both sides are configured) ---
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     JWT_SECRET: str = "dev-insecure-change-me"
@@ -76,6 +81,10 @@ class Settings(BaseSettings):
     @property
     def properties_url(self) -> str:
         return normalize_asyncpg_url(self.PROPERTIES_DATABASE_URL)
+
+    @property
+    def crm_booking_configured(self) -> bool:
+        return bool(self.CRM_BOOKING_API_BASE_URL) and bool(self.CRM_API_KEY)
 
     @property
     def neon_configured(self) -> bool:

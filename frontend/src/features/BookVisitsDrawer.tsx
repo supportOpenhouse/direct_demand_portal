@@ -1,10 +1,11 @@
-/* Book Visits — DESIGN ONLY (no API wired yet).
-   A focused, guided 3-step checkout drawer (Details → Review → Done) for booking
-   1–10 Openhouse app visits on behalf of a Channel Partner. Slot/date logic is real
-   (lib/slots); the Channel-Partner list and the confirm/result step are mocked so the
-   whole flow is reviewable before any server-to-server integration is built. */
+/* Book Visits — a focused, guided 3-step checkout drawer (Details → Review → Done)
+   that books 1–10 visits on the LIVE Openhouse app via the CRM booking API.
+   Slot/date logic is client-side (lib/slots); the CP/broker for each unit is derived
+   from its city (Gurgaon → CP 708, Noida/Ghaziabad → CP 1367); the booker's
+   SalesManager id (smid) is resolved server-side from the logged-in user. */
 import { useMemo, useState } from "react";
-import { formatPrice } from "../lib/queries";
+import { formatPrice, useBookingConfig } from "../lib/queries";
+import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { SLOTS, next7Days, isSlotDisabled, maskMobile, DayOption } from "../lib/slots";
 
@@ -21,9 +22,6 @@ export interface BookUnit {
   isNew?: boolean;
 }
 
-// Channel Partner is fixed to "Direct Leads" (broker #708) — no picker, no source toggle.
-const FIXED_CP = { name: "Direct Leads", brokerId: 708 };
-
 interface Buyer { name: string; mobile: string; }
 type Result = { homeId: string | number; ok: boolean; visitId?: number; reason?: string };
 
@@ -31,6 +29,7 @@ const STEPS = ["Details", "Review", "Done"] as const;
 
 export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClose: () => void }) {
   const toast = useToast();
+  const cfg = useBookingConfig();
   const days = useMemo(() => next7Days(), []);
   const [step, setStep] = useState(0);
 
@@ -51,25 +50,32 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
 
   const buyerValid = (b: Buyer) => b.name.trim().length > 0 && b.mobile.replace(/\D/g, "").length >= 5;
   const buyersOk = oneBuyer ? buyerValid(shared) : units.every((u) => buyerValid(buyerFor(u)));
-  const canReview = !!slot && !!date && buyersOk;
+
+  // CP/broker is derived from each unit's city (server is authoritative; this mirrors it for display)
+  const cpFor = (city: string | null) => (city && cfg.data?.city_cp?.[city]) || null;
+  const cities = Array.from(new Set(units.map((u) => u.city || "Unknown")));
+  const canBook = !!cfg.data?.can_book;
+  const canReview = !!slot && !!date && buyersOk && canBook;
 
   const visits = units.map((u) => ({ unit: u, buyer: buyerFor(u) }));
 
   const confirm = () => {
-    // DESIGN ONLY — simulate the sequential server-to-server booking.
     setBooking(true);
-    window.setTimeout(() => {
-      const mock: Result[] = units.map((u, i) => {
-        // demo a realistic partial-success: the 2nd unit (if any) comes back "locked"
-        if (units.length >= 2 && i === 1) {
-          return { homeId: u.homeId, ok: false, reason: "Buyer registered with another CP for 12 more days" };
-        }
-        return { homeId: u.homeId, ok: true, visitId: 480000 + i + Math.floor((Date.parse(date.date) % 9000)) };
-      });
-      setResults(mock);
-      setBooking(false);
-      setStep(2);
-    }, 1400);
+    api.bookVisits({
+      selected_date: date.date,
+      selected_time: slot,
+      source: cfg.data?.default_source || "direct",
+      visits: units.map((u) => {
+        const b = buyerFor(u);
+        return { home_id: Number(u.homeId), city: u.city, buyer_name: b.name.trim(), buyer_mobile: b.mobile };
+      }),
+    })
+      .then((res) => {
+        setResults(res.results.map((r) => ({ homeId: r.home_id, ok: r.ok, visitId: r.visit_id, reason: r.error })));
+        setStep(2);
+      })
+      .catch((e) => toast(e instanceof Error ? e.message : "Booking failed — try again", "gold", "⚠")) // stay on review
+      .finally(() => setBooking(false));
   };
 
   const booked = results.filter((r) => r.ok).length;
@@ -82,7 +88,7 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
         <div className="bv-head">
           <div>
             <div className="bv-title">📲 Book Visits</div>
-            <div className="bv-beta">Beta · authorized users only · <b>design preview, no bookings are sent</b></div>
+            <div className="bv-beta">Beta · authorized users only · <b>books on the live Openhouse app</b></div>
           </div>
           <button className="bv-x" onClick={onClose} aria-label="Close">✕</button>
         </div>
@@ -104,13 +110,26 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
             <>
               <div className="bv-sec-label">Booking for {units.length} unit{units.length !== 1 ? "s" : ""}</div>
 
-              {/* Channel Partner — fixed to Direct Leads (broker #708) */}
+              {/* access gate */}
+              {cfg.data && !cfg.data.configured && (
+                <div className="bv-danger">⚠ Visit booking isn't configured on the server yet.</div>
+              )}
+              {cfg.data && cfg.data.configured && !cfg.data.smid && (
+                <div className="bv-danger"><b>⚠ You're not set up to book.</b> Ask an admin to add your Openhouse SMID in Settings.</div>
+              )}
+
+              {/* Channel Partner — derived per unit city (Gurgaon → CP 708, Noida/Ghaziabad → CP 1367) */}
               <div className="bv-field">
-                <label>Channel Partner</label>
-                <div className="bv-cp-fixed">
-                  <span><b>Direct Leads</b> <span className="bv-cp-code">Broker #{FIXED_CP.brokerId}</span></span>
-                  <span className="bv-fixed-tag">Fixed</span>
-                </div>
+                <label>Booking via Channel Partner</label>
+                {cities.map((c) => {
+                  const cp = cpFor(c === "Unknown" ? null : c);
+                  return (
+                    <div key={c} className="bv-cp-fixed" style={{ marginBottom: 6 }}>
+                      <span><b>{cp ? cp.label : c}</b> {cp ? <span className="bv-cp-code">CP #{cp.cp_id}</span> : <span className="bv-warn-text">no CP configured — can't book</span>}</span>
+                      <span className="bv-fixed-tag">{cp ? "Fixed" : "⚠"}</span>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* date chips */}
@@ -193,7 +212,7 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
                 <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the Openhouse app and
                 <b> cannot be edited or undone</b>. The buyer &amp; CP are notified immediately.
               </div>
-              <div className="bv-sec-label">Direct Leads · Broker #{FIXED_CP.brokerId} · {date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>
+              <div className="bv-sec-label">{date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>
               {visits.map(({ unit, buyer }) => (
                 <div key={String(unit.homeId)} className="bv-visit-card">
                   <div className="bv-vc-top">
@@ -204,9 +223,9 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
                     <span>Location</span><b>{[unit.locality, unit.city].filter(Boolean).join(", ") || "—"}</b>
                     <span>Config · price</span><b>{unit.configuration || "—"} · {formatPrice(unit.priceLacs, unit.priceText)}</b>
                     <span>Buyer</span><b>{buyer.name || "—"} · {maskMobile(buyer.mobile)}</b>
-                    <span>CP</span><b>Direct Leads · Broker #{FIXED_CP.brokerId}</b>
+                    <span>CP</span><b>{(() => { const cp = cpFor(unit.city); return cp ? `${cp.label} · CP #${cp.cp_id}` : `${unit.city || "—"} · ⚠ no CP`; })()}</b>
                     <span>When</span><b>{date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</b>
-                    <span>Source</span><b>Direct</b>
+                    <span>Source</span><b>{cfg.data?.default_source === "direct" ? "Direct" : (cfg.data?.default_source || "Direct")}</b>
                   </div>
                 </div>
               ))}
@@ -218,7 +237,6 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
             <>
               <div className={"bv-result-head" + (failed ? " mixed" : " ok")}>
                 Booked <b>{booked}</b> of {results.length}{failed ? <> · <b>{failed}</b> failed</> : ""}
-                <span className="bv-demo">demo · no real bookings sent</span>
               </div>
               {results.map((r) => {
                 const u = units.find((x) => String(x.homeId) === String(r.homeId))!;

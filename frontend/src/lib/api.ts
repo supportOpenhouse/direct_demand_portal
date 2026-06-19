@@ -262,6 +262,10 @@ export const api = {
   societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
   saveVisit: (id: string, plan: VisitPlan) =>
     request<{ status: string }>(`/v1/leads/${id}/visits`, { method: "POST", body: JSON.stringify(plan) }),
+  // Openhouse app visit booking
+  bookingConfig: () => request<BookingConfig>("/v1/visits/booking-config"),
+  bookVisits: (payload: BookRequest) =>
+    request<BookResponse>("/v1/visits/book", { method: "POST", body: JSON.stringify(payload) }),
   latestVisit: (id: string) => request<{ plan: VisitPlan | null }>(`/v1/leads/${id}/visits`),
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
@@ -270,9 +274,9 @@ export const api = {
     request<{ status: string; updated: number; assigned_to: string | null }>("/v1/leads/bulk-assign", { method: "POST", body: JSON.stringify({ lead_ids, assigned_to }) }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
-  createUser: (u: { email: string; name: string; role: string }) =>
+  createUser: (u: { email: string; name: string; role: string; smid?: number | null }) =>
     request<{ id: string; status: string }>("/v1/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean }>) =>
+  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null }>) =>
     request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
 };
@@ -297,7 +301,41 @@ export interface ManagedUser {
   picture: string | null;
   role: string;
   maps_to: string | null; // first name we match against the sheet's "Assigned to"
+  smid: number | null; // Openhouse SalesManager id (required to book visits)
   active: boolean;
   last_login_at: string | null;
   matched_leads: number;
+}
+
+// --- Openhouse app visit booking ---
+export interface BookingConfig {
+  configured: boolean;
+  smid: number | null;
+  can_book: boolean;
+  default_source: string;
+  city_cp: Record<string, { cp_id: number; label: string }>;
+}
+export interface BookVisitIn {
+  home_id: number;
+  city: string | null;
+  buyer_name: string;
+  buyer_mobile: string;
+}
+export interface BookRequest {
+  selected_date: string;
+  selected_time: string;
+  source: string;
+  visits: BookVisitIn[];
+}
+export interface BookResultRow {
+  home_id: number;
+  ok: boolean;
+  visit_id?: number;
+  error?: string;
+  remaining_days?: number;
+}
+export interface BookResponse {
+  booked: number;
+  failed: number;
+  results: BookResultRow[];
 }

@@ -39,7 +39,7 @@ async def list_users():
         return {"items": []}
     async with engine.connect() as conn:
         res = await conn.execute(text(
-            "SELECT id, email, name, picture, role, assignment_name, active, last_login_at, created_at "
+            "SELECT id, email, name, picture, role, assignment_name, smid, active, last_login_at, created_at "
             "FROM users ORDER BY created_at"
         ))
         users = [dict(m) for m in res.mappings()]
@@ -48,7 +48,7 @@ async def list_users():
         {
             "id": str(u["id"]), "email": u["email"], "name": u["name"], "picture": u["picture"],
             "role": u["role"], "maps_to": _first_name(u["name"]),  # the name we match in the sheet
-            "active": u["active"],
+            "smid": u["smid"], "active": u["active"],
             "last_login_at": u["last_login_at"].isoformat() if u["last_login_at"] else None,
             "matched_leads": _matched(u, counts),
         }
@@ -60,6 +60,7 @@ class UserCreate(BaseModel):
     email: EmailStr
     name: str
     role: str = "rm"
+    smid: int | None = None
 
 
 @router.post("/users")
@@ -71,7 +72,8 @@ async def create_user(payload: UserCreate):
         raise HTTPException(status_code=503, detail="database not configured")
     async with engine.begin() as conn:
         stmt = pg_insert(User).values(
-            email=str(payload.email).lower(), name=payload.name.strip(), role=payload.role, active=True,
+            email=str(payload.email).lower(), name=payload.name.strip(), role=payload.role,
+            smid=payload.smid, active=True,
         ).on_conflict_do_nothing(index_elements=[User.email]).returning(User.id)
         row = (await conn.execute(stmt)).first()
         if row is None:
@@ -83,6 +85,7 @@ class UserUpdate(BaseModel):
     name: str | None = None
     role: str | None = None
     active: bool | None = None
+    smid: int | None = None
 
 
 @router.patch("/users/{user_id}")
@@ -90,7 +93,7 @@ async def update_user(user_id: UUID, payload: UserUpdate):
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ROLES)}")
     sets, params = [], {"id": user_id}
-    for field in ("name", "role", "active"):
+    for field in ("name", "role", "active", "smid"):
         val = getattr(payload, field)
         if val is not None:
             sets.append(f"{field} = :{field}")

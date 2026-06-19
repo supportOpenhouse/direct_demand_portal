@@ -231,6 +231,9 @@ class User(Base):
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)
+    # Openhouse Core SalesManager.id — used as sales_manager_id when booking visits.
+    # No smid → the user can't book (clear "not set up" message).
+    smid: Mapped[int | None] = mapped_column(Integer)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

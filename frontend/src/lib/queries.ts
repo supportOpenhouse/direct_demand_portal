@@ -29,6 +29,10 @@ export function useLatestVisit(id: string) {
   return useQuery({ queryKey: ["visit", id], queryFn: () => api.latestVisit(id), staleTime: 30_000 });
 }
 
+export function useBookingConfig() {
+  return useQuery({ queryKey: ["booking-config"], queryFn: api.bookingConfig, staleTime: 5 * 60_000 });
+}
+
 export function useMarkPriority(leadId: string) {
   const qc = useQueryClient();
   return useMutation({

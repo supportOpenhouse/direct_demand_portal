@@ -21,6 +21,7 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("rm");
+  const [smid, setSmid] = useState("");
 
   const submit = () => {
     if (!email.trim() || !name.trim()) {
@@ -28,7 +29,7 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
       return;
     }
     create.mutate(
-      { email: email.trim(), name: name.trim(), role },
+      { email: email.trim(), name: name.trim(), role, smid: smid.trim() ? Number(smid) : null },
       {
         onSuccess: () => {
           toast(`${name} added`, "green", "✓");
@@ -59,15 +60,22 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
             <label>Full name <span className="req">*</span></label>
             <input value={name} placeholder="e.g. Dheeraj Kumar" onChange={(e) => setName(e.target.value)} />
           </div>
-          <div className="field">
-            <label>Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
-            </select>
+          <div className="two">
+            <div className="field">
+              <label>Role</label>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label>Openhouse SMID <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— to book visits</span></label>
+              <input type="number" value={smid} placeholder="e.g. 82" onChange={(e) => setSmid(e.target.value)} />
+            </div>
           </div>
           <div className="note" style={{ marginTop: 0 }}>
             {ROLES.find((r) => r.v === role)?.desc}
             {name.trim() && <> · maps leads assigned to <b>{name.trim().split(" ")[0]}</b></>}
+            <> · SMID is their Openhouse SalesManager id — required to book visits</>
           </div>
         </div>
         <div className="mf">
@@ -86,6 +94,7 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
   const toast = useToast();
   const [name, setName] = useState(u.name || "");
   const [role, setRole] = useState(u.role);
+  const [smid, setSmid] = useState(u.smid != null ? String(u.smid) : "");
 
   const submit = () => {
     if (!name.trim()) {
@@ -93,7 +102,7 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
       return;
     }
     update.mutate(
-      { id: u.id, patch: { name: name.trim(), role } },
+      { id: u.id, patch: { name: name.trim(), role, smid: smid.trim() ? Number(smid) : null } },
       { onSuccess: () => { toast("User updated", "green", "✓"); onClose(); }, onError: (e: any) => toast(e.message, "gold", "⚠") }
     );
   };
@@ -109,12 +118,17 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
           <div className="field"><label>Email</label><input value={u.email} disabled /></div>
           <div className="field"><label>Full name <span className="req">*</span></label>
             <input value={name} onChange={(e) => setName(e.target.value)} /></div>
-          <div className="field"><label>Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value)}>
-              {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
-            </select></div>
+          <div className="two">
+            <div className="field"><label>Role</label>
+              <select value={role} onChange={(e) => setRole(e.target.value)}>
+                {ROLES.map((r) => <option key={r.v} value={r.v}>{r.label}</option>)}
+              </select></div>
+            <div className="field"><label>Openhouse SMID <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— to book visits</span></label>
+              <input type="number" value={smid} placeholder="e.g. 82" onChange={(e) => setSmid(e.target.value)} /></div>
+          </div>
           <div className="note" style={{ marginTop: 0 }}>
             Mapped to <b>{u.matched_leads}</b> leads by matching <b>{name.trim().split(" ")[0] || u.maps_to}</b> in the sheet's “Assigned to”.
+            {smid.trim() ? <> · books visits as SMID <b>{smid.trim()}</b></> : <> · <b>no SMID</b> — can't book visits</>}
           </div>
         </div>
         <div className="mf">

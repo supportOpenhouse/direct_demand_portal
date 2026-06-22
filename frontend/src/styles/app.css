@@ -478,6 +478,16 @@ tr.lead-row:hover{background:var(--panel-2)}
 .sup-stage.token{background:var(--gold-soft);color:var(--gold)}
 .sup-stage.token-req{background:var(--gold-soft);color:var(--gold)}
 .sup-stage.ama-signed{background:var(--emerald-soft);color:var(--emerald)}
+/* re-engagement worklist statuses (from cp_inventory_status.supply_status) */
+.sup-stage.future-prospect{background:var(--gold-soft);color:var(--gold)}      /* the opportunity */
+.sup-stage.oh-rejected{background:var(--coral-soft);color:var(--coral)}
+.sup-stage.seller-rejected{background:var(--coral-soft);color:var(--coral)}
+.sup-stage.visit-cancelled{background:var(--amber-soft);color:var(--amber)}
+.sup-stage.cancelled-post-token{background:var(--amber-soft);color:var(--amber)}
+.sup-stage.dead-not-interested{background:var(--slate-soft);color:var(--slate)}
+.sup-stage.dead-sold{background:var(--slate-soft);color:var(--slate)}
+.sup-stage.dead-legal{background:var(--slate-soft);color:var(--slate)}
+.sup-stage.duplicacy{background:var(--slate-soft);color:var(--slate)}
 /* NavLink renders <a> where the prototype used <div> — neutralize anchor defaults */
 a.nav-item{text-decoration:none}
 /* phase-1: compact confirm-on-call form — smaller fields, tighter rows */

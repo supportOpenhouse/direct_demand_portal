@@ -12,11 +12,21 @@ from ..db import properties_engine
 
 log = logging.getLogger("supply")
 
-STAGES = ["AMA Req", "Deal Terms", "Draft", "AMA Signed", "Visited", "Token Req"]
+# The Supply Pipeline is a re-engagement worklist driven by the LIVE
+# cp_inventory_status.supply_status (joined on uid), not the stale properties.stage.
+# Only these statuses surface — the stalled / dead / cancelled units worth calling.
+SUPPLY_STATUS_SHOW = [
+    "Future Prospect", "Hold", "Price High",  # → all displayed as "Future Prospect"
+    "OH Rejected", "Seller Rejected", "Visit Cancelled", "Cancelled Post Token",
+    "Dead - Sold", "Dead - Not Interested", "Dead - Legal", "Duplicacy",
+]
 
-# business rule: 'Draft' is not a real stage — those units are at token, so they
-# display under 'Token Req' (DB filter above still matches the raw 'Draft' rows)
-DISPLAY_STAGE = {"Draft": "Token Req"}
+# raw supply_status → displayed stage (Hold + Price High fold into Future Prospect)
+STATUS_DISPLAY = {"Hold": "Future Prospect", "Price High": "Future Prospect"}
+
+
+def display_status(raw: str | None) -> str | None:
+    return STATUS_DISPLAY.get(raw, raw) if raw else raw
 
 # the Direct Demand priority flag we add to the external properties table
 PRIORITY_COLUMN = "direct_demand_priority"
@@ -82,7 +92,7 @@ def _row_to_item(row: dict) -> dict:
     price_text = row.get("demand_price")
     price_text = str(price_text).strip() if price_text not in (None, "") else None
     raw = {k: (str(v) if v is not None else None) for k, v in row.items() if k not in PRIVATE_COLUMNS}
-    stage = DISPLAY_STAGE.get(row.get("stage"), row.get("stage"))
+    stage = display_status(row.get("supply_status"))
     return {
         "id": str(row.get("uid") or row.get("id")),
         "name": name,
@@ -143,15 +153,15 @@ async def fetch_supply() -> dict:
         return {"status": "not_configured", "detail": "Set PROPERTIES_DATABASE_URL", "items": []}
     try:
         cols = await _get_columns(engine)
-        if "stage" not in cols:
-            return {"status": "unavailable", "detail": "properties.stage column not found", "items": []}
-        select_cols = [c for c in CANDIDATE_COLUMNS if c in cols]
+        # join the live status table; the displayed stage = cp_inventory_status.supply_status
+        select_cols = [f"p.{c}" for c in CANDIDATE_COLUMNS if c in cols and c != "stage"]
         sql = text(
-            f"SELECT {', '.join(select_cols)} FROM properties "
-            f"WHERE stage = ANY(:stages)" + (" AND (is_dead IS NULL OR is_dead = false)" if "is_dead" in cols else "")
+            f"SELECT {', '.join(select_cols)}, s.supply_status "
+            "FROM properties p JOIN cp_inventory_status s ON s.uid = p.uid "
+            "WHERE s.supply_status = ANY(:statuses)"
         )
         async with engine.connect() as conn:
-            res = await conn.execute(sql, {"stages": STAGES})
+            res = await conn.execute(sql, {"statuses": SUPPLY_STATUS_SHOW})
             rows = [dict(m) for m in res.mappings()]
         return {"status": "ok", "detail": None, "items": [_row_to_item(r) for r in rows]}
     except Exception as e:  # noqa: BLE001

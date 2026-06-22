@@ -22,7 +22,7 @@ from sqlalchemy import text
 from ..db import neon_engine, properties_engine
 from .normalize import normalize_city, normalize_config, config_bhk
 from .societies import society_meta
-from .supply import STAGES, stage_key
+from .supply import SUPPLY_STATUS_SHOW, display_status, stage_key
 
 log = logging.getLogger("matching")
 
@@ -261,13 +261,15 @@ async def _supply_units() -> list[dict]:
             has_priority = (await conn.execute(text(
                 "SELECT 1 FROM information_schema.columns WHERE table_name='properties' AND column_name=:c"),
                 {"c": PRIORITY_COLUMN})).first() is not None
-            pcol = f", {PRIORITY_COLUMN}" if has_priority else ""
+            pcol = f", p.{PRIORITY_COLUMN}" if has_priority else ""
             res = await conn.execute(
                 text(
-                    "SELECT uid, society_name, locality, city, configuration, area_sqft, "
-                    f"demand_price, stage{pcol} FROM properties WHERE stage = ANY(:stages)"
+                    "SELECT p.uid, p.society_name, p.locality, p.city, p.configuration, p.area_sqft, "
+                    f"p.demand_price, s.supply_status{pcol} "
+                    "FROM properties p JOIN cp_inventory_status s ON s.uid = p.uid "
+                    "WHERE s.supply_status = ANY(:statuses)"
                 ),
-                {"stages": STAGES},
+                {"statuses": SUPPLY_STATUS_SHOW},
             )
             rows = [dict(m) for m in res.mappings()]
     except Exception:
@@ -287,8 +289,8 @@ async def _supply_units() -> list[dict]:
             "area_sqft": float(r["area_sqft"]) if r.get("area_sqft") not in (None, "") else None,
             "price_text": str(r["demand_price"]).strip() if r.get("demand_price") not in (None, "") else None,
             "price_lacs": parse_price_lacs(r.get("demand_price")),
-            "stage": r.get("stage"),
-            "stage_key": stage_key(r.get("stage") or ""),
+            "stage": display_status(r.get("supply_status")),
+            "stage_key": stage_key(display_status(r.get("supply_status")) or ""),
             "priority": bool(r.get("direct_demand_priority")),
         })
     await _enrich_micromarket(out)

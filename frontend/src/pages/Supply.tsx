@@ -7,9 +7,9 @@ import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components
 import { useSort, SortTh } from "../lib/useSort";
 import { useAuth } from "../components/AuthContext";
 
-/* closest-to-landing first — 'Visited' dominates the table (900+ rows), so the
-   advanced stages must surface above it */
-const STAGE_ORDER = ["Token Req", "AMA Signed", "AMA Req", "Deal Terms", "Visited"];
+/* re-engagement worklist — live cp_inventory_status.supply_status; most recoverable
+   (Future Prospect = Hold + Price High + Future Prospect) first, dead/duplicate last */
+const STAGE_ORDER = ["Future Prospect", "OH Rejected", "Seller Rejected", "Visit Cancelled", "Cancelled Post Token", "Dead - Not Interested", "Dead - Sold", "Dead - Legal", "Duplicacy"];
 
 function unitText(s: SupplyItem, showUnit: boolean): string {
   const parts = [

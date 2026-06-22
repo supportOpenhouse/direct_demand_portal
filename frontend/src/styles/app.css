@@ -258,6 +258,11 @@ tr.lead-row:hover{background:var(--panel-2)}
 .plan-cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 14px}
 .plan-pick,.plan-itin{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel-2);max-height:300px;overflow:auto}
 .plan-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between}
+/* sticky city + society filters atop the inventory picker */
+.pick-head{position:sticky;top:-12px;background:var(--panel-2);margin:-12px -12px 8px;padding:12px 12px 8px;z-index:2}
+.pick-ctrl{padding:7px 9px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none;min-width:0}
+.pick-ctrl:focus{border-color:var(--emerald);box-shadow:0 0 0 3px var(--emerald-soft)}
+.pick-ctrl:disabled{background:var(--panel-2);color:var(--muted);cursor:not-allowed}
 .pick-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}
 .pick-row .pk-n{font-weight:600;font-size:12.5px}
 .pick-row .pk-l{font-size:11px;color:var(--muted)}

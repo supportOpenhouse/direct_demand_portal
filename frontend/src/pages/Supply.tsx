@@ -7,9 +7,9 @@ import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components
 import { useSort, SortTh } from "../lib/useSort";
 import { useAuth } from "../components/AuthContext";
 
-/* re-engagement worklist — live cp_inventory_status.supply_status; most recoverable
-   (Future Prospect = Hold + Price High + Future Prospect) first, dead/duplicate last */
-const STAGE_ORDER = ["Future Prospect", "OH Rejected", "Seller Rejected", "Visit Cancelled", "Cancelled Post Token", "Dead - Not Interested", "Dead - Sold", "Dead - Legal", "Duplicacy"];
+/* active pipeline — live cp_inventory_status.supply_status (dead/rejected/cancelled
+   hidden); closest-to-landing first. Future Prospect = Hold + Price High + Future Prospect */
+const STAGE_ORDER = ["AMA Signed", "Token Transferred", "Token Requested", "AMA Req", "Negotiation", "Visit Completed", "Visit Scheduled", "Followup", "Listed", "Key Handover", "Future Prospect"];
 
 function unitText(s: SupplyItem, showUnit: boolean): string {
   const parts = [

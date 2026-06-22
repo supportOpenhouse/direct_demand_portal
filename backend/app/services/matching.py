@@ -22,7 +22,7 @@ from sqlalchemy import text
 from ..db import neon_engine, properties_engine
 from .normalize import normalize_city, normalize_config, config_bhk
 from .societies import society_meta
-from .supply import SUPPLY_STATUS_SHOW, display_status, stage_key
+from .supply import SUPPLY_STATUS_HIDE, display_status, stage_key
 
 log = logging.getLogger("matching")
 
@@ -267,9 +267,9 @@ async def _supply_units() -> list[dict]:
                     "SELECT p.uid, p.society_name, p.locality, p.city, p.configuration, p.area_sqft, "
                     f"p.demand_price, s.supply_status{pcol} "
                     "FROM properties p JOIN cp_inventory_status s ON s.uid = p.uid "
-                    "WHERE s.supply_status = ANY(:statuses)"
+                    "WHERE s.supply_status <> ALL(:hide) AND s.supply_status <> ''"
                 ),
-                {"statuses": SUPPLY_STATUS_SHOW},
+                {"hide": SUPPLY_STATUS_HIDE},
             )
             rows = [dict(m) for m in res.mappings()]
     except Exception:

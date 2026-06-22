@@ -12,13 +12,12 @@ from ..db import properties_engine
 
 log = logging.getLogger("supply")
 
-# The Supply Pipeline is a re-engagement worklist driven by the LIVE
-# cp_inventory_status.supply_status (joined on uid), not the stale properties.stage.
-# Only these statuses surface — the stalled / dead / cancelled units worth calling.
-SUPPLY_STATUS_SHOW = [
-    "Future Prospect", "Hold", "Price High",  # → all displayed as "Future Prospect"
-    "OH Rejected", "Seller Rejected", "Visit Cancelled", "Cancelled Post Token",
-    "Dead - Sold", "Dead - Not Interested", "Dead - Legal", "Duplicacy",
+# The Supply Pipeline shows live units from cp_inventory_status.supply_status (joined
+# on uid), not the stale properties.stage. We show ALL statuses EXCEPT the
+# dead / rejected / cancelled / duplicate ones below.
+SUPPLY_STATUS_HIDE = [
+    "Duplicacy", "Dead - Sold", "OH Rejected", "Dead - Not Interested",
+    "Visit Cancelled", "Seller Rejected", "Cancelled Post Token", "Dead - Legal",
 ]
 
 # raw supply_status → displayed stage (Hold + Price High fold into Future Prospect)
@@ -158,10 +157,10 @@ async def fetch_supply() -> dict:
         sql = text(
             f"SELECT {', '.join(select_cols)}, s.supply_status "
             "FROM properties p JOIN cp_inventory_status s ON s.uid = p.uid "
-            "WHERE s.supply_status = ANY(:statuses)"
+            "WHERE s.supply_status <> ALL(:hide) AND s.supply_status <> ''"
         )
         async with engine.connect() as conn:
-            res = await conn.execute(sql, {"statuses": SUPPLY_STATUS_SHOW})
+            res = await conn.execute(sql, {"hide": SUPPLY_STATUS_HIDE})
             rows = [dict(m) for m in res.mappings()]
         return {"status": "ok", "detail": None, "items": [_row_to_item(r) for r in rows]}
     except Exception as e:  # noqa: BLE001

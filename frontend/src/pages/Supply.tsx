@@ -62,6 +62,12 @@ export default function Supply() {
       <div className="section-head">
         <div />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <div className="field" style={{ marginBottom: 0, width: 200 }}>
+            <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ padding: "7px 10px", fontSize: 12.5 }}>
+              <option value="">Stage: All ({all.length})</option>
+              {STAGE_ORDER.map((st) => <option key={st} value={st}>{st} ({countOf(st)})</option>)}
+            </select>
+          </div>
           <FilterSelect label="City" value={city} options={uniqueValues(all, (s) => s.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (s) => s.configuration)} onChange={setConfig} width={130} />
           {isAdmin && <BudgetRange min={budMin} max={budMax} onMin={setBudMin} onMax={setBudMax} />}
@@ -80,20 +86,6 @@ export default function Supply() {
             </button>
           )}
         </div>
-      </div>
-
-      <div className="tabs">
-        <div className={"tab" + (stage === "" ? " active" : "")} onClick={() => setStage("")}>
-          All
-        </div>
-        {STAGE_ORDER.map((st) => (
-          <div key={st} className={"tab" + (stage === st ? " active" : "")} onClick={() => setStage(st)}>
-            {st}{" "}
-            <span style={{ fontFamily: "'Spline Sans Mono'", fontSize: 11, color: "var(--muted)" }}>
-              {countOf(st)}
-            </span>
-          </div>
-        ))}
       </div>
 
       <div className="card">

@@ -31,7 +31,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
   const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on Openhouse" section
   const [booking, setBooking] = useState(false); // the booking drawer is open
   const [pickCity, setPickCity] = useState(leadCity || ""); // inventory city filter (defaults to lead's)
-  const [societyQuery, setSocietyQuery] = useState(""); // society search — spans ALL cities
+  const [societyQuery, setSocietyQuery] = useState(""); // society search — within the selected city
 
   const mapEl = useRef<HTMLDivElement>(null);
   const unlockEl = useRef<HTMLDivElement>(null);
@@ -42,12 +42,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
   const units = useMemo(() => (inv?.items ?? []).filter((u) => u.lat != null && u.lng != null), [inv]);
   const cities = useMemo(() => Array.from(new Set(units.map((u) => u.city).filter((c): c is string => !!c))).sort(), [units]);
   const sq = societyQuery.trim().toLowerCase();
-  // society search spans ALL cities; otherwise filter by the chosen city
+  // scope to the chosen city first, then filter by the society search within it
+  const inCity = pickCity ? units.filter((u) => u.city === pickCity) : units;
   const pickList = sq
-    ? units.filter((u) => [u.society, u.name, u.locality].some((f) => (f || "").toLowerCase().includes(sq)))
-    : pickCity
-      ? units.filter((u) => u.city === pickCity)
-      : units;
+    ? inCity.filter((u) => [u.society, u.name, u.locality].some((f) => (f || "").toLowerCase().includes(sq)))
+    : inCity;
   const byId = (id: number) => units.find((u) => u.id === id);
   const stops = stopIds.map(byId).filter((u): u is InventoryItem => !!u);
 
@@ -241,11 +240,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
               <div className="pick-head">
                 <div className="plan-lbl"><span>Live inventory</span><span>{pickList.length} unit{pickList.length !== 1 ? "s" : ""}</span></div>
                 <div style={{ display: "flex", gap: 6 }}>
-                  <select className="pick-ctrl" value={pickCity} disabled={!!sq} onChange={(e) => setPickCity(e.target.value)} title={sq ? "Showing all cities while searching" : "Filter by city"}>
+                  <select className="pick-ctrl" value={pickCity} onChange={(e) => setPickCity(e.target.value)} title="Filter by city">
                     <option value="">All cities</option>
                     {cities.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
-                  <input className="pick-ctrl" style={{ flex: 1 }} value={societyQuery} placeholder="Search society — any city" onChange={(e) => setSocietyQuery(e.target.value)} />
+                  <input className="pick-ctrl" style={{ flex: 1 }} value={societyQuery} placeholder="Search society in this city" onChange={(e) => setSocietyQuery(e.target.value)} />
                 </div>
               </div>
               <div>

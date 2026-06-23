@@ -136,67 +136,112 @@ def parse_lead_date(raw: str | None):
 # ---- sheet reading (blocking; wrapped in to_thread) ---------------------------
 
 
-def _fetch_worksheet(name: str) -> list[dict]:
+# read-write scope so we can stamp synced rows back; reads still work with it
+_SHEET_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+
+def _sheets_client():
     import gspread
     from google.oauth2.service_account import Credentials
 
-    settings = get_settings()
-    creds = Credentials.from_service_account_info(
-        settings.service_account_info,
-        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"],
-    )
-    client = gspread.authorize(creds)
-    ws = client.open_by_key(settings.LEADS_SHEET_ID).worksheet(name)
+    creds = Credentials.from_service_account_info(get_settings().service_account_info, scopes=_SHEET_SCOPES)
+    return gspread.authorize(creds)
+
+
+def _fetch_worksheet(name: str) -> list[dict]:
+    ws = _sheets_client().open_by_key(get_settings().LEADS_SHEET_ID).worksheet(name)
     values = ws.get_all_values()
     if not values:
         return []
     headers = [_norm_header(h) for h in values[0]]
     rows = []
-    for r in values[1:]:
+    for sheet_row, r in enumerate(values[1:], start=2):  # 1-based; row 1 = header
         if not any(c.strip() for c in r):
             continue
-        rows.append({headers[i]: (r[i].strip() if i < len(r) else "") for i in range(len(headers))})
+        row = {headers[i]: (r[i].strip() if i < len(r) else "") for i in range(len(headers))}
+        row["_row"] = sheet_row  # carries the sheet row number for write-back
+        rows.append(row)
     return rows
+
+
+def _mark_synced(name: str, valid_rows: list[int]) -> int:
+    """Stamp the configured 'synced' column with an IST timestamp on each synced sheet
+    row that isn't already stamped. Adds the column header if missing. One write call."""
+    import gspread
+
+    if not valid_rows:
+        return 0
+    settings = get_settings()
+    header_label = settings.LEADS_WRITEBACK_COLUMN
+    col_key = _norm_header(header_label)
+    ws = _sheets_client().open_by_key(settings.LEADS_SHEET_ID).worksheet(name)
+    values = ws.get_all_values()
+    if not values:
+        return 0
+    header = [_norm_header(h) for h in values[0]]
+    if col_key in header:
+        col_idx = header.index(col_key) + 1  # 1-based
+    else:
+        col_idx = len(values[0]) + 1
+        ws.update_cell(1, col_idx, header_label)  # add the header
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    ts = ist.strftime("%Y-%m-%d %H:%M") + " IST"
+    cells = []
+    for rownum in valid_rows:
+        idx = rownum - 1
+        cur = values[idx][col_idx - 1] if idx < len(values) and col_idx - 1 < len(values[idx]) else ""
+        if not str(cur).strip():  # only stamp rows not already marked
+            cells.append(gspread.Cell(rownum, col_idx, ts))
+    if cells:
+        ws.update_cells(cells)
+    return len(cells)
 
 
 # ---- row -> table dicts -------------------------------------------------------
 
 
-def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    """Returns (meta_leads rows, leads spine rows). Skips rows with no phone."""
-    ingest, spine = [], []
+def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
+    """Returns (meta_leads rows, leads spine rows, synced sheet-row numbers). Skips no-phone rows."""
+    ingest, spine, synced = [], [], []
     for r in rows:
+        row_num = r.pop("_row", None)
         phone = norm_phone(r.get("phone_number"))
         if not phone:
             continue
+        if row_num:
+            synced.append(row_num)
         name = clean_name(r.get("full_name"))
+        city = normalize_city(r.get("city"))  # Meta sheet gained a city column
         budget = pretty_enum(r.get("your_budget_range"))
         plan = map_plan(r.get("when_are_you_planning_to_buy"))
         visit_day = pretty_enum(r.get("preferred_site_visit_day"))
         email = r.get("email") or None
         ingest.append({
             "dedupe_key": phone, "full_name": name, "phone": display_phone(phone), "email": email,
-            "budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day,
+            "city": city, "budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day,
             "is_test": False, "raw": r,
         })
         spine.append({
             "origin_key": f"meta:{phone}", "source_category": "meta", "source": "meta",
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,
-            "city": None, "society": None, "configuration": None, "budget_band": budget,
+            "city": city, "society": None, "configuration": None, "budget_band": budget,
             "plan_to_buy": plan, "preferred_visit_day": visit_day, "source_remarks": None, "is_test": False,
             "received_at": None,  # meta sheet has no date → filled with ingest time below
-            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day},
+            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day, "city": city},
         })
-    return ingest, spine
+    return ingest, spine, synced
 
 
-def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict]]:
-    ingest, spine = [], []
+def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
+    ingest, spine, synced = [], [], []
     for r in rows:
+        row_num = r.pop("_row", None)
         phone = norm_phone(r.get("contactno"))
         name = clean_name(r.get("name"))
         if not phone or not name:
             continue
+        if row_num:
+            synced.append(row_num)
         source = map_source(r.get("source"))
         city = normalize_city(r.get("city"))
         prop = r.get("property") or None
@@ -219,14 +264,14 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict]]:
             "received_at": parse_lead_date(r.get("date")),
             "source_meta": {"property": prop, "lead_type": ltype, "source": source},
         })
-    return ingest, spine
+    return ingest, spine, synced
 
 
 # ---- the two test leads (idempotent via fixed dedupe_key) ---------------------
 
 TEST_META = {
     "ingest": {"dedupe_key": "0000000001", "full_name": "TEST Meta Lead", "phone": "+91 00000 00001",
-               "email": "test.meta@openhouse.in", "budget_range": "Up to ₹75 lacs",
+               "email": "test.meta@openhouse.in", "city": "Gurgaon", "budget_range": "Up to ₹75 lacs",
                "plan_to_buy": "Within 30 days", "preferred_visit_day": "This Sunday", "is_test": True,
                "raw": {"_test": "true"}},
     "spine": {"origin_key": "meta:0000000001", "source_category": "meta", "source": "meta",
@@ -277,8 +322,8 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
             asyncio.to_thread(_fetch_worksheet, settings.LEADS_LISTING_WORKSHEET),
             asyncio.to_thread(_fetch_worksheet, settings.LEADS_META_WORKSHEET),
         )
-        meta_ingest, meta_spine = build_meta(meta_rows)
-        listing_ingest, listing_spine = build_listing(listing_rows)
+        meta_ingest, meta_spine, meta_synced = build_meta(meta_rows)
+        listing_ingest, listing_spine, listing_synced = build_listing(listing_rows)
 
         # seed the two test leads (idempotent)
         meta_ingest.insert(0, TEST_META["ingest"]); meta_spine.insert(0, TEST_META["spine"])
@@ -291,14 +336,41 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
             if s.get("received_at") is None:  # meta + test leads → use ingest time
                 s["received_at"] = now
 
+        # backfill city onto already-ingested meta leads (insert-only never updates
+        # existing spine rows; the Meta sheet gained a city column after launch)
+        meta_city_updates = [
+            {"ok": s["origin_key"], "city": s["city"]} for s in meta_spine if s.get("city")
+        ]
+
         async with engine.begin() as conn:
             m_new = await _insert_only(conn, MetaLead, meta_ingest, "dedupe_key")
             l_new = await _insert_only(conn, ListingLead, listing_ingest, "dedupe_key")
             spine_new = await _insert_only(conn, Lead, [*meta_spine, *listing_spine], "origin_key")
+            if meta_city_updates:
+                await conn.execute(
+                    text("UPDATE leads SET city = :city WHERE origin_key = :ok AND (city IS NULL OR city = '')"),
+                    meta_city_updates,
+                )
 
         await _write_state(META_KEY, "ok", f"{m_new} new via {trigger}", m_new)
         await _write_state(LISTING_KEY, "ok", f"{l_new} new via {trigger}", l_new)
         log.info("leads sync ok (%s): meta +%d, listing +%d, spine +%d", trigger, m_new, l_new, spine_new)
+
+        # stamp the source sheet so the team sees which rows we've captured (fail-soft:
+        # a write-back failure must not fail the sync — usually means no Editor access)
+        if settings.LEADS_SYNC_WRITEBACK:
+            try:
+                m_mark, l_mark = await asyncio.gather(
+                    asyncio.to_thread(_mark_synced, settings.LEADS_META_WORKSHEET, meta_synced),
+                    asyncio.to_thread(_mark_synced, settings.LEADS_LISTING_WORKSHEET, listing_synced),
+                )
+                log.info("sheet write-back: stamped meta %d, listing %d rows", m_mark, l_mark)
+            except Exception:
+                log.warning(
+                    "sheet write-back failed — grant Editor access to %s",
+                    (settings.service_account_info or {}).get("client_email", "the service account"),
+                    exc_info=True,
+                )
         return {"status": "ok", "meta_new": m_new, "listing_new": l_new, "spine_new": spine_new}
     except Exception as e:  # noqa: BLE001 — sync must never crash the app
         log.exception("leads sync failed (%s)", trigger)

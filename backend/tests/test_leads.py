@@ -41,13 +41,25 @@ def test_build_meta_skips_phoneless_and_normalizes():
          "preferred_site_visit_day": "this_sunday", "email": "p@x.com"},
         {"full_name": "No Phone", "phone_number": "", "your_budget_range": "x"},  # skipped
     ]
-    ingest, spine = build_meta(rows)
+    ingest, spine, synced = build_meta(rows)
     assert len(ingest) == 1 and len(spine) == 1
+    assert synced == []  # no _row on these rows → nothing to stamp
     assert ingest[0]["dedupe_key"] == "9953998821"
     assert spine[0]["origin_key"] == "meta:9953998821"
     assert spine[0]["source"] == "meta"
     assert spine[0]["plan_to_buy"] == "Within 30 days"
     assert spine[0]["name"] == "Pankaj Joshi"
+
+
+def test_build_meta_tracks_sheet_row_for_writeback():
+    # rows carry their sheet row number (_row) so we can stamp them back as synced
+    rows = [
+        {"full_name": "X", "phone_number": "9953998821", "_row": 7},
+        {"full_name": "No Phone", "phone_number": "", "_row": 8},  # skipped → not stamped
+    ]
+    ingest, _, synced = build_meta(rows)
+    assert synced == [7]
+    assert "_row" not in ingest[0]["raw"]  # _row never leaks into stored raw
 
 
 def test_build_listing_maps_source_and_property():
@@ -57,7 +69,7 @@ def test_build_listing_maps_source_and_property():
          "assigned_to": "Dheeraj", "remarks": "RNR", "remarks_2": ""},
         {"name": "", "contactno": "91-9000000000"},  # skipped (no name)
     ]
-    ingest, spine = build_listing(rows)
+    ingest, spine, synced = build_listing(rows)
     assert len(ingest) == 1 and len(spine) == 1
     assert spine[0]["source"] == "99acres"
     assert spine[0]["society"] == "Supertech Cape Town"

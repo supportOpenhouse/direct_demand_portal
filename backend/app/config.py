@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     LEADS_LISTING_WORKSHEET: str = "Listing Leads_New"
     LEADS_META_WORKSHEET: str = "Meta Affordable_New"
     LEADS_SYNC_INTERVAL_HOURS: int = 4
+    # write a "synced" timestamp back to each source row after it lands in our system
+    # (needs the service account to have EDITOR access on the leads sheet)
+    LEADS_SYNC_WRITEBACK: bool = True
+    LEADS_WRITEBACK_COLUMN: str = "DD Synced"
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
 

@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
 from ..core.auth import current_user, issue_jwt, verify_google_token
+from ..core.ratelimit import limiter
 from ..db import neon_engine
 from ..models import User
 
@@ -26,7 +27,8 @@ async def auth_config():
 
 
 @router.post("/auth/google")
-async def auth_google(payload: GoogleLogin):
+@limiter.limit("10/minute")
+async def auth_google(request: Request, payload: GoogleLogin):
     """Only pre-added (active) users may sign in. Bootstrap admins in
     INITIAL_ADMIN_EMAILS are auto-provisioned as admin on first sign-in."""
     settings = get_settings()

@@ -1,0 +1,24 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"            # backend Python deps (pyproject.toml + uv.lock)
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "npm"           # frontend deps
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "github-actions" # keep workflow actions current
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"        # base images
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"

@@ -326,8 +326,10 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
         listing_ingest, listing_spine, listing_synced = build_listing(listing_rows)
 
         # seed the two test leads (idempotent)
-        meta_ingest.insert(0, TEST_META["ingest"]); meta_spine.insert(0, TEST_META["spine"])
-        listing_ingest.insert(0, TEST_LISTING["ingest"]); listing_spine.insert(0, TEST_LISTING["spine"])
+        meta_ingest.insert(0, TEST_META["ingest"])
+        meta_spine.insert(0, TEST_META["spine"])
+        listing_ingest.insert(0, TEST_LISTING["ingest"])
+        listing_spine.insert(0, TEST_LISTING["spine"])
 
         now = datetime.now(timezone.utc)
         tat = now + timedelta(hours=TAT_HOURS)

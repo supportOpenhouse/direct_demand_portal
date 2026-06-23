@@ -28,11 +28,15 @@ log = logging.getLogger("matching")
 
 BUDGET_TOLERANCE = 0.2  # ±20% window around a confirmed budget figure
 
-# in-memory unit cache so live preview (one call per keystroke) never re-hits the
+# Two-level unit cache so live preview (one call per keystroke) never re-hits the
 # DBs — units barely change during an editing session. Scoring is pure in-memory.
+#   L1 = per-process dict (avoids a Redis hop per keystroke)
+#   L2 = Redis (shared across instances; optional — falls back to L1 only)
 _UNITS_TTL = 90  # seconds
 _cache: dict = {"inventory": None, "supply": None, "at": 0.0}
 _lock = asyncio.Lock()
+_REDIS_INVENTORY_KEY = "ddp:units:inventory:v1"
+_REDIS_SUPPLY_KEY = "ddp:units:supply:v1"
 
 
 def parse_band(band: str | None) -> tuple[float | None, float | None]:
@@ -77,7 +81,7 @@ async def build_requirement(
     """Shared requirement builder for saved-lead matching and live preview.
     Budget and size are both RANGES; budget is the top priority."""
     societies = [s for s in (societies or []) if s]
-    localities = [l for l in (localities or []) if l]
+    localities = [loc for loc in (localities or []) if loc]
     mms = {m for m in (micromarkets or []) if m}
     for s in societies:  # enrich with the societies' own micro-markets
         meta = await society_meta(s)
@@ -91,7 +95,7 @@ async def build_requirement(
         "city": normalize_city(city),
         "societies": societies,
         "society_lc": {s.lower() for s in societies},
-        "localities_lc": {l.lower() for l in localities},
+        "localities_lc": {loc.lower() for loc in localities},
         "micromarkets": mms,
         "config": normalize_config(config),
         "bhk": config_bhk(config),  # bedroom count — matches "2 BHK" against "2 BHK + Study"
@@ -316,22 +320,40 @@ def _shape(u: dict, supply: bool) -> dict:
     return base
 
 
-def invalidate_units_cache() -> None:
-    """Force the next match to reload units (e.g. after a priority change)."""
+async def invalidate_units_cache() -> None:
+    """Force the next match to reload units (e.g. after a priority change). Clears
+    both the local L1 cache and the shared Redis L2 keys so every instance reloads."""
+    from ..cache import cache_delete
+
     _cache["at"] = 0.0
+    await cache_delete(_REDIS_INVENTORY_KEY, _REDIS_SUPPLY_KEY)
 
 
 async def _load_units(force: bool = False) -> tuple[list[dict], list[dict]]:
-    """Inventory + supply units, cached in-memory for _UNITS_TTL so live preview
-    is a pure in-memory score (no DB round-trip per keystroke)."""
+    """Inventory + supply units, cached for _UNITS_TTL (L1 dict + optional Redis L2)
+    so live preview is a pure in-memory score (no DB round-trip per keystroke)."""
+    from ..cache import cache_get_json, cache_set_json
+
     fresh = (time.monotonic() - _cache["at"]) < _UNITS_TTL
     if not force and fresh and _cache["inventory"] is not None:
         return _cache["inventory"], _cache["supply"]
     async with _lock:
         if not force and (time.monotonic() - _cache["at"]) < _UNITS_TTL and _cache["inventory"] is not None:
             return _cache["inventory"], _cache["supply"]
+        # L2: try the shared Redis cache before hitting the DBs (no-op without Redis)
+        if not force:
+            inv_l2, sup_l2 = await asyncio.gather(
+                cache_get_json(_REDIS_INVENTORY_KEY), cache_get_json(_REDIS_SUPPLY_KEY)
+            )
+            if inv_l2 is not None and sup_l2 is not None:
+                _cache.update({"inventory": inv_l2, "supply": sup_l2, "at": time.monotonic()})
+                return inv_l2, sup_l2
         inventory, supply = await asyncio.gather(_inventory_units(), _supply_units())
         _cache.update({"inventory": inventory, "supply": supply, "at": time.monotonic()})
+        await asyncio.gather(
+            cache_set_json(_REDIS_INVENTORY_KEY, inventory, _UNITS_TTL),
+            cache_set_json(_REDIS_SUPPLY_KEY, supply, _UNITS_TTL),
+        )
         log.info("units cache refreshed: %d inventory, %d supply", len(inventory), len(supply))
         return inventory, supply
 

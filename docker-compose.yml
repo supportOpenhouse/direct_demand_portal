@@ -1,0 +1,52 @@
+# Local production-parity stack: backend + frontend + Redis.
+# The backend still uses DATABASE_URL/PROPERTIES_DATABASE_URL from the root .env
+# (shared Neon/properties DBs); REDIS_URL is overridden to the local Redis so the
+# shared cache + cron lock are exercisable.  Run:  docker compose up --build
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: [.env]            # DB urls, Google SA, CRM key, etc.
+    environment:
+      APP_ENV: dev              # keep fail-closed off locally
+      REDIS_URL: redis://redis:6379/0
+      RUN_SCHEDULER: "${RUN_SCHEDULER:-true}"   # set RUN_SCHEDULER=false to skip cron locally
+      LOG_JSON: "false"
+    ports: ["8000:8000"]
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    restart: unless-stopped
+    ports: ["5173:80"]
+    depends_on: [backend]
+
+# Optional fully-local Postgres (off by default — we use the shared Neon DB).
+# Enable with:  docker compose --profile localdb up
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["localdb"]
+    environment:
+      POSTGRES_USER: ddp
+      POSTGRES_PASSWORD: ddp
+      POSTGRES_DB: direct_demand
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+
+volumes:
+  pgdata:

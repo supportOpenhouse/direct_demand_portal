@@ -70,7 +70,10 @@ def map_rows(values: list[list[str]]) -> list[dict]:
         if not any(c.strip() for c in r):
             continue
         raw = {headers[j]: r[j] for j in range(min(len(headers), len(r))) if headers[j]}
-        get = lambda f: (r[col_for[f]].strip() or None) if f in col_for and col_for[f] < len(r) else None
+
+        def get(f, r=r):
+            return (r[col_for[f]].strip() or None) if f in col_for and col_for[f] < len(r) else None
+
         area = get("area_sqft")
         try:
             area_num = float(re.sub(r"[^\d.]", "", area)) if area else None

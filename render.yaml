@@ -25,3 +25,31 @@ services:
       # PHOTOS_API_URL has a baked-in default; set it here only if the service moves
       - key: CORS_ORIGINS
         sync: false # e.g. https://your-app.vercel.app (comma-separated for previews)
+      - key: CORS_ORIGIN_REGEX
+        value: "https://.*\\.vercel\\.app$" # allow Vercel preview deploys
+      # --- production hardening (fail-closed) ---
+      - key: APP_ENV
+        value: "prod"             # enables fail-closed checks below
+      - key: JWT_SECRET
+        sync: false               # REQUIRED in prod: a strong random secret (>=16 chars)
+      - key: GOOGLE_OAUTH_CLIENT_ID
+        sync: false               # REQUIRED in prod: enforces login (no open-access)
+      - key: REDIS_URL
+        sync: false               # Upstash rediss:// URL — shared cache + rate-limit + cron lock
+      - key: LOG_JSON
+        value: "true"
+      - key: CRM_BOOKING_API_BASE_URL
+        sync: false               # Openhouse Core base, ends in /api/v1/oh/
+      - key: CRM_API_KEY
+        sync: false               # X-CRM-Key secret (server-to-server only)
+      - key: MAPS_API_KEY
+        sync: false               # server-side Geocoding key (referrer-restricted)
+      - key: LEADS_SHEET_ID
+        sync: false               # leads source sheet (or rely on the in-code default)
+      # RUN_SCHEDULER defaults true. If you scale this web service to >1 instance,
+      # set it "false" here and add a separate Background Worker service (same repo,
+      # RUN_SCHEDULER=true) so the cron runs on exactly one instance.
+
+# To run the same image as local compose, switch the service to the Docker runtime:
+#   runtime: docker  /  dockerfilePath: backend/Dockerfile  /  dockerContext: backend
+# (the native python+uv build above also works).

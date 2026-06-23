@@ -3,12 +3,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user
 from ..db import neon_engine
-from ..models import Lead, LeadConfirmedData, LeadNote, Visit
+from ..models import LeadConfirmedData, LeadNote, Visit
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
 from ..services.societies import (

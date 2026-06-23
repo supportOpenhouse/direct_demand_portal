@@ -254,3 +254,45 @@ Inventory units carry approximate `lat`/`lng` per society (Delhi-NCR) for the pi
 lost leads for the loss analytics; approximate inventory coordinates for the map). No backend
 yet. See `Openhouse-Direct-CRM-PRD.md` for the data model, REST API, integration contracts,
 business rules and acceptance criteria when the backend build begins.
+
+---
+
+## Production & DevOps
+
+The app is production-hardened while staying on **Render** (backend) + **Vercel** (frontend),
+with **managed Redis** (Upstash) as the only added infra.
+
+### Local stack (Docker)
+```bash
+cp .env.example .env   # fill in DB/Google/CRM values
+docker compose up --build        # backend :8000, frontend :5173, redis :6379
+docker compose up --scale backend=2   # prove the cron runs on only one instance
+```
+Backend uses the shared Neon/properties DBs from `.env`; `REDIS_URL` is overridden to the
+local Redis so the shared cache + cron lock are exercised. With no Redis, everything falls
+back to in-memory and behaves exactly as before.
+
+### New runtime env vars
+| Var | Purpose |
+|-----|---------|
+| `APP_ENV` | `dev` (default) or `prod`. In **prod** the app refuses to boot on insecure config (default `JWT_SECRET`, missing `GOOGLE_OAUTH_CLIENT_ID`, localhost `CORS_ORIGINS`). |
+| `REDIS_URL` | Upstash/Render Redis. Empty → in-memory fallback. Powers shared match cache + rate limiting + single-runner cron lock. |
+| `RUN_SCHEDULER` | `true` (default). Set `false` on extra web replicas; run one worker with it `true`. |
+| `CORS_ORIGIN_REGEX` | e.g. `https://.*\.vercel\.app$` for preview deploys. |
+| `LOG_JSON` | `true` for structured logs in prod. |
+| `MAX_BODY_BYTES` | request body cap (default 1 MB). |
+
+### Upstash Redis (2-min setup)
+upstash.com → sign in with GitHub → **Create Database** (Redis), region near Render →
+copy the **`rediss://`** URL → set it as `REDIS_URL` in Render (and GitHub Secrets).
+
+### Health probes
+- `GET /v1/health/live` — liveness (no DB), use for container restart checks.
+- `GET /v1/health` — readiness; returns **503** when the primary DB (Neon) is down.
+
+### CI/CD (deferred)
+GitHub Actions is **not active yet** — ready-to-use configs (CI lint/test/scan/build,
+CodeQL, Dependabot) live inert in **`ci-templates/`**. See `ci-templates/README.md` to
+activate them (move into `.github/`, add secrets, protect `main`) when you're ready.
+
+See `SECURITY.md` for the full posture and secret-rotation steps.

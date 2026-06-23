@@ -22,7 +22,7 @@ async def mark_priority(uid: str, payload: PriorityPayload):
     """Set/unset the Direct Demand priority flag on a supply unit (external DB)."""
     result = await set_priority(uid, payload.priority)
     if result["status"] == "ok":
-        invalidate_units_cache()  # so the next lead-match reflects it immediately
+        await invalidate_units_cache()  # so the next lead-match reflects it immediately (all instances)
         return result
     if result["status"] == "not_found":
         raise HTTPException(status_code=404, detail="property not found")

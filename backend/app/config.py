@@ -41,6 +41,22 @@ class Settings(BaseSettings):
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15
     CORS_ORIGINS: str = "http://localhost:5173"
+    # extra allowed origins by regex (e.g. Vercel preview deploys: https://.*\.vercel\.app$)
+    CORS_ORIGIN_REGEX: str = ""
+
+    # --- runtime / ops ---
+    # "dev" | "prod". In prod the app fail-closes on insecure config (see validator below).
+    APP_ENV: str = "dev"
+    # managed Redis (Upstash / Render KV) for shared cache + rate limit + cron lock.
+    # Empty → graceful fallback to in-memory behavior (dev/single-instance).
+    REDIS_URL: str = ""
+    # emit JSON logs (for log aggregation) instead of the human format
+    LOG_JSON: bool = False
+    # run the APScheduler cron in this process. Set False on web replicas when the
+    # scheduler runs as its own single-instance worker (Redis lock is the backstop).
+    RUN_SCHEDULER: bool = True
+    # reject request bodies larger than this many bytes (basic DoS guard)
+    MAX_BODY_BYTES: int = 1_000_000
     # Leads source spreadsheet (separate from the inventory sheet). Two worksheets:
     # listing portals (99acres/MagicBricks) and Meta. Synced insert-only every 4h.
     LEADS_SHEET_ID: str = "18FTnKh2bwwmMNXZNnxPZsep_ZcDthSFOnCC8zfbQViU"
@@ -91,6 +107,14 @@ class Settings(BaseSettings):
         return bool(self.CRM_BOOKING_API_BASE_URL) and bool(self.CRM_API_KEY)
 
     @property
+    def redis_configured(self) -> bool:
+        return bool(self.REDIS_URL)
+
+    @property
+    def is_prod(self) -> bool:
+        return self.APP_ENV.strip().lower() in ("prod", "production")
+
+    @property
     def neon_configured(self) -> bool:
         return bool(self.DATABASE_URL)
 
@@ -136,6 +160,26 @@ class Settings(BaseSettings):
     @property
     def cors_origins(self) -> list[str]:
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    def assert_prod_safe(self) -> None:
+        """Fail-closed: in APP_ENV=prod, raise on insecure config. Called at startup
+        (main.py lifespan) so the process aborts before serving. Raises a clean
+        RuntimeError listing only the problems — never echoes secret values. Dev/tests
+        (APP_ENV unset → 'dev') are unaffected."""
+        if not self.is_prod:
+            return
+        problems = []
+        if not self.JWT_SECRET or self.JWT_SECRET == "dev-insecure-change-me" or len(self.JWT_SECRET) < 16:
+            problems.append("JWT_SECRET must be a strong secret (>=16 chars), not the default")
+        if not self.GOOGLE_OAUTH_CLIENT_ID:
+            problems.append("GOOGLE_OAUTH_CLIENT_ID must be set (auth would otherwise be open to anyone)")
+        if not self.DATABASE_URL:
+            problems.append("DATABASE_URL must be set")
+        origins = self.cors_origins
+        if not origins or any(any(h in o for h in ("localhost", "127.0.0.1", "0.0.0.0")) for o in origins):
+            problems.append("CORS_ORIGINS must be real frontend origin(s), not localhost/empty")
+        if problems:
+            raise RuntimeError("Refusing to start in APP_ENV=prod:\n  - " + "\n  - ".join(problems))
 
 
 @lru_cache

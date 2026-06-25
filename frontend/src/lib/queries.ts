@@ -91,6 +91,18 @@ export function useUsers() {
   return useQuery({ queryKey: ["users"], queryFn: api.users });
 }
 
+export function useLogs(params: import("./api").LogsParams) {
+  return useQuery({
+    queryKey: ["logs", params],
+    queryFn: () => api.logs(params),
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+}
+export function useLogActors() {
+  return useQuery({ queryKey: ["log-actors"], queryFn: api.logActors, staleTime: 60_000 });
+}
+
 export function useAssignees() {
   return useQuery({ queryKey: ["assignees"], queryFn: api.assignees, staleTime: 60_000 });
 }

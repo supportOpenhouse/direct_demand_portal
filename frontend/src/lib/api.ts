@@ -272,6 +272,13 @@ export const api = {
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),
   bulkAssign: (lead_ids: string[], assigned_to: string | null) =>
     request<{ status: string; updated: number; assigned_to: string | null }>("/v1/leads/bulk-assign", { method: "POST", body: JSON.stringify({ lead_ids, assigned_to }) }),
+  // audit logs (admin)
+  logs: (p: LogsParams) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+    return request<LogsResponse>(`/v1/logs?${qs.toString()}`);
+  },
+  logActors: () => request<{ items: string[] }>("/v1/logs/actors"),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   createUser: (u: { email: string; name: string; role: string; smid?: number | null }) =>
@@ -294,6 +301,26 @@ export interface SocietyHit {
   city: string | null;
   micro_market: string | null;
 }
+export interface AuditLogRow {
+  id: string;
+  created_at: string | null;
+  actor_email: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
+  action: string;
+  category: "auth" | "write" | "read" | string;
+  method: string;
+  path: string;
+  status_code: number | null;
+  duration_ms: number | null;
+  ip: string | null;
+}
+export interface LogsResponse { items: AuditLogRow[]; total: number; }
+export interface LogsParams {
+  actor?: string; category?: string; method?: string; q?: string;
+  status?: number; from?: string; to?: string; limit?: number; offset?: number;
+}
+
 export interface ManagedUser {
   id: string;
   email: string;

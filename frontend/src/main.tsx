@@ -10,6 +10,7 @@ import NewLeads from "./pages/NewLeads";
 import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
+import Logs from "./pages/Logs";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -34,6 +35,7 @@ const router = createBrowserRouter([
       { path: "societies", element: <Stub title="Society Insights" /> },
       { path: "goldmine", element: <Stub title="Gold Mine" /> },
       { path: "settings", element: <Settings /> },
+      { path: "logs", element: <Logs /> },
     ],
   },
 ]);

@@ -7,6 +7,7 @@ from sqlalchemy import (
     Boolean,
     Date,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     Text,
@@ -257,4 +258,34 @@ class LeadNote(Base):
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="note")  # 'remarks' | 'note'
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AuditLog(Base):
+    """Audit trail — one row per meaningful API action, written by the audit
+    middleware. Insert-only; surfaced on the admin Logs page."""
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    actor_email: Mapped[str | None] = mapped_column(Text)   # who did it (None = anonymous)
+    actor_name: Mapped[str | None] = mapped_column(Text)
+    actor_role: Mapped[str | None] = mapped_column(Text)
+    action: Mapped[str] = mapped_column(Text, nullable=False)        # human label, e.g. "Confirmed lead"
+    category: Mapped[str] = mapped_column(Text, nullable=False)      # auth | write | read
+    method: Mapped[str] = mapped_column(Text, nullable=False)
+    path: Mapped[str] = mapped_column(Text, nullable=False)          # raw request path
+    route: Mapped[str] = mapped_column(Text, nullable=False)         # ids masked, for grouping
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    duration_ms: Mapped[int | None] = mapped_column(Integer)
+    ip: Mapped[str | None] = mapped_column(Text)
+    request_id: Mapped[str | None] = mapped_column(Text)
+
+    __table_args__ = (
+        Index("ix_audit_logs_created_at", created_at.desc()),
+        Index("ix_audit_logs_actor_email", actor_email),
+        Index("ix_audit_logs_category", category),
     )

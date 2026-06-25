@@ -18,7 +18,16 @@ import {
 
 const navClass = ({ isActive }: { isActive: boolean }) => "nav-item" + (isActive ? " active" : "");
 
+const IconLogs = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6M8 13h8M8 17h6" />
+  </svg>
+);
+
 export default function Sidebar() {
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -67,6 +76,11 @@ export default function Sidebar() {
         <NavLink to="/settings" className={navClass}>
           <IconSettings /> Settings &amp; Access
         </NavLink>
+        {isAdmin && (
+          <NavLink to="/logs" className={navClass}>
+            <IconLogs /> Activity Logs
+          </NavLink>
+        )}
       </nav>
       <div className="spacer"></div>
       <UserChip />

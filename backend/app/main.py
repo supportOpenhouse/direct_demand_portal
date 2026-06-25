@@ -18,7 +18,7 @@ from .core.ratelimit import limiter
 from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
-from .routers import auth, health, inventory, leads, metrics, supply, users, visits
+from .routers import auth, health, inventory, leads, logs, metrics, supply, users, visits
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 _settings = get_settings()
@@ -127,6 +127,28 @@ async def _request_id(request: Request, call_next):
     return resp
 
 
+@app.middleware("http")  # outer of request-id so it can read the X-Request-ID it set
+async def _audit(request: Request, call_next):
+    from time import monotonic
+
+    start = monotonic()
+    resp = await call_next(request)
+    try:
+        from .services.audit import actor_from_request, record, should_log
+
+        if should_log(request.method, request.url.path):
+            ip = (request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+                  or (request.client.host if request.client else None))
+            asyncio.create_task(record(
+                actor=actor_from_request(request), method=request.method, path=request.url.path,
+                status=resp.status_code, duration_ms=int((monotonic() - start) * 1000),
+                ip=ip, request_id=resp.headers.get("X-Request-ID"),
+            ))
+    except Exception:  # noqa: BLE001 — auditing must never affect the response
+        pass
+    return resp
+
+
 app.add_middleware(  # registered last → outermost (adds CORS headers even on errors)
     CORSMiddleware,
     allow_origins=_settings.cors_origins,
@@ -143,4 +165,5 @@ app.include_router(supply.router, prefix="/v1")
 app.include_router(leads.router, prefix="/v1")
 app.include_router(users.router, prefix="/v1")
 app.include_router(visits.router, prefix="/v1")
+app.include_router(logs.router, prefix="/v1")
 app.include_router(metrics.router, prefix="/v1")

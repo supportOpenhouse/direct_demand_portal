@@ -11,10 +11,8 @@ import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
-import { useToast } from "../components/Toast";
-import { WhatsAppIcon } from "../components/icons";
+import { NotesCell } from "../components/NotesCell";
 import { AssignControl } from "../components/AssignControl";
-import { waChat } from "../lib/whatsapp";
 import { VisitPlanner } from "../features/VisitPlanner";
 
 const SUBS: Record<string, string> = {
@@ -38,7 +36,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const rejected = segment === "rejected";
   const { data, isLoading } = useLeads(segment);
   const nav = useNavigate();
-  const toast = useToast();
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
@@ -97,7 +94,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               {rejected ? (
                 <>
                   <SortTh label="Reason" sortKey="reason" activeKey={sortKey} dir={dir} onSort={onSort} />
-                  <th>Notes</th>
+                  <th>Reject note</th>
                   <SortTh label="Rejected" sortKey="rejected" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
               ) : (
@@ -107,15 +104,16 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
               )}
+              <th>Notes</th>
               <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -147,20 +145,15 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     </>
                   )}
+                  <td onClick={(e) => e.stopPropagation()}><NotesCell leadId={l.id} latest={l.latest_note} count={l.note_count} /></td>
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                    <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-                      <button className="wa-ico" title={`WhatsApp ${l.name}`}
-                        onClick={(e) => { e.stopPropagation(); l.phone ? waChat(l.phone) : toast("No phone number", "gold", "⚠"); }}>
-                        <WhatsAppIcon />
+                    {!rejected && (
+                      <button className="btn ghost sm" title="Plan site visits"
+                        onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
+                        📅 Visits
                       </button>
-                      {!rejected && (
-                        <button className="btn ghost sm" title="Plan site visits"
-                          onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
-                          📅 Visits
-                        </button>
-                      )}
-                    </span>
+                    )}
                   </td>
                 </tr>
               ))

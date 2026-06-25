@@ -666,3 +666,13 @@ a.nav-item{text-decoration:none}
   .bv-ug-head{display:none}
   .bv-ug-row{grid-template-columns:1fr 1fr;gap:4px 8px}
 }
+
+/* inline notes thread in lead lists (NotesCell) */
+.note-latest{font-size:12.5px;line-height:1.35;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.note-toggle{border:0;background:0;color:var(--cyan);font-weight:700;font-size:10.5px;cursor:pointer;padding:2px 0;font-family:inherit;margin-top:2px}
+.note-toggle:hover{text-decoration:underline}
+.note-thread{display:flex;flex-direction:column;gap:8px;max-height:220px;overflow:auto;padding:2px 0 0}
+.note-line{border-left:2px solid var(--line);padding-left:9px}
+.note-line.first{border-left-color:var(--emerald)}
+.note-line .nl-body{font-size:12px;line-height:1.42;color:var(--ink)}
+.note-line .nl-meta{font-size:10px;color:var(--muted);margin-top:2px;font-family:"Spline Sans Mono"}

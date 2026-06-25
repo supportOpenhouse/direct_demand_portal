@@ -37,6 +37,9 @@ SEGMENTS = {
 
 
 def _lead_row(r) -> dict:
+    # source remarks (seeded, " | "-joined) + manual lead_notes form the thread; the
+    # list query supplies the newest manual note + its count (None on other queries).
+    remarks = [p.strip() for p in (r["source_remarks"] or "").split(" | ") if p.strip()]
     return {
         "id": str(r["id"]),
         "source_category": r["source_category"],
@@ -62,6 +65,8 @@ def _lead_row(r) -> dict:
         "rejected_at": r["rejected_at"].isoformat() if r["rejected_at"] else None,
         "confirmed": r["confirmed"],
         "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
+        "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
+        "note_count": int(r.get("note_count") or 0) + len(remarks),
         "is_test": r["is_test"],
     }
 
@@ -90,7 +95,13 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
     try:
         async with engine.connect() as conn:
             res = await conn.execute(
-                text(f"SELECT * FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC"), params
+                text(
+                    "SELECT leads.*, "
+                    "(SELECT body FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_body, "
+                    "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count "
+                    f"FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC"
+                ),
+                params,
             )
             items = [_lead_row(m) for m in res.mappings()]
     except Exception as e:  # table missing / conn error

@@ -66,8 +66,13 @@ export function formatDateTime(iso: string | null): string {
   return new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
 }
 
-export function useLeadNotes(id: string) {
-  return useQuery({ queryKey: ["lead-notes", id], queryFn: () => api.leadNotes(id), staleTime: 15_000 });
+export function useLeadNotes(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ["lead-notes", id],
+    queryFn: () => api.leadNotes(id),
+    enabled: enabled && !!id,
+    staleTime: 15_000,
+  });
 }
 export function useAddNote(id: string) {
   const qc = useQueryClient();

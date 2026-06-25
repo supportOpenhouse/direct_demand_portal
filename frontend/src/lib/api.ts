@@ -145,6 +145,8 @@ export interface Lead {
   rejected_at: string | null;
   confirmed: boolean;
   qualified_at: string | null;
+  latest_note: string | null;   // newest note/remark, for the inline notes column
+  note_count: number;           // total notes + source remarks
   is_test: boolean;
 }
 

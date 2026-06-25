@@ -6,13 +6,11 @@ import { Lead } from "../lib/api";
 import { srcLabel, planClass, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
-import { WhatsAppIcon } from "../components/icons";
+import { NotesCell } from "../components/NotesCell";
 import { AssignControl } from "../components/AssignControl";
-import { useToast } from "../components/Toast";
 import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
-import { waChat } from "../lib/whatsapp";
 import { useState } from "react";
 
 function PlanChip({ plan }: { plan: string | null }) {
@@ -29,7 +27,6 @@ const isFreshLead = (l: Lead) => {
 export default function NewLeads() {
   const { data, isLoading } = useLeads("new");
   const nav = useNavigate();
-  const toast = useToast();
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
@@ -49,19 +46,12 @@ export default function NewLeads() {
     name: (l) => l.name,
     city: (l) => l.city,
     society: (l) => l.society,
-    config: (l) => l.configuration,
     budget: (l) => l.budget_band,
     plan: (l) => l.plan_to_buy,
     date: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     assigned: (l) => l.assigned_to,
   });
   const sel = useRowSelection(list.map((l) => l.id));
-
-  const wa = (e: React.MouseEvent, l: Lead) => {
-    e.stopPropagation();
-    if (!l.phone) { toast("No phone number for this lead", "gold", "⚠"); return; }
-    waChat(l.phone, `Hi ${l.name || ""}, this is Openhouse Direct Demand regarding your property enquiry.`);
-  };
 
   return (
     <>
@@ -118,24 +108,23 @@ export default function NewLeads() {
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Society (from source)" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Config" sortKey="config" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Budget" sortKey="budget" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Plan to Buy" sortKey="plan" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Date" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <th></th>
+              <th>Notes</th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={10}>
+                <td colSpan={9}>
                   <div className="empty" style={{ padding: 24 }}>Loading leads…</div>
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={10}>
+                <td colSpan={9}>
                   <div className="empty" style={{ padding: 24 }}>
                     {all.length === 0 ? "No new leads right now. 🎉" : "No leads match the search / filters."}
                   </div>
@@ -172,16 +161,11 @@ export default function NewLeads() {
                   </td>
                   <td style={{ fontSize: 12.5 }}>{l.city || "—"}</td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
-                  <td>{l.configuration ? <span className="cfg-chip">{l.configuration}</span> : "—"}</td>
                   <td style={{ fontSize: 12.5 }}>{l.budget_band || "—"}</td>
                   <td><PlanChip plan={l.plan_to_buy} /></td>
                   <td style={{ fontSize: 12.5, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>{formatDate(l.received_at)}</td>
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
-                  <td style={{ textAlign: "right" }}>
-                    <button className="wa-ico" title={`WhatsApp ${l.name}`} onClick={(e) => wa(e, l)}>
-                      <WhatsAppIcon />
-                    </button>
-                  </td>
+                  <td onClick={(e) => e.stopPropagation()}><NotesCell leadId={l.id} latest={l.latest_note} count={l.note_count} /></td>
                 </tr>
               ))
             )}

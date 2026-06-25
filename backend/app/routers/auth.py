@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -27,8 +27,12 @@ async def auth_config():
 
 
 @router.post("/auth/google")
-@limiter.limit("20/minute")  # in-memory limiter (no Redis call) — safe on the login path
-async def auth_google(request: Request, payload: GoogleLogin):
+@limiter.limit("20/minute")
+# `response: Response` is REQUIRED, not optional: with headers_enabled=True slowapi
+# injects X-RateLimit-* headers into a `response` param after the handler returns.
+# This handler returns a dict (not a Response), so without this param slowapi raises
+# "parameter `response` must be an instance of ... Response" → 500. (NOT a Redis issue.)
+async def auth_google(request: Request, response: Response, payload: GoogleLogin):
     """Only pre-added (active) users may sign in. Bootstrap admins in
     INITIAL_ADMIN_EMAILS are auto-provisioned as admin on first sign-in."""
     settings = get_settings()

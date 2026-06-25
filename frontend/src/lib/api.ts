@@ -63,6 +63,11 @@ export interface SupplyItem {
   area_sqft: number | null;
   price_text: string | null;
   price_lacs: number | null;
+  // OH reference price matched by society + area (±5); see services/pricing.py
+  oh_price_lacs: number | null;
+  price_status: "match" | "area_off" | "no_area" | "no_match" | string;
+  price_reason: string | null;
+  price_tooltip: string | null;
   image_url: string | null;
   raw: Record<string, string | null>;
 }
@@ -157,6 +162,10 @@ export interface MatchUnit {
   stage?: string;
   stage_key?: string;
   priority?: boolean;
+  // OH price match state (supply units only); price_lacs already holds the OH price when matched
+  price_status?: "match" | "area_off" | "no_area" | "no_match" | string;
+  price_reason?: string | null;
+  price_tooltip?: string | null;
   image_url?: string | null;
   score: number;
   matched_on: string[];

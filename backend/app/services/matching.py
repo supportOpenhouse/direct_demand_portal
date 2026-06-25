@@ -298,6 +298,15 @@ async def _supply_units() -> list[dict]:
             "priority": bool(r.get("direct_demand_priority")),
         })
     await _enrich_micromarket(out)
+    # OH reference price (society + area ±5). When matched, use it as the unit's price
+    # so budget scoring AND the shown price both reflect the OH price; else keep demand.
+    from .pricing import enrich_supply
+
+    await enrich_supply(out)
+    for u in out:
+        if u.get("price_status") == "match" and u.get("oh_price_lacs") is not None:
+            u["price_lacs"] = u["oh_price_lacs"]
+            u["price_text"] = None
     return out
 
 
@@ -314,6 +323,9 @@ def _shape(u: dict, supply: bool) -> dict:
         base["stage"] = u.get("stage")
         base["stage_key"] = u.get("stage_key")
         base["priority"] = bool(u.get("priority"))
+        base["price_status"] = u.get("price_status")
+        base["price_reason"] = u.get("price_reason")
+        base["price_tooltip"] = u.get("price_tooltip")
     else:
         base["status"] = u.get("status")
         base["image_url"] = u.get("image_url")

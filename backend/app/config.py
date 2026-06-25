@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     DATABASE_URL: str = ""
     PROPERTIES_DATABASE_URL: str = ""
+    # Direct-inventory DB holding the oh_pricing table (Openhouse reference prices
+    # by society + area). Read-only; used to price Supply Pipeline units.
+    DIRECT_INVENTORY_DB_URL: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15
@@ -101,6 +104,14 @@ class Settings(BaseSettings):
     @property
     def properties_url(self) -> str:
         return normalize_asyncpg_url(self.PROPERTIES_DATABASE_URL)
+
+    @property
+    def direct_inventory_url(self) -> str:
+        return normalize_asyncpg_url(self.DIRECT_INVENTORY_DB_URL)
+
+    @property
+    def direct_inventory_configured(self) -> bool:
+        return bool(self.DIRECT_INVENTORY_DB_URL)
 
     @property
     def crm_booking_configured(self) -> bool:

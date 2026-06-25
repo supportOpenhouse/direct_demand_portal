@@ -162,7 +162,11 @@ async def fetch_supply() -> dict:
         async with engine.connect() as conn:
             res = await conn.execute(sql, {"hide": SUPPLY_STATUS_HIDE})
             rows = [dict(m) for m in res.mappings()]
-        return {"status": "ok", "detail": None, "items": [_row_to_item(r) for r in rows]}
+        items = [_row_to_item(r) for r in rows]
+        from .pricing import enrich_supply
+
+        await enrich_supply(items)  # OH reference price by society + area (±5)
+        return {"status": "ok", "detail": None, "items": items}
     except Exception as e:  # noqa: BLE001
         log.exception("supply fetch failed")
         return {"status": "unavailable", "detail": str(e), "items": []}

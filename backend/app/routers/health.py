@@ -3,7 +3,7 @@ from sqlalchemy import text
 
 from ..cache import redis_ping
 from ..config import get_settings
-from ..db import neon_engine, properties_engine
+from ..db import direct_inventory_engine, neon_engine, properties_engine
 
 router = APIRouter(tags=["health"])
 
@@ -39,6 +39,7 @@ async def health(response: Response):
     return {
         "neon": neon,
         "properties": await _ping(properties_engine()),
+        "direct_inventory": await _ping(direct_inventory_engine()),
         "sheets": "ok" if settings.sheets_configured else "not_configured",
         "redis": await redis_ping(),
         "version": "1.0",

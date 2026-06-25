@@ -11,6 +11,28 @@ import { useAuth } from "../components/AuthContext";
    hidden); closest-to-landing first. Future Prospect = Hold + Price High + Future Prospect */
 const STAGE_ORDER = ["AMA Signed", "Token Transferred", "Token Requested", "AMA Req", "Negotiation", "Visit Completed", "Visit Scheduled", "Followup", "Listed", "Key Handover", "Future Prospect"];
 
+/* OH reference price matched by society + area (±5). Confident match → green ₹;
+   otherwise "Check Price" (brown) with a reason chip + hover tooltip. */
+function PriceCell({ s }: { s: SupplyItem }) {
+  if (s.price_status === "match") {
+    return (
+      <span style={{ fontWeight: 700, color: "var(--emerald)" }} title={s.price_tooltip || ""}>
+        {formatPrice(s.oh_price_lacs, null)}
+      </span>
+    );
+  }
+  return (
+    <div title={s.price_tooltip || ""} style={{ cursor: "help", lineHeight: 1.35 }}>
+      <div style={{ fontWeight: 700, color: "var(--gold)" }}>Check Price</div>
+      {s.price_reason && (
+        <span className="cfg-chip" style={{ background: "var(--slate-soft)", color: "var(--slate)", fontSize: 9.5, fontFamily: "'Spline Sans Mono'" }}>
+          {s.price_reason}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function unitText(s: SupplyItem, showUnit: boolean): string {
   const parts = [
     s.raw.tower_no?.trim() && `Tower ${s.raw.tower_no.trim()}`,
@@ -38,7 +60,7 @@ export default function Supply() {
         (!stage || s.stage === stage) &&
         (!city || s.city === city) &&
         (!config || s.configuration === config) &&
-        inBudget(s.price_lacs, budMin, budMax) &&
+        inBudget(s.oh_price_lacs, budMin, budMax) &&
         matches(query, s.id, s.society, s.locality, s.city, s.configuration, s.stage)
     )
     .sort((a, b) => STAGE_ORDER.indexOf(a.stage) - STAGE_ORDER.indexOf(b.stage));
@@ -51,7 +73,7 @@ export default function Supply() {
     city: (s) => s.city,
     config: (s) => s.configuration,
     area: (s) => s.area_sqft,
-    price: (s) => s.price_lacs,
+    price: (s) => s.oh_price_lacs,
     stage: (s) => STAGE_ORDER.indexOf(s.stage),
   });
 
@@ -116,7 +138,7 @@ export default function Supply() {
                 <SortTh label="Area" sortKey="area" activeKey={sortKey} dir={dir} onSort={onSort} />
                 <th>Tower / Unit</th>
                 {isAdmin && (
-                  <SortTh label="Demand Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <SortTh label="OH Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
                 )}
                 <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
               </tr>
@@ -133,7 +155,7 @@ export default function Supply() {
                     {s.area_sqft != null ? `${s.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"}
                   </td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{unitText(s, isAdmin)}</td>
-                  {isAdmin && <td style={{ fontWeight: 600 }}>{formatPrice(s.price_lacs, s.price_text)}</td>}
+                  {isAdmin && <td><PriceCell s={s} /></td>}
                   <td>
                     <span className={`sup-stage ${s.stage_key}`}>{s.stage}</span>
                   </td>

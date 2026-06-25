@@ -9,6 +9,7 @@ from .config import get_settings
 
 _neon_engine: AsyncEngine | None = None
 _properties_engine: AsyncEngine | None = None
+_direct_inventory_engine: AsyncEngine | None = None
 
 
 def neon_engine() -> AsyncEngine | None:
@@ -44,11 +45,31 @@ def properties_engine() -> AsyncEngine | None:
     return _properties_engine
 
 
+def direct_inventory_engine() -> AsyncEngine | None:
+    global _direct_inventory_engine
+    settings = get_settings()
+    if not settings.direct_inventory_configured:
+        return None
+    if _direct_inventory_engine is None:
+        # read-only reference prices (oh_pricing); small pool
+        _direct_inventory_engine = create_async_engine(
+            settings.direct_inventory_url,
+            pool_size=2,
+            max_overflow=2,
+            pool_recycle=300,
+            pool_pre_ping=True,
+        )
+    return _direct_inventory_engine
+
+
 async def dispose_engines() -> None:
-    global _neon_engine, _properties_engine
+    global _neon_engine, _properties_engine, _direct_inventory_engine
     if _neon_engine is not None:
         await _neon_engine.dispose()
         _neon_engine = None
     if _properties_engine is not None:
         await _properties_engine.dispose()
         _properties_engine = None
+    if _direct_inventory_engine is not None:
+        await _direct_inventory_engine.dispose()
+        _direct_inventory_engine = None

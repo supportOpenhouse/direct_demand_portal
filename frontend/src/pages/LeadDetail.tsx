@@ -235,18 +235,23 @@ function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; 
       },
     );
   };
+  // supply units show the OH reference price; "Check Price" when society+area didn't match
+  const isCheckPrice = isSupply && !!u.price_status && u.price_status !== "match";
+  const priceStr = isCheckPrice
+    ? `Check Price${u.price_reason ? ` · ${u.price_reason}` : ""}`
+    : formatPrice(u.price_lacs, u.price_text);
   const detail: [string, string | null | undefined][] = [
     ["Society", u.society],
     ["City", u.city],
     ["Configuration", u.configuration],
     ["Super area", u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : null],
-    ["Ask price", formatPrice(u.price_lacs, u.price_text)],
+    [isSupply ? "OH price" : "Ask price", priceStr],
     isSupply ? ["Stage", u.stage] : ["Status", u.status],
   ];
   const share = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!leadPhone) { toast("No phone number for this lead", "gold", "⚠"); return; }
-    const text = `Hi ${leadName || ""}, sharing a property that matches your requirement:\n\n🏠 ${u.name}\n📍 ${[u.locality, u.city].filter(Boolean).join(", ")}\n${formatPrice(u.price_lacs, u.price_text)} · ${u.configuration || ""}`
+    const text = `Hi ${leadName || ""}, sharing a property that matches your requirement:\n\n🏠 ${u.name}\n📍 ${[u.locality, u.city].filter(Boolean).join(", ")}\n${isCheckPrice ? "Price on request" : formatPrice(u.price_lacs, u.price_text)} · ${u.configuration || ""}`
       + (u.image_url ? `\n${u.image_url}` : "");
     waChat(leadPhone, text);
   };
@@ -272,7 +277,15 @@ function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; 
           </div>
           <div className="opt-meta">
             {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
-            <b style={{ color: "var(--ink-2)" }}>{formatPrice(u.price_lacs, u.price_text)}</b>
+            {isCheckPrice ? (
+              <span title={u.price_tooltip || ""} style={{ color: "var(--gold)", fontWeight: 700, cursor: "help" }}>
+                Check Price{u.price_reason ? ` · ${u.price_reason}` : ""}
+              </span>
+            ) : (
+              <b title={u.price_tooltip || ""} style={{ color: isSupply && u.price_status === "match" ? "var(--emerald)" : "var(--ink-2)" }}>
+                {formatPrice(u.price_lacs, u.price_text)}
+              </b>
+            )}
           </div>
         </div>
         <button className="wa-ico" title="Share on WhatsApp" onClick={share}><WhatsAppIcon /></button>

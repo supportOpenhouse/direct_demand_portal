@@ -14,6 +14,9 @@ const STAGE_ORDER = ["AMA Signed", "Token Transferred", "Token Requested", "AMA 
 /* OH reference price matched by society + area (±5). Confident match → green ₹;
    otherwise "Check Price" (brown) with a reason chip + hover tooltip. */
 function PriceCell({ s }: { s: SupplyItem }) {
+  if (!s.price_status) {  // pricing DB unavailable → fall back to the demand price
+    return <span style={{ fontWeight: 600 }}>{formatPrice(s.price_lacs, s.price_text)}</span>;
+  }
   if (s.price_status === "match") {
     return (
       <span style={{ fontWeight: 700, color: "var(--emerald)" }} title={s.price_tooltip || ""}>

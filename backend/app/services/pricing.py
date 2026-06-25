@@ -102,8 +102,12 @@ def _price_for(society: str | None, area: float | None) -> dict:
 
 async def enrich_supply(items: list[dict]) -> None:
     """Add price_status / oh_price_lacs / price_reason / price_tooltip to each item
-    (each item must have 'society' and 'area_sqft')."""
+    (each item must have 'society' and 'area_sqft'). If the pricing DB is unavailable
+    (unset URL or a load failure → empty map), leave items untouched so the UI falls
+    back to the demand price instead of labelling everything 'no match'."""
     await _load_pricing()
+    if not _cache["map"]:
+        return
     for it in items:
         it.update(_price_for(it.get("society"), it.get("area_sqft")))
 

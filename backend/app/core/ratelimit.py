@@ -1,9 +1,18 @@
-"""Rate limiting via slowapi. Backed by Redis when REDIS_URL is set (shared across
-instances), else an in-process memory store (works in dev/tests/single instance)."""
+"""Rate limiting via slowapi.
+
+Deliberately uses an IN-MEMORY store (not Redis): the limiter runs on the login
+path, and a Redis hiccup with the default slowapi config raised → a 500 on sign-in
+(it happened in prod). In-memory means the limiter makes NO network call, so it can
+never take down a request. Limits are therefore per-instance — perfectly fine for
+this single-instance internal tool. (Redis is still used for the match cache + cron
+lock, which are already fail-soft.) `swallow_errors=True` is belt-and-suspenders in
+case a Redis store is ever wired in here later.
+
+There is no global `default_limits` — only explicitly-decorated routes are limited
+(so the debounced live-match preview is never throttled). Today only /auth/google.
+"""
 from slowapi import Limiter
 from slowapi.util import get_remote_address
-
-from ..config import get_settings
 
 
 def _client_ip(request) -> str:
@@ -15,10 +24,9 @@ def _client_ip(request) -> str:
     return get_remote_address(request)
 
 
-_settings = get_settings()
 limiter = Limiter(
     key_func=_client_ip,
-    storage_uri=_settings.REDIS_URL or "memory://",
-    default_limits=["120/minute"],
+    storage_uri="memory://",
+    swallow_errors=True,
     headers_enabled=True,
 )

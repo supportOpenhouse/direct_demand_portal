@@ -27,10 +27,7 @@ async def auth_config():
 
 
 @router.post("/auth/google")
-# TEMP(debug 500): exempt login from ALL rate limiting (per-route + the global
-# default_limits) so it makes NO Redis call — isolates whether the Redis-backed
-# limiter is the 500 source. RESTORE `@limiter.limit("10/minute")` once confirmed.
-@limiter.exempt
+@limiter.limit("20/minute")  # in-memory limiter (no Redis call) — safe on the login path
 async def auth_google(request: Request, payload: GoogleLogin):
     """Only pre-added (active) users may sign in. Bootstrap admins in
     INITIAL_ADMIN_EMAILS are auto-provisioned as admin on first sign-in."""

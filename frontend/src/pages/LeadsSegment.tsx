@@ -59,6 +59,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     assigned: (l) => l.assigned_to,
     reason: (l) => l.reject_reason,
     rejected: (l) => (l.rejected_at ? Date.parse(l.rejected_at) : null),
+    notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
   });
   const sel = useRowSelection(list.map((l) => l.id));
 
@@ -104,7 +105,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
               )}
-              <th>Notes</th>
+              <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>

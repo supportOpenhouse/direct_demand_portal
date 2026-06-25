@@ -146,6 +146,7 @@ export interface Lead {
   confirmed: boolean;
   qualified_at: string | null;
   latest_note: string | null;   // newest note/remark, for the inline notes column
+  latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
   note_count: number;           // total notes + source remarks
   is_test: boolean;
 }

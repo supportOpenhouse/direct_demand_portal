@@ -10,10 +10,10 @@ export function NotesCell({ leadId, latest, count }: { leadId: string; latest: s
   const stop = (e: React.MouseEvent) => e.stopPropagation();
 
   if (!latest) {
-    return <span style={{ color: "var(--muted)", fontSize: 12 }}>No notes yet</span>;
+    return <span style={{ color: "var(--muted)", fontSize: 12, fontStyle: "italic" }}>No notes yet</span>;
   }
   return (
-    <div style={{ minWidth: 200, maxWidth: 300 }} onClick={stop}>
+    <div className="notes-cell" onClick={stop}>
       {!open ? (
         <>
           <div className="note-latest" title={latest}>{latest}</div>

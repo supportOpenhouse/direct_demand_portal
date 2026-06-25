@@ -66,6 +66,7 @@ def _lead_row(r) -> dict:
         "confirmed": r["confirmed"],
         "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
+        "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
         "note_count": int(r.get("note_count") or 0) + len(remarks),
         "is_test": r["is_test"],
     }
@@ -98,6 +99,7 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                 text(
                     "SELECT leads.*, "
                     "(SELECT body FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_body, "
+                    "(SELECT created_at FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_at, "
                     "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count "
                     f"FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC"
                 ),

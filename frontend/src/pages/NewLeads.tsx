@@ -50,6 +50,7 @@ export default function NewLeads() {
     plan: (l) => l.plan_to_buy,
     date: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     assigned: (l) => l.assigned_to,
+    notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
   });
   const sel = useRowSelection(list.map((l) => l.id));
 
@@ -112,7 +113,7 @@ export default function NewLeads() {
               <SortTh label="Plan to Buy" sortKey="plan" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Date" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <th>Notes</th>
+              <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
             </tr>
           </thead>
           <tbody>

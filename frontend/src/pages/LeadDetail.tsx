@@ -222,22 +222,16 @@ function NotesThread({ id }: { id: string }) {
   );
 }
 
-// UTC ISO → value for an <input type="datetime-local"> (local wall-clock)
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-}
-
 /* The single follow-up input for the lead — its value is shared with the confirm form
-   below (mandatory there). "Save & move" sets a plain callback (no qualify) and moves the
-   lead to the Follow-up tab. Reachable only after a connected call opened the lead. */
-function FollowupWidget({ id, value, onChange, invalid }: { id: string; value: string; onChange: (v: string) => void; invalid: boolean }) {
+   below (mandatory there). Starts EMPTY on every open so the RM enters a fresh callback
+   for this call; the previously-stored time (`current`) is shown for reference and is kept
+   in the DB until a new one is saved. "Save & move" sets a plain callback (no qualify). */
+function FollowupWidget({ id, value, onChange, invalid, current }: { id: string; value: string; onChange: (v: string) => void; invalid: boolean; current: string | null }) {
   const nav = useNavigate();
   const toast = useToast();
   const set = useSetFollowup(id);
   const save = () => {
-    if (!value) { toast("Pick a follow-up date & time", "gold", "⚠"); return; }
+    if (!value) { toast("Follow-up is required — pick a date & time", "gold", "⚠"); return; }
     set.mutate(new Date(value).toISOString(), {
       onSuccess: () => { toast("Follow-up scheduled · moved to Follow-up", "green", "⏰"); nav("/leads/followup"); },
       onError: (e: any) => toast(e.message, "gold", "⚠"),
@@ -252,6 +246,12 @@ function FollowupWidget({ id, value, onChange, invalid }: { id: string; value: s
       <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "-4px 0 10px" }}>
         Required for every lead. <b>Save &amp; move</b> sets a plain callback; or fill the form below and qualify / save details — both use this time.
       </div>
+      {current && (
+        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
+          Currently set: <span className="fu-chip">⏰ {formatDateTime(current)}</span>{" "}
+          <span style={{ color: "var(--muted)" }}>— kept until you save a new time</span>
+        </div>
+      )}
       <div className="fu-row">
         <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)}
           style={invalid ? { borderColor: "var(--coral)" } : undefined} />
@@ -471,7 +471,7 @@ export default function LeadDetail() {
     setOffice(c?.office_willing || "");
     setOfficeDate(c?.office_preferred_date || "");
     setRemark(c?.remark || "");
-    setFollowUp(toLocalInput(lead.follow_up_at));
+    setFollowUp("");  // always blank on open — RM enters a fresh follow-up for this connected call
   }, [lead]);
 
   // cascade: a micro-market fills its localities AND their societies; a locality fills its societies
@@ -591,7 +591,7 @@ export default function LeadDetail() {
           <NotesThread id={id} />
 
           {/* QUICK FOLLOW-UP SCHEDULER — the single (mandatory) follow-up input */}
-          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && invalid.followup} />
+          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && invalid.followup} current={lead.follow_up_at} />
 
           {/* CONFIRMED call form */}
           <div className="card panel-pad compact-form">

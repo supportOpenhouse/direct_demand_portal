@@ -159,6 +159,12 @@ class Lead(Base):
     confirmed: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     qualified_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # call worklist / follow-up flow — a lead with an open follow_up_at lives in the
+    # Follow-up tab; miss_count = consecutive not-connected calls (reset on connect);
+    # never-connected leads hitting 10 misses move to the terminal 'rnr' stage.
+    follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    miss_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    ever_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # rejection
     reject_reason: Mapped[str | None] = mapped_column(Text)
     reject_notes: Mapped[str | None] = mapped_column(Text)

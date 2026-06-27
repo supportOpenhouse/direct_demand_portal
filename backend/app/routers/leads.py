@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -21,19 +21,36 @@ from ..services.societies import (
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
-# stages that take a lead out of the active funnel
-_TERMINAL = "('won','lost','rejected','future_prospect','timepass')"
+# stages that take a lead out of the active funnel (rnr = Ring No Response, terminal)
+_TERMINAL = "('won','lost','rejected','future_prospect','timepass','rnr')"
 
-# segment → SQL predicate on the leads spine
+# segment → SQL predicate on the leads spine.
+#   new       — untouched: no call logged yet (no open follow-up)
+#   followup  — any non-terminal lead with an open follow-up. Pre-qualification leads
+#               (not-connected + saved-not-qualified) live ONLY here; qualified+ leads
+#               also appear in their stage tab, here as a due-callback reminder.
+#   rnr       — never-connected leads escalated after 10 consecutive missed calls
 SEGMENTS = {
-    "new": "stage = 'new'",
+    "new": "stage = 'new' AND follow_up_at IS NULL",
+    "followup": f"stage NOT IN {_TERMINAL} AND follow_up_at IS NOT NULL",
     "qualified": f"confirmed = true AND stage NOT IN {_TERMINAL} "
                  "AND qualified_at IS NOT NULL AND now() - qualified_at < interval '7 days'",
     "pipeline": f"confirmed = true AND stage NOT IN {_TERMINAL} "
                 "AND qualified_at IS NOT NULL AND now() - qualified_at >= interval '7 days'",
     "converted": "stage = 'won'",
+    "rnr": "stage = 'rnr'",
     "rejected": "stage = 'rejected'",
 }
+
+
+def _parse_followup(raw: str | None) -> datetime:
+    """Parse a required ISO-8601 UTC follow-up time (frontend sends `…Z`)."""
+    if not raw:
+        raise HTTPException(status_code=422, detail={"fields": ["follow_up_at"], "message": "follow-up is required"})
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        raise HTTPException(status_code=422, detail={"fields": ["follow_up_at"]})
 
 
 def _lead_row(r) -> dict:
@@ -65,6 +82,9 @@ def _lead_row(r) -> dict:
         "rejected_at": r["rejected_at"].isoformat() if r["rejected_at"] else None,
         "confirmed": r["confirmed"],
         "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
+        "follow_up_at": r["follow_up_at"].isoformat() if r["follow_up_at"] else None,
+        "miss_count": r["miss_count"] or 0,
+        "ever_connected": r["ever_connected"],
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
         "note_count": int(r.get("note_count") or 0) + len(remarks),
@@ -93,6 +113,8 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
             params["aliases"] = aliases
         else:
             predicate += " AND false"
+    # Follow-up is a worklist — soonest/overdue callbacks first; others newest-first.
+    order = "follow_up_at ASC NULLS LAST" if segment == "followup" else "created_at DESC"
     try:
         async with engine.connect() as conn:
             res = await conn.execute(
@@ -101,7 +123,7 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                     "(SELECT body FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_body, "
                     "(SELECT created_at FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_at, "
                     "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count "
-                    f"FROM leads WHERE {predicate} ORDER BY is_test DESC, created_at DESC"
+                    f"FROM leads WHERE {predicate} ORDER BY is_test DESC, {order}"
                 ),
                 params,
             )
@@ -201,11 +223,15 @@ class ConfirmPayload(BaseModel):
     office_willing: str
     office_preferred_date: str | None = None
     remark: str | None = None
+    follow_up_at: str             # mandatory — a follow-up is required to confirm/save
+    qualify: bool = True          # True → qualify the lead; False → just save details + follow-up
 
 
 @router.post("/leads/{lead_id}/confirm")
 async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
-    """Save the call form and qualify the lead (new → contacted)."""
+    """Save the confirmed-on-call form + a mandatory follow-up. `qualify=true` moves the
+    lead to Qualified (new → contacted); `qualify=false` just saves the details and keeps
+    the lead in Follow-up (not qualified)."""
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
@@ -220,6 +246,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         raise HTTPException(status_code=422, detail={"fields": missing})
     if payload.budget_min_lacs > payload.budget_max_lacs:
         raise HTTPException(status_code=422, detail={"fields": ["budget_max_lacs"], "message": "max must be ≥ min"})
+    follow_up = _parse_followup(payload.follow_up_at)
     office_date: date | None = None
     if payload.office_preferred_date:
         try:
@@ -245,16 +272,81 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
             set_={k: v for k, v in values.items() if k != "lead_id"},
         )
         await conn.execute(stmt)
-        # qualify: new → contacted, start the 7-day clock (only on first confirm)
-        await conn.execute(
-            text(
-                "UPDATE leads SET confirmed = true, "
-                "stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END, "
-                "tat_deadline = NULL, "
-                "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
-            ),
-            {"id": lead_id},
-        )
+        # reaching this form means the call connected → never RNR. Always set the follow-up.
+        if payload.qualify:
+            # qualify: new → contacted, start the 7-day clock (only on first confirm)
+            await conn.execute(
+                text(
+                    "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
+                    "stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END, "
+                    "tat_deadline = NULL, follow_up_at = :t, "
+                    "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
+                ),
+                {"id": lead_id, "t": follow_up},
+            )
+        else:
+            # save details only — stays in Follow-up, not qualified
+            await conn.execute(
+                text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t WHERE id = :id"),
+                {"id": lead_id, "t": follow_up},
+            )
+    return {"status": "ok"}
+
+
+# --- call worklist (New Leads / Follow-up) -----------------------------------
+
+class CallResult(BaseModel):
+    connected: bool
+
+
+@router.post("/leads/{lead_id}/call-result")
+async def call_result(lead_id: UUID, payload: CallResult):
+    """Log a call attempt from the New Leads / Follow-up worklist.
+    connected=True  → opens the lead (caller navigates); resets the miss streak.
+    connected=False → +3h follow-up; 10 consecutive misses on a never-connected lead → RNR."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        row = (await conn.execute(
+            text("SELECT miss_count, ever_connected FROM leads WHERE id = :id"), {"id": lead_id}
+        )).mappings().first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        if payload.connected:
+            await conn.execute(
+                text("UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"), {"id": lead_id})
+            return {"status": "ok", "connected": True, "moved_to_rnr": False}
+        new_miss = (row["miss_count"] or 0) + 1
+        to_rnr = (not row["ever_connected"]) and new_miss >= 10
+        if to_rnr:
+            await conn.execute(text(
+                "UPDATE leads SET miss_count = :m, stage = 'rnr', follow_up_at = NULL WHERE id = :id"),
+                {"m": new_miss, "id": lead_id})
+        else:
+            await conn.execute(text(
+                "UPDATE leads SET miss_count = :m, follow_up_at = now() + interval '3 hours' WHERE id = :id"),
+                {"m": new_miss, "id": lead_id})
+        return {"status": "ok", "connected": False, "moved_to_rnr": to_rnr, "miss_count": new_miss}
+
+
+class FollowupPayload(BaseModel):
+    follow_up_at: str
+
+
+@router.post("/leads/{lead_id}/followup")
+async def set_followup(lead_id: UUID, payload: FollowupPayload):
+    """Set a manual follow-up (reachable only after a connected call) → moves to Follow-up."""
+    follow_up = _parse_followup(payload.follow_up_at)
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        res = await conn.execute(
+            text("UPDATE leads SET follow_up_at = :t, ever_connected = true, miss_count = 0 WHERE id = :id"),
+            {"t": follow_up, "id": lead_id})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="lead not found")
     return {"status": "ok"}
 
 

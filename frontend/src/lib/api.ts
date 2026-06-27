@@ -145,6 +145,9 @@ export interface Lead {
   rejected_at: string | null;
   confirmed: boolean;
   qualified_at: string | null;
+  follow_up_at: string | null;  // next callback due (UTC); set → lead is in the Follow-up tab
+  miss_count: number;           // consecutive not-connected calls (resets on connect)
+  ever_connected: boolean;      // have we ever connected? gates RNR escalation
   latest_note: string | null;   // newest note/remark, for the inline notes column
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
   note_count: number;           // total notes + source remarks
@@ -237,6 +240,8 @@ export interface ConfirmPayload {
   office_willing: string;
   office_preferred_date: string | null;
   remark: string | null;
+  follow_up_at: string;   // mandatory — UTC ISO; a follow-up is required to confirm/save
+  qualify: boolean;       // true → qualify the lead; false → save details + follow-up only
 }
 
 export const api = {
@@ -255,6 +260,11 @@ export const api = {
     request<{ status: string; meta_new: number; listing_new: number }>("/v1/leads/sync", { method: "POST" }),
   confirmLead: (id: string, payload: ConfirmPayload) =>
     request<{ status: string }>(`/v1/leads/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }),
+  callResult: (id: string, connected: boolean) =>
+    request<{ status: string; connected: boolean; moved_to_rnr: boolean; miss_count?: number }>(
+      `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected }) }),
+  setFollowup: (id: string, followUpAt: string) =>
+    request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
   rejectLead: (id: string, reason: string, notes: string) =>
     request<{ status: string }>(`/v1/leads/${id}/reject`, { method: "POST", body: JSON.stringify({ reason, notes }) }),
   authGoogle: (credential: string) =>

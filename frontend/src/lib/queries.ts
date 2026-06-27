@@ -164,6 +164,31 @@ export function useRejectLead(id: string) {
   });
 }
 
+/** Log a call attempt (Yes/No) from the New Leads / Follow-up worklist. */
+export function useCallResult() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, connected }: { id: string; connected: boolean }) => api.callResult(id, connected),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+/** Set a manual follow-up (from the lead detail, after a connected call). */
+export function useSetFollowup(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (followUpAt: string) => api.setFollowup(id, followUpAt),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
+}
+
 export function useSyncInventory() {
   const qc = useQueryClient();
   return useMutation({

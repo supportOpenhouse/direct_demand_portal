@@ -7,6 +7,7 @@ import { srcLabel, planClass, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
+import { CallConnected } from "../components/CallConnected";
 import { AssignControl } from "../components/AssignControl";
 import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -107,6 +108,7 @@ export default function NewLeads() {
                 <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
               </th>
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <th>Call connected?</th>
               <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Society (from source)" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Budget" sortKey="budget" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -119,13 +121,13 @@ export default function NewLeads() {
           <tbody>
             {isLoading ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <div className="empty" style={{ padding: 24 }}>Loading leads…</div>
                 </td>
               </tr>
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={9}>
+                <td colSpan={10}>
                   <div className="empty" style={{ padding: 24 }}>
                     {all.length === 0 ? "No new leads right now. 🎉" : "No leads match the search / filters."}
                   </div>
@@ -133,7 +135,7 @@ export default function NewLeads() {
               </tr>
             ) : (
               list.map((l) => (
-                <tr key={l.id} className="lead-row" onClick={() => nav(`/leads/${l.id}`)}>
+                <tr key={l.id} className="lead-row" style={{ cursor: "default" }}>
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
                   </td>
@@ -160,6 +162,7 @@ export default function NewLeads() {
                       </div>
                     </div>
                   </td>
+                  <td onClick={(e) => e.stopPropagation()}><CallConnected leadId={l.id} /></td>
                   <td style={{ fontSize: 12.5 }}>{l.city || "—"}</td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td style={{ fontSize: 12.5 }}>{l.budget_band || "—"}</td>

@@ -5,6 +5,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import {
   useLead, useConfirmLead, useRejectLead, useMatchPreview, formatPrice,
   useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate, useMarkPriority,
+  useSetFollowup,
 } from "../lib/queries";
 import { srcClass, srcLabel, initials } from "../lib/leads";
 import { MatchUnit, api } from "../lib/api";
@@ -221,6 +222,47 @@ function NotesThread({ id }: { id: string }) {
   );
 }
 
+// UTC ISO → value for an <input type="datetime-local"> (local wall-clock)
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
+/* The single follow-up input for the lead — its value is shared with the confirm form
+   below (mandatory there). "Save & move" sets a plain callback (no qualify) and moves the
+   lead to the Follow-up tab. Reachable only after a connected call opened the lead. */
+function FollowupWidget({ id, value, onChange, invalid }: { id: string; value: string; onChange: (v: string) => void; invalid: boolean }) {
+  const nav = useNavigate();
+  const toast = useToast();
+  const set = useSetFollowup(id);
+  const save = () => {
+    if (!value) { toast("Pick a follow-up date & time", "gold", "⚠"); return; }
+    set.mutate(new Date(value).toISOString(), {
+      onSuccess: () => { toast("Follow-up scheduled · moved to Follow-up", "green", "⏰"); nav("/leads/followup"); },
+      onError: (e: any) => toast(e.message, "gold", "⚠"),
+    });
+  };
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M9 2h6" /></svg>{" "}
+        Schedule a follow-up <span style={{ color: "var(--coral)" }}>*</span>
+      </div>
+      <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "-4px 0 10px" }}>
+        Required for every lead. <b>Save &amp; move</b> sets a plain callback; or fill the form below and qualify / save details — both use this time.
+      </div>
+      <div className="fu-row">
+        <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)}
+          style={invalid ? { borderColor: "var(--coral)" } : undefined} />
+        <button className="btn green sm" onClick={save} disabled={set.isPending} style={{ whiteSpace: "nowrap" }}>
+          {set.isPending ? "Saving…" : "Save & move to Follow-up →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; isSupply: boolean; leadId: string; leadPhone: string | null; leadName: string | null }) {
   const [open, setOpen] = useState(false);
   const toast = useToast();
@@ -410,6 +452,7 @@ export default function LeadDetail() {
   const [office, setOffice] = useState("");
   const [officeDate, setOfficeDate] = useState("");
   const [remark, setRemark] = useState("");
+  const [followUp, setFollowUp] = useState("");
   const [showErr, setShowErr] = useState(false);
 
   // prefill from existing confirmed data + source-captured society
@@ -428,6 +471,7 @@ export default function LeadDetail() {
     setOffice(c?.office_willing || "");
     setOfficeDate(c?.office_preferred_date || "");
     setRemark(c?.remark || "");
+    setFollowUp(toLocalInput(lead.follow_up_at));
   }, [lead]);
 
   // cascade: a micro-market fills its localities AND their societies; a locality fills its societies
@@ -472,13 +516,14 @@ export default function LeadDetail() {
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
 
-  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office };
-  const anyInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
+  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office, followup: !followUp };
+  const anyInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office || invalid.followup;
 
-  const save = () => {
+  // qualify=true → Qualified; qualify=false → save details + follow-up only (stays in Follow-up)
+  const save = (qualify: boolean) => {
     if (anyInvalid) {
       setShowErr(true);
-      toast("Please fill the required (*) fields", "gold", "⚠");
+      toast("Fill the required (*) fields, including a follow-up", "gold", "⚠");
       return;
     }
     confirm.mutate(
@@ -495,9 +540,14 @@ export default function LeadDetail() {
         office_willing: office,
         office_preferred_date: office === "Yes" || office === "Maybe" ? officeDate || null : null,
         remark: remark || null,
+        follow_up_at: new Date(followUp).toISOString(),
+        qualify,
       },
       {
-        onSuccess: () => toast("Lead confirmed & qualified", "green", "✓"),
+        onSuccess: () => {
+          if (qualify) toast("Lead confirmed & qualified", "green", "✓");
+          else { toast("Details saved · follow-up set", "green", "⏰"); nav("/leads/followup"); }
+        },
         onError: (e) => toast(e.message, "gold", "⚠"),
       }
     );
@@ -540,6 +590,8 @@ export default function LeadDetail() {
           {/* CONVERSATION / REMARKS THREAD */}
           <NotesThread id={id} />
 
+          {/* QUICK FOLLOW-UP SCHEDULER — the single (mandatory) follow-up input */}
+          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && invalid.followup} />
 
           {/* CONFIRMED call form */}
           <div className="card panel-pad compact-form">
@@ -649,8 +701,8 @@ export default function LeadDetail() {
               <textarea rows={2} value={remark} placeholder="Anything notable from the call" onChange={(e) => setRemark(e.target.value)} />
             </div>
 
-            {showErr && anyInvalid && <div className="mand-flag show">⚠ Please fill all starred (*) fields to confirm the lead.</div>}
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            {showErr && anyInvalid && <div className="mand-flag show">⚠ Fill all starred (*) fields, including the follow-up time above.</div>}
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {lead.stage === "rejected" ? (
                 <span className="stage lost">Rejected — {lead.reject_reason}</span>
               ) : (
@@ -658,9 +710,14 @@ export default function LeadDetail() {
                   ✕ Reject lead
                 </button>
               )}
-              <button className="btn green" onClick={save} disabled={confirm.isPending}>
-                {confirm.isPending ? "Saving…" : lead.confirmed ? "Update confirmed data" : "Confirm & qualify lead"}
-              </button>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
+                  Save details &amp; set follow-up
+                </button>
+                <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
+                  {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

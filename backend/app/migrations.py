@@ -28,6 +28,10 @@ _ADD_COLUMNS = [
     ("leads", "reject_reason", "TEXT"),
     ("leads", "reject_notes", "TEXT"),
     ("leads", "rejected_at", "TIMESTAMPTZ"),
+    # call worklist / follow-up flow
+    ("leads", "follow_up_at", "TIMESTAMPTZ"),
+    ("leads", "miss_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("leads", "ever_connected", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

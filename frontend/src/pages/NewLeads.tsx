@@ -70,18 +70,18 @@ export default function NewLeads() {
   return (
     <>
       <div className="section-head" style={{ marginBottom: 10 }}>
-        <p className="sec-sub" style={{ margin: 0 }}>
-          Untouched leads still inside their first-contact window (TAT) — call before it lapses.
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
           {data?.status === "ok" && (
             <>
-              {" "}
-              <b style={{ color: "var(--ink-2)" }}>
-                {list.length !== all.length ? `${list.length} of ${all.length}` : all.length}
-              </b>{" "}
-              new
+              <span style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 26, fontWeight: 700, letterSpacing: "-.02em", lineHeight: 1 }}>
+                {(list.length !== all.length ? list.length : all.length).toLocaleString("en-IN")}
+              </span>
+              <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 500 }}>
+                {list.length !== all.length ? `of ${all.length.toLocaleString("en-IN")} leads` : "total leads"}
+              </span>
             </>
           )}
-        </p>
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source}
             options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}

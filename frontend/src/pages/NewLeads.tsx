@@ -3,7 +3,7 @@
 import { useNavigate } from "react-router-dom";
 import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcLabel, planClass, initials } from "../lib/leads";
+import { srcLabel, planClass } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
@@ -157,7 +157,6 @@ export default function NewLeads() {
                   </td>
                   <td>
                     <div className="who">
-                      <div className="av">{initials(l.name)}</div>
                       <div>
                         <div className="nm">
                           {l.name}{" "}
@@ -174,7 +173,7 @@ export default function NewLeads() {
                             <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>
                           )}
                         </div>
-                        <div className="ph">{l.phone}</div>
+                        <div className="ph" style={{ whiteSpace: "nowrap" }}>{l.phone}</div>
                       </div>
                     </div>
                   </td>

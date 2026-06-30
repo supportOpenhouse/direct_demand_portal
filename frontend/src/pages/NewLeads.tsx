@@ -5,7 +5,7 @@ import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcLabel, planClass, initials } from "../lib/leads";
 import { useSearch, matches } from "../components/SearchContext";
-import { FilterSelect, uniqueValues } from "../components/Filters";
+import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
 import { AssignControl } from "../components/AssignControl";
@@ -33,6 +33,17 @@ export default function NewLeads() {
   const [city, setCity] = useState("");
   const [owner, setOwner] = useState("");
   const [plan, setPlan] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  // "Plan to buy" is a Meta-form field — irrelevant for listing sources (99acres / MagicBricks)
+  const showPlan = source === "meta";
+  // switching away from Meta drops the now-hidden plan filter so it can't silently constrain results
+  const onSource = (v: string) => {
+    setSource(v);
+    if (v !== "meta") setPlan("");
+  };
 
   const all = data?.items ?? [];
   const filtered = all.filter(
@@ -41,6 +52,7 @@ export default function NewLeads() {
       (!city || l.city === city) &&
       (!plan || l.plan_to_buy === plan) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
       matches(query, l.name, l.phone, l.city, l.society, l.budget_band, srcLabel(l.source))
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
@@ -71,13 +83,17 @@ export default function NewLeads() {
           )}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
-            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
+          <FilterSelect label="Source" value={source}
+            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
+            onChange={onSource} width={130} />
           <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
-          <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
+          {showPlan && (
+            <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
+          )}
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
-          {(source || city || plan || owner) && (
-            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); }}>Clear</button>
+          <DateFilter preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
+          {(source || city || plan || owner || datePreset) && (
+            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>
           )}
         </div>
       </div>

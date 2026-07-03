@@ -43,8 +43,8 @@ const OFFICE_PITCH_HI = [
   "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
 ];
 
-// only one reason for now — preselected (re-add Broker/Budget/Location here later)
-const REJECT_REASONS = ["Requirement Mismatch"];
+// (re-add Broker/Budget/Location here later — backend accepts them too)
+const REJECT_REASONS = ["Requirement Mismatch", "No Requirement"];
 
 function RejectModal({ id, name, onClose }: { id: string; name: string | null; onClose: () => void }) {
   const reject = useRejectLead(id);

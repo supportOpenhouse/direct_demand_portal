@@ -350,7 +350,7 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
     return {"status": "ok"}
 
 
-REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch"}
+REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch", "No Requirement"}
 
 
 class RejectPayload(BaseModel):

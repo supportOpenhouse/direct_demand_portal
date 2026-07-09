@@ -1,8 +1,8 @@
 /* 1:1 port of the prototype's .topbar. Reminders / Add New Lead are later-phase. */
 import { useLocation } from "react-router-dom";
-import { IconSearch, IconBell, IconPlusBold } from "./icons";
+import { IconBell, IconPlusBold } from "./icons";
 import { useToast } from "./Toast";
-import { useSearch } from "./SearchContext";
+import GlobalSearch from "./GlobalSearch";
 
 const TITLES: Record<string, string> = {
   "/": "Dashboard",
@@ -25,7 +25,6 @@ const TITLES: Record<string, string> = {
 export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
-  const { query, setQuery } = useSearch();
   const title =
     TITLES[pathname] ||
     (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details" : "Dashboard");
@@ -33,14 +32,7 @@ export default function Topbar() {
   return (
     <div className="topbar">
       <h1 id="page-title">{title}</h1>
-      <div className="search">
-        <IconSearch />
-        <input
-          placeholder="Search property, society…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      </div>
+      <GlobalSearch />
       <button className="btn orange" onClick={() => toast("Reminders arrive in a later phase", "gold", "⏰")}>
         <IconBell /> Reminders
       </button>

@@ -5,8 +5,8 @@
 import { useState } from "react";
 import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcClass, srcLabel, initials } from "../lib/leads";
-import { useSearch, matches } from "../components/SearchContext";
+import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
+import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { CallConnected } from "../components/CallConnected";
@@ -37,7 +37,7 @@ export default function Followup() {
       (!source || l.source === source) &&
       (!city || l.city === city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
-      matches(query, l.name, l.phone, l.city, l.society, srcLabel(l.source))
+      leadMatchesQuery(query, l)
   );
   // default order = backend's soonest-due-first; columns can re-sort
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {

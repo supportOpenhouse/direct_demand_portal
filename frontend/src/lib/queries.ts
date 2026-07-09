@@ -1,5 +1,6 @@
-import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ConfirmPayload, MatchPreviewReq } from "./api";
+import { LEAD_SEGMENTS } from "./leads";
 
 export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
@@ -11,6 +12,24 @@ export function useSupply() {
 
 export function useLeads(segment: string) {
   return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });
+}
+
+/* Fetch every segment at once (parallel, cached under the same ["leads", seg]
+   keys the per-tab pages use) and return a flat list tagged with each lead's
+   segment. Only fires while `enabled` — i.e. when the global search is active. */
+export function useAllLeads(enabled: boolean) {
+  const results = useQueries({
+    queries: LEAD_SEGMENTS.map((s) => ({
+      queryKey: ["leads", s.seg],
+      queryFn: () => api.leads(s.seg),
+      staleTime: 60_000,
+      enabled,
+    })),
+  });
+  const leads = results.flatMap((r, i) =>
+    (r.data?.items ?? []).map((lead) => ({ lead, segment: LEAD_SEGMENTS[i] })),
+  );
+  return { leads, isLoading: enabled && results.some((r) => r.isLoading) };
 }
 
 export function useDashboard() {

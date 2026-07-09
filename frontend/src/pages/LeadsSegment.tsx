@@ -5,8 +5,8 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcClass, srcLabel, stageClass, stageLabel, initials } from "../lib/leads";
-import { useSearch, matches } from "../components/SearchContext";
+import { srcClass, srcLabel, stageClass, stageLabel, initials, leadMatchesQuery } from "../lib/leads";
+import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -48,7 +48,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
       (!source || l.source === source) &&
       (!city || l.city === city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
-      matches(query, l.name, l.phone, l.city, l.society, srcLabel(l.source), stageLabel(l.stage))
+      leadMatchesQuery(query, l)
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,

@@ -3,8 +3,8 @@
 import { useNavigate } from "react-router-dom";
 import { useLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcLabel, planClass } from "../lib/leads";
-import { useSearch, matches } from "../components/SearchContext";
+import { srcLabel, planClass, leadMatchesQuery } from "../lib/leads";
+import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
@@ -53,7 +53,7 @@ export default function NewLeads() {
       (!plan || l.plan_to_buy === plan) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
-      matches(query, l.name, l.phone, l.city, l.society, l.budget_band, srcLabel(l.source))
+      leadMatchesQuery(query, l)
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,

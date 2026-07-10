@@ -17,6 +17,7 @@ _ADD_COLUMNS = [
     ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
     ("users", "smid", "INTEGER"),
     ("meta_leads", "city", "TEXT"),
+    ("meta_leads", "society", "TEXT"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),

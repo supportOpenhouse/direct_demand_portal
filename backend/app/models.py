@@ -87,6 +87,7 @@ class MetaLead(Base):
     phone: Mapped[str | None] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(Text)
     city: Mapped[str | None] = mapped_column(Text)  # added to the Meta sheet later
+    society: Mapped[str | None] = mapped_column(Text)  # added to the Meta sheet later
     budget_range: Mapped[str | None] = mapped_column(Text)
     plan_to_buy: Mapped[str | None] = mapped_column(Text)
     preferred_visit_day: Mapped[str | None] = mapped_column(Text)

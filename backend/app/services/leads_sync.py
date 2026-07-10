@@ -212,22 +212,23 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
             synced.append(row_num)
         name = clean_name(r.get("full_name"))
         city = normalize_city(r.get("city"))  # Meta sheet gained a city column
+        society = r.get("society") or None    # Meta sheet gained a society column
         budget = pretty_enum(r.get("your_budget_range"))
         plan = map_plan(r.get("when_are_you_planning_to_buy"))
         visit_day = pretty_enum(r.get("preferred_site_visit_day"))
         email = r.get("email") or None
         ingest.append({
             "dedupe_key": phone, "full_name": name, "phone": display_phone(phone), "email": email,
-            "city": city, "budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day,
-            "is_test": False, "raw": r,
+            "city": city, "society": society, "budget_range": budget, "plan_to_buy": plan,
+            "preferred_visit_day": visit_day, "is_test": False, "raw": r,
         })
         spine.append({
             "origin_key": f"meta:{phone}", "source_category": "meta", "source": "meta",
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,
-            "city": city, "society": None, "configuration": None, "budget_band": budget,
+            "city": city, "society": society, "configuration": None, "budget_band": budget,
             "plan_to_buy": plan, "preferred_visit_day": visit_day, "source_remarks": None, "is_test": False,
             "received_at": None,  # meta sheet has no date → filled with ingest time below
-            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day, "city": city},
+            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day, "city": city, "society": society},
         })
     return ingest, spine, synced
 
@@ -271,13 +272,13 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
 
 TEST_META = {
     "ingest": {"dedupe_key": "0000000001", "full_name": "TEST Meta Lead", "phone": "+91 00000 00001",
-               "email": "test.meta@openhouse.in", "city": "Gurgaon", "budget_range": "Up to ₹75 lacs",
-               "plan_to_buy": "Within 30 days", "preferred_visit_day": "This Sunday", "is_test": True,
-               "raw": {"_test": "true"}},
+               "email": "test.meta@openhouse.in", "city": "Gurgaon", "society": "Signature Global City 93 (test)",
+               "budget_range": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
+               "preferred_visit_day": "This Sunday", "is_test": True, "raw": {"_test": "true"}},
     "spine": {"origin_key": "meta:0000000001", "source_category": "meta", "source": "meta",
               "name": "TEST Meta Lead", "phone": "+91 00000 00001", "email": "test.meta@openhouse.in",
-              "assigned_to": "RM 1", "city": "Gurgaon", "society": None, "configuration": None,
-              "budget_band": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
+              "assigned_to": "RM 1", "city": "Gurgaon", "society": "Signature Global City 93 (test)",
+              "configuration": None, "budget_band": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
               "preferred_visit_day": "This Sunday", "source_remarks": None, "is_test": True,
               "source_meta": {"budget_range": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days"}},
 }

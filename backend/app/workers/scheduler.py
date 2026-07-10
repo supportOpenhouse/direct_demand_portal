@@ -23,18 +23,26 @@ def locked_job(job_name: str, fn, ttl: int):
     return runner
 
 
+# Leads ingest fires at fixed IST wall-clock times (Asia/Kolkata — no DST, so these
+# are stable). Change here to re-time the twice-daily lead sync.
+LEADS_SYNC_TIMES_IST = [(11, 30), (14, 0)]  # 11:30 AM and 2:00 PM IST
+
+
 def start_scheduler(interval_minutes: int, leads_interval_hours: int = 4) -> None:
     global _scheduler
     if _scheduler is not None:
         return
+    from apscheduler.triggers.combining import OrTrigger
+    from apscheduler.triggers.cron import CronTrigger
+
     from ..services.inventory_sync import run_sync
     from ..services.leads_sync import run_leads_sync
 
     inv_min = max(1, interval_minutes)
-    leads_hr = max(1, leads_interval_hours)
     # lock TTL slightly under the interval so the next tick can re-race after expiry
     inv_ttl = max(60, inv_min * 60 - 30)
-    leads_ttl = max(60, leads_hr * 3600 - 60)
+    # fixed 15-min lock for leads: covers a sync run, well under the gap between fire times
+    leads_ttl = 900
 
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(
@@ -46,18 +54,22 @@ def start_scheduler(interval_minutes: int, leads_interval_hours: int = 4) -> Non
         max_instances=1,
         id="inventory_sync",
     )
-    # leads ingest is insert-only — adds new leads, never updates or deletes
+    # leads ingest is insert-only — adds new leads, never updates or deletes.
+    # Fires at the fixed IST clock times above (one job, multiple triggers).
+    leads_trigger = OrTrigger([
+        CronTrigger(hour=h, minute=m, timezone="Asia/Kolkata") for h, m in LEADS_SYNC_TIMES_IST
+    ])
     _scheduler.add_job(
         locked_job("leads_sync", run_leads_sync, leads_ttl),
-        "interval",
-        hours=leads_hr,
+        leads_trigger,
         kwargs={"trigger": "scheduler"},
         coalesce=True,
         max_instances=1,
         id="leads_sync",
     )
     _scheduler.start()
-    log.info("inventory sync every %d min; leads ingest every %d h", inv_min, leads_hr)
+    times = ", ".join(f"{h:02d}:{m:02d}" for h, m in LEADS_SYNC_TIMES_IST)
+    log.info("inventory sync every %d min; leads ingest at %s IST", inv_min, times)
 
 
 def stop_scheduler() -> None:

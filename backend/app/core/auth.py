@@ -85,3 +85,35 @@ def assignment_aliases(user: dict) -> list[str]:
     if not name:
         return []
     return list({name.lower(), name.split()[0].lower()})
+
+
+def build_assignee_canon_map(users: list[dict]) -> dict[str, str]:
+    """alias (lowercased) → the user's canonical full `name`. A lead's free-text
+    `assigned_to` diverges by source — the sheet writes first names ('Saumya'),
+    the in-app Assign button writes full names ('Saumya Behera') — so both must
+    resolve to one owner. Each user contributes their full name, first name, and
+    `assignment_name` as aliases; any alias that would collide across two different
+    users is dropped, so an ambiguous first name is left untouched rather than
+    mis-assigned."""
+    from collections import defaultdict
+
+    owners: dict[str, set[str]] = defaultdict(set)
+    for u in users:
+        full = (u.get("name") or "").strip()
+        if not full:
+            continue
+        aliases = {full.lower(), full.split()[0].lower()}
+        an = (u.get("assignment_name") or "").strip()
+        if an:
+            aliases.add(an.lower())
+        for a in aliases:
+            owners[a].add(full)
+    return {alias: next(iter(names)) for alias, names in owners.items() if len(names) == 1}
+
+
+def canonical_assignee(name: str | None, canon: dict[str, str]) -> str | None:
+    """Resolve a raw assigned name to its canonical full name via `canon`; unknown
+    names (e.g. the 'RM 1' test leads) pass through unchanged."""
+    if not name:
+        return name
+    return canon.get(name.strip().lower(), name)

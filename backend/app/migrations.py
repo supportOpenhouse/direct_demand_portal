@@ -48,6 +48,7 @@ SMID_SEED = {
 async def run_migrations(engine) -> None:
     if engine is None:
         return
+    from .core.auth import build_assignee_canon_map, canonical_assignee
     from .services.leads_sync import parse_lead_date
 
     try:
@@ -82,6 +83,23 @@ async def run_migrations(engine) -> None:
                     "UPDATE users SET smid = :smid WHERE smid IS NULL AND "
                     "(lower(name) = lower(:full) OR lower(split_part(name, ' ', 1)) = lower(:fn))"),
                     {"smid": smid, "full": full_name, "fn": full_name.split()[0]})
+
+            # canonicalize lead owners: the sheet writes first names ('Saumya') and
+            # the app writes full names ('Saumya Behera'), so one person shows up as
+            # two owners in filters/analytics. Rewrite every alias to the user's full
+            # name (idempotent — a canonical value resolves to itself; ambiguous first
+            # names are left alone by build_assignee_canon_map).
+            urows = await conn.execute(text(
+                "SELECT name, assignment_name FROM users WHERE active AND name IS NOT NULL"))
+            canon = build_assignee_canon_map([dict(r) for r in urows.mappings()])
+            dvals = await conn.execute(text(
+                "SELECT DISTINCT assigned_to FROM leads WHERE assigned_to IS NOT NULL"))
+            for (raw,) in dvals:
+                target = canonical_assignee(raw, canon)
+                if target and target != raw:
+                    await conn.execute(
+                        text("UPDATE leads SET assigned_to = :t WHERE assigned_to = :r"),
+                        {"t": target, "r": raw})
 
             # canonicalize existing lead cities (the cron is insert-only, so it won't
             # re-normalize old rows; inventory self-heals on sync, supply is live)

@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
+from ..core.auth import build_assignee_canon_map, canonical_assignee
 from ..db import neon_engine
 from ..models import Lead, ListingLead, MetaLead, SyncState
 from .normalize import normalize_city
@@ -346,6 +347,16 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
         ]
 
         async with engine.begin() as conn:
+            # resolve each lead's owner to the user's canonical full name before insert,
+            # so sheet first-names and app full-names don't split one person into two
+            # owners (existing rows are healed by the same map in run_migrations)
+            urows = await conn.execute(text(
+                "SELECT name, assignment_name FROM users WHERE active AND name IS NOT NULL"))
+            canon = build_assignee_canon_map([dict(r) for r in urows.mappings()])
+            for s in (*meta_spine, *listing_spine):
+                if s.get("assigned_to"):
+                    s["assigned_to"] = canonical_assignee(s["assigned_to"], canon)
+
             m_new = await _insert_only(conn, MetaLead, meta_ingest, "dedupe_key")
             l_new = await _insert_only(conn, ListingLead, listing_ingest, "dedupe_key")
             spine_new = await _insert_only(conn, Lead, [*meta_spine, *listing_spine], "origin_key")

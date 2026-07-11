@@ -37,16 +37,18 @@ export function uniqueValues<T>(items: T[], get: (item: T) => string | null | un
   return Array.from(new Set(items.map(get).filter((v): v is string => !!v && !!v.trim()))).sort();
 }
 
-/** Budget range filter — two ₹ Lakh inputs (values stored as lakh strings). */
-export function BudgetRange({ min, max, onMin, onMax }: {
-  min: string; max: string; onMin: (v: string) => void; onMax: (v: string) => void;
+/** Budget range filter — two ₹ Lakh inputs (values stored as lakh strings). The
+    leading label says what the range is for (defaults to "Price"). */
+export function BudgetRange({ min, max, onMin, onMax, label = "Price" }: {
+  min: string; max: string; onMin: (v: string) => void; onMax: (v: string) => void; label?: string;
 }) {
-  const box = { padding: "8px 10px", fontSize: 13, width: 92 } as const;
+  const box = { padding: "8px 10px", fontSize: 13, width: 80 } as const;
   return (
     <div className="field" style={{ marginBottom: 0, display: "flex", gap: 6, alignItems: "center" }}>
-      <input type="number" min={0} step="5" placeholder="min" value={min} onChange={(e) => onMin(e.target.value)} style={box} title="Min budget (₹ Lakhs)" />
+      <span style={{ color: "var(--muted)", fontSize: 12, fontWeight: 600 }}>{label}</span>
+      <input type="number" min={0} step="5" placeholder="min" value={min} onChange={(e) => onMin(e.target.value)} style={box} title={`Min ${label.toLowerCase()} (₹ Lakhs)`} />
       <span style={{ color: "var(--muted)", fontSize: 12 }}>–</span>
-      <input type="number" min={0} step="5" placeholder="max" value={max} onChange={(e) => onMax(e.target.value)} style={box} title="Max budget (₹ Lakhs)" />
+      <input type="number" min={0} step="5" placeholder="max" value={max} onChange={(e) => onMax(e.target.value)} style={box} title={`Max ${label.toLowerCase()} (₹ Lakhs)`} />
       <span style={{ color: "var(--muted)", fontSize: 11, fontWeight: 600 }}>₹ L</span>
     </div>
   );

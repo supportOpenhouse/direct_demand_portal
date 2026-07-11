@@ -1,4 +1,7 @@
-/* Dashboard — interactive overview of the lead funnel. Role-scoped via the API. */
+/* Dashboard — interactive overview of the lead funnel. Role-scoped via the API.
+   The Analytics toggle swaps the overview for the measurable-parameters view
+   (Analytics.tsx); the overview below is unchanged. */
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -7,6 +10,7 @@ import {
 import { useDashboard, formatDate } from "../lib/queries";
 import { useAuth } from "../components/AuthContext";
 import { srcClass, srcLabel, stageClass, stageLabel, initials } from "../lib/leads";
+import Analytics from "./Analytics";
 
 const SOURCE_COLOR: Record<string, string> = { meta: "#1877f2", "99acres": "#ed5a0a", magicbricks: "#e63a73" };
 const sourceColor = (s: string) => SOURCE_COLOR[s] || "#64748b";
@@ -68,10 +72,34 @@ export default function Dashboard() {
   const { data, isLoading } = useDashboard();
   const { user } = useAuth();
   const nav = useNavigate();
+  const [view, setView] = useState<"overview" | "analytics">("overview");
   const name = (user?.name || "there").split(" ")[0];
 
+  const header = (
+    <div className="section-head" style={{ marginBottom: 0 }}>
+      <div>
+        <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 24, margin: 0, letterSpacing: "-.02em" }}>Hello, {name} 👋</h1>
+        <p className="sec-sub" style={{ margin: "2px 0 0" }}>
+          {view === "analytics" ? "Lead & supply analytics" : "Your lead funnel"} · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+        </p>
+      </div>
+      <button className="btn ghost" onClick={() => setView((v) => (v === "overview" ? "analytics" : "overview"))}>
+        {view === "overview" ? "📊 Analytics" : "← Overview"}
+      </button>
+    </div>
+  );
+
+  if (view === "analytics") {
+    return <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{header}<Analytics /></div>;
+  }
+
   if (isLoading || !data || data.status !== "ok") {
-    return <div className="card"><div className="empty" style={{ padding: 48 }}>{isLoading ? "Loading dashboard…" : "Dashboard unavailable."}</div></div>;
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+        {header}
+        <div className="card"><div className="empty" style={{ padding: 48 }}>{isLoading ? "Loading dashboard…" : "Dashboard unavailable."}</div></div>
+      </div>
+    );
   }
   const t = data.totals;
   const trend = fill30(data.by_day);
@@ -80,14 +108,7 @@ export default function Dashboard() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      <div className="section-head" style={{ marginBottom: 0 }}>
-        <div>
-          <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 24, margin: 0, letterSpacing: "-.02em" }}>Hello, {name} 👋</h1>
-          <p className="sec-sub" style={{ margin: "2px 0 0" }}>
-            {t.total.toLocaleString("en-IN")} leads in your view · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
-          </p>
-        </div>
-      </div>
+      {header}
 
       {/* KPI cards */}
       <div className="grid" style={{ gridTemplateColumns: "repeat(6, 1fr)", gap: 14 }}>

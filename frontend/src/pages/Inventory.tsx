@@ -112,7 +112,18 @@ export default function Inventory() {
   return (
     <>
       <div className="section-head">
-        <div />
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          {data?.status === "ok" && (
+            <>
+              <span style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 26, fontWeight: 700, letterSpacing: "-.02em", lineHeight: 1 }}>
+                {(items.length !== all.length ? items.length : all.length).toLocaleString("en-IN")}
+              </span>
+              <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 500 }}>
+                {items.length !== all.length ? `of ${all.length.toLocaleString("en-IN")} properties` : "total properties"}
+              </span>
+            </>
+          )}
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="City" value={city} options={uniqueValues(all, (p) => p.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (p) => p.configuration)} onChange={setConfig} width={130} />

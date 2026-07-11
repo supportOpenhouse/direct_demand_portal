@@ -9,6 +9,17 @@ import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components
 import { useSort } from "../lib/useSort";
 import { waShare } from "../lib/whatsapp";
 
+/* Default card order: sellable stock first — Ready → Coming Soon → Booked →
+   anything else. Keyword match (case-insensitive) so raw sheet variants still
+   bucket correctly; equal ranks keep their sheet order (stable sort). */
+function statusRank(s: string | null): number {
+  const v = (s || "").toLowerCase();
+  if (v.includes("ready")) return 0;
+  if (v.includes("coming")) return 1;
+  if (v.includes("booked")) return 2;
+  return 3;
+}
+
 function fmtArea(a: number | null): string | null {
   if (a == null) return null;
   return `${a.toLocaleString("en-IN")} sq.ft`;
@@ -99,8 +110,11 @@ export default function Inventory() {
       inBudget(p.price_lacs, budMin, budMax) &&
       matches(query, p.name, p.society, p.locality, p.city, p.configuration, p.status)
   );
+  // default order = Ready → Coming Soon → Booked (sheet order within each); a picked
+  // Sort column overrides this via the hook below
+  const ordered = [...matched].sort((a, b) => statusRank(a.status) - statusRank(b.status));
   // a card grid has no column headers — drive the shared sort hook from a dropdown
-  const { sorted: items, sortKey, dir, onSort } = useSort<InventoryItem>(matched, {
+  const { sorted: items, sortKey, dir, onSort } = useSort<InventoryItem>(ordered, {
     name: (p) => p.name,
     society: (p) => p.society,
     city: (p) => p.city,

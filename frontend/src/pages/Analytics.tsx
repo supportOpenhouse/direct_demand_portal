@@ -7,7 +7,7 @@
    fine here (browser runtime). Test leads (is_test) are excluded throughout. */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { useAllLeads, useSupply } from "../lib/queries";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { srcLabel } from "../lib/leads";
@@ -189,7 +189,7 @@ export default function Analytics() {
   }
 
   const convRate = pct(m.nConverted, m.total);
-  const srcMax = Math.max(...m.bySource.map((s) => s.leads), 1);
+  const srcData = m.bySource.map((s) => ({ ...s, label: srcLabel(s.k) }));
   const cityMax = Math.max(...m.byCity.map((s) => s.leads), 1);
   const repMax = Math.max(...m.reps.map((r) => r.assigned), 1);
   const supMax = Math.max(...supplyStages.stages.map((s) => s.c), 1);
@@ -262,12 +262,32 @@ export default function Analytics() {
       {/* source + city conversion */}
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={card} className="panel-pad">
-          <div className="panel-title">📣 Conversion by source</div>
-          {m.bySource.map((s) => (
-            <ConvRow key={s.k} label={srcLabel(s.k)} chip={<span style={{ width: 9, height: 9, borderRadius: 3, background: sourceColor(s.k), flex: "none" }} />}
-              leads={s.leads} converted={s.converted} max={srcMax} color={sourceColor(s.k)} />
-          ))}
-          {m.bySource.length === 0 && <div className="empty" style={{ padding: 20 }}>No data.</div>}
+          <div className="panel-title">📣 By source</div>
+          {srcData.length === 0 ? (
+            <div className="empty" style={{ padding: 20 }}>No data.</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={srcData} dataKey="leads" nameKey="label" innerRadius={50} outerRadius={78} paddingAngle={2} stroke="none">
+                    {srcData.map((s) => <Cell key={s.k} fill={sourceColor(s.k)} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                {srcData.map((s) => (
+                  <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: sourceColor(s.k), flex: "none" }} />
+                    <span style={{ fontWeight: 600 }}>{s.label}</span>
+                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
+                      <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conv
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div style={card} className="panel-pad">
           <div className="panel-title">🏙 Conversion by city</div>

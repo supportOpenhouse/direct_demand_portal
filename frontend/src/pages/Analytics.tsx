@@ -101,9 +101,21 @@ export default function Analytics() {
     const bySeg = (s: string) => rows.filter((r) => r.seg === s);
     const count = (s: string) => bySeg(s).length;
 
-    const total = rows.length;
+    // Segments OVERLAP: a qualified/pipeline lead with an open follow-up is returned
+    // in BOTH its stage segment AND "followup" (by design — it shows in the Follow-up
+    // tab as a due-callback reminder). So for any per-lead metric, dedupe to one row
+    // per lead, keeping the stage segment over the follow-up overlay (priority below).
+    // Without this, those leads are counted twice in totals, Unassigned, conversion, etc.
+    const SEG_PRIORITY = ["converted", "rejected", "rnr", "pipeline", "qualified", "new", "followup"];
+    const best = new Map<string, Row>();
+    for (const r of rows) {
+      const prev = best.get(r.lead.id);
+      if (!prev || SEG_PRIORITY.indexOf(r.seg) < SEG_PRIORITY.indexOf(prev.seg)) best.set(r.lead.id, r);
+    }
+    const uniq = [...best.values()];
+
+    const total = uniq.length;
     const nNew = count("new");
-    const nFollowup = count("followup");
     const nQualified = count("qualified");
     const nPipeline = count("pipeline");
     const nConverted = count("converted");
@@ -116,21 +128,22 @@ export default function Analytics() {
     const tatBreached = newWithTat.filter((r) => new Date(r.lead.tat_deadline!).getTime() < now).length;
     const tatWithin = newWithTat.length - tatBreached;
 
-    // Follow-ups
-    const withFu = rows.filter((r) => r.lead.follow_up_at);
-    const fuOverdue = withFu.filter((r) => new Date(r.lead.follow_up_at!).getTime() < startToday).length;
-    const fuToday = withFu.filter((r) => { const t = new Date(r.lead.follow_up_at!).getTime(); return t >= startToday && t < endToday; }).length;
+    // Follow-ups — the Follow-up worklist itself (each lead once; incl. qualified reminders)
+    const fu = bySeg("followup");
+    const fuOverdue = fu.filter((r) => new Date(r.lead.follow_up_at!).getTime() < startToday).length;
+    const fuToday = fu.filter((r) => { const t = new Date(r.lead.follow_up_at!).getTime(); return t >= startToday && t < endToday; }).length;
 
-    // Contact effectiveness
-    const attempted = rows.filter((r) => r.lead.ever_connected || r.lead.miss_count > 0);
-    const connected = rows.filter((r) => r.lead.ever_connected).length;
-    const unassigned = rows.filter((r) => !r.lead.assigned_to && r.seg !== "converted" && r.seg !== "rejected").length;
-    const immediate = rows.filter((r) => r.lead.plan_to_buy === HOT_PLAN).length;
+    // Contact effectiveness (unique leads)
+    const attempted = uniq.filter((r) => r.lead.ever_connected || r.lead.miss_count > 0);
+    const connected = uniq.filter((r) => r.lead.ever_connected).length;
+    // "need an owner" = unassigned AND still active — exclude every terminal bucket (won/rejected/RNR)
+    const unassigned = uniq.filter((r) => !r.lead.assigned_to && r.seg !== "converted" && r.seg !== "rejected" && r.seg !== "rnr").length;
+    const immediate = uniq.filter((r) => r.lead.plan_to_buy === HOT_PLAN).length;
 
-    // group helper → conversion by a dimension
+    // group helper → conversion by a dimension (unique leads)
     const groupConv = (key: (l: Lead) => string | null) => {
       const map = new Map<string, { leads: number; converted: number }>();
-      rows.forEach((r) => {
+      uniq.forEach((r) => {
         const k = key(r.lead);
         if (!k) return;
         const e = map.get(k) || { leads: 0, converted: 0 };
@@ -143,9 +156,9 @@ export default function Analytics() {
     const bySource = groupConv((l) => l.source);
     const byCity = groupConv((l) => l.city);
 
-    // Per-RM leaderboard
+    // Per-RM leaderboard (unique leads)
     const rmMap = new Map<string, { assigned: number; connected: number; qualified: number; converted: number }>();
-    rows.forEach((r) => {
+    uniq.forEach((r) => {
       const rm = r.lead.assigned_to;
       if (!rm) return;
       const e = rmMap.get(rm) || { assigned: 0, connected: 0, qualified: 0, converted: 0 };
@@ -157,9 +170,9 @@ export default function Analytics() {
     });
     const reps = [...rmMap.entries()].map(([rm, v]) => ({ rm, ...v })).sort((a, b) => b.converted - a.converted || b.assigned - a.assigned);
 
-    // Inflow — last 30 days by received_at
+    // Inflow — last 30 days by received_at (unique leads)
     const inflowMap = new Map<string, number>();
-    rows.forEach((r) => { if (r.lead.received_at) { const k = new Date(r.lead.received_at).toISOString().slice(0, 10); inflowMap.set(k, (inflowMap.get(k) || 0) + 1); } });
+    uniq.forEach((r) => { if (r.lead.received_at) { const k = new Date(r.lead.received_at).toISOString().slice(0, 10); inflowMap.set(k, (inflowMap.get(k) || 0) + 1); } });
     const inflow: { label: string; c: number }[] = [];
     const base = new Date();
     for (let i = 29; i >= 0; i--) {
@@ -168,9 +181,9 @@ export default function Analytics() {
     }
 
     return {
-      total, nNew, nFollowup, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
+      total, nNew, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
       tatBreached, tatWithin, tatTotal: newWithTat.length,
-      fuOverdue, fuToday, withFu: withFu.length,
+      fuOverdue, fuToday, withFu: fu.length,
       attempted: attempted.length, connected, unassigned, immediate,
       bySource, byCity, reps, inflow,
     };
@@ -191,7 +204,6 @@ export default function Analytics() {
   const convRate = pct(m.nConverted, m.total);
   const srcData = m.bySource.map((s) => ({ ...s, label: srcLabel(s.k) }));
   const cityMax = Math.max(...m.byCity.map((s) => s.leads), 1);
-  const repMax = Math.max(...m.reps.map((r) => r.assigned), 1);
   const supMax = Math.max(...supplyStages.stages.map((s) => s.c), 1);
 
   return (
@@ -328,7 +340,7 @@ export default function Analytics() {
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ flex: 1, height: 7, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${(r.assigned / repMax) * 100}%`, background: "var(--blue)", borderRadius: 6 }} />
+                          <div style={{ height: "100%", width: `${cv}%`, background: "var(--emerald)", borderRadius: 6 }} />
                         </div>
                         <span style={{ fontFamily: "'Spline Sans Mono'", fontSize: 11.5, color: "var(--muted)", width: 34, textAlign: "right" }}>{cv}%</span>
                       </div>

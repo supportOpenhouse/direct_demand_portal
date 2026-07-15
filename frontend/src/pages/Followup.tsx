@@ -9,6 +9,8 @@ import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { useRowSelection } from "../lib/useRowSelection";
+import { BulkAssignBar } from "../components/BulkAssignBar";
 import { CallConnected } from "../components/CallConnected";
 import { NotesCell } from "../components/NotesCell";
 import { AssignControl } from "../components/AssignControl";
@@ -47,6 +49,7 @@ export default function Followup() {
     assigned: (l) => l.assigned_to,
     society: (l) => l.society,
   });
+  const sel = useRowSelection(list.map((l) => l.id));
 
   return (
     <>
@@ -66,10 +69,15 @@ export default function Followup() {
         </div>
       </div>
 
+      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
+
       <div className="card">
         <table>
           <thead>
             <tr>
+              <th style={{ width: 30 }}>
+                <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
+              </th>
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th>Call connected?</th>
               <SortTh label="Follow-up due" sortKey="due" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -82,14 +90,17 @@ export default function Followup() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? "No callbacks scheduled right now. 🎉" : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
               list.map((l) => (
                 <tr key={l.id} className="lead-row" style={{ cursor: "default" }}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
+                  </td>
                   <td>
                     <div className="who">
                       <div className="av">{initials(l.name)}</div>

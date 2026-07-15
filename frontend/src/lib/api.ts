@@ -308,6 +308,8 @@ export const api = {
   updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null }>) =>
     request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
+  reassignUserLeads: (id: string, toUserId: string) =>
+    request<{ status: string; moved: number }>(`/v1/users/${id}/reassign`, { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) }),
 };
 
 export interface LeadNote {

@@ -116,3 +116,37 @@ async def delete_user(user_id: UUID):
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="user not found")
     return {"status": "ok"}
+
+
+class ReassignPayload(BaseModel):
+    to_user_id: UUID
+
+
+@router.post("/users/{user_id}/reassign")
+async def reassign_leads(user_id: UUID, payload: ReassignPayload):
+    """Move every lead owned by `user_id` to `to_user_id`. Called when an admin
+    disables/removes a user so their leads don't end up orphaned. Matches by the
+    sheet's 'Assigned to' name (first or full) and rewrites it to the target's full
+    name, keeping the app's name-based assignment consistent."""
+    if user_id == payload.to_user_id:
+        raise HTTPException(status_code=422, detail="pick a different user to reassign to")
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    async with engine.begin() as conn:
+        rows = {str(r["id"]): r["name"] for r in (await conn.execute(
+            text("SELECT id, name FROM users WHERE id = ANY(:ids)"),
+            {"ids": [user_id, payload.to_user_id]},
+        )).mappings()}
+        from_name = rows.get(str(user_id))
+        to_name = rows.get(str(payload.to_user_id))
+        if from_name is None or to_name is None:
+            raise HTTPException(status_code=404, detail="user not found")
+        aliases = assignment_aliases({"name": from_name})
+        if not aliases:
+            return {"status": "ok", "moved": 0}
+        res = await conn.execute(
+            text("UPDATE leads SET assigned_to = :to WHERE lower(assigned_to) = ANY(:aliases)"),
+            {"to": to_name, "aliases": aliases},
+        )
+    return {"status": "ok", "moved": res.rowcount}

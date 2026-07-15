@@ -140,10 +140,80 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
   );
 }
 
-function UserRow({ u }: { u: ManagedUser }) {
+/* Shown before disabling/removing a user who still owns leads — reassign them to
+   another active user first so nothing is orphaned. */
+function ReassignModal({ u, action, candidates, onClose }: {
+  u: ManagedUser; action: "disable" | "remove"; candidates: ManagedUser[]; onClose: () => void;
+}) {
+  const { update, remove, reassign } = useUserMutations();
+  const toast = useToast();
+  const [to, setTo] = useState(candidates[0]?.id || "");
+  const busy = reassign.isPending || update.isPending || remove.isPending;
+  const verb = action === "disable" ? "Disable" : "Remove";
+
+  const doAction = (onDone: () => void) => {
+    const opts = { onSuccess: onDone, onError: (e: any) => toast(e.message, "gold", "⚠") };
+    if (action === "disable") update.mutate({ id: u.id, patch: { active: false } }, opts);
+    else remove.mutate(u.id, opts);
+  };
+
+  const reassignThen = () => {
+    if (!to) { toast("Pick a user to reassign to", "gold", "⚠"); return; }
+    const target = candidates.find((c) => c.id === to);
+    reassign.mutate({ id: u.id, toUserId: to }, {
+      onSuccess: (r) => doAction(() => {
+        toast(`${r.moved} lead${r.moved === 1 ? "" : "s"} → ${target?.name} · ${u.name} ${action === "disable" ? "disabled" : "removed"}`, "green", "✓");
+        onClose();
+      }),
+      onError: (e: any) => toast(e.message, "gold", "⚠"),
+    });
+  };
+
+  const skip = () => doAction(() => { toast(`${u.name} ${action === "disable" ? "disabled" : "removed"} · leads left as-is`, "blue", "✓"); onClose(); });
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="mh">
+          <h3>{verb} {u.name || u.email}</h3>
+          <div className="icon-btn" onClick={onClose}>✕</div>
+        </div>
+        <div className="mb">
+          <div className="note" style={{ marginBottom: 16 }}>
+            <b>{u.name || u.email}</b> owns <b>{u.matched_leads}</b> lead{u.matched_leads === 1 ? "" : "s"}. Reassign them to another
+            user before you {action} — otherwise those leads stay mapped to a {action === "remove" ? "deleted" : "disabled"} owner.
+          </div>
+          {candidates.length === 0 ? (
+            <div className="note">No other active users to reassign to. Add one first, or {action} anyway.</div>
+          ) : (
+            <div className="field">
+              <label>Reassign {u.matched_leads} lead{u.matched_leads === 1 ? "" : "s"} to</label>
+              <select value={to} onChange={(e) => setTo(e.target.value)}>
+                {candidates.map((c) => <option key={c.id} value={c.id}>{c.name || c.email} · {roleLabel(c.role)}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="mf" style={{ justifyContent: "space-between" }}>
+          <button className="btn ghost sm" onClick={skip} disabled={busy}>{verb} without reassigning</button>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="btn ghost" onClick={onClose} disabled={busy}>Cancel</button>
+            {candidates.length > 0 && (
+              <button className="btn green" onClick={reassignThen} disabled={busy}>{busy ? "Working…" : `Reassign & ${verb}`}</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
   const { update, remove } = useUserMutations();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const [reassignFor, setReassignFor] = useState<"disable" | "remove" | null>(null);
+  const candidates = allUsers.filter((x) => x.active && x.id !== u.id);
   return (
     <div className="role-row" style={{ gap: 14 }}>
       {u.picture ? (
@@ -171,12 +241,18 @@ function UserRow({ u }: { u: ManagedUser }) {
         {ROLES.map((r) => <option key={r.v} value={r.v}>{roleLabel(r.v)}</option>)}
       </select>
       <div className={"switch" + (u.active ? " on" : "")} title={u.active ? "Disable" : "Enable"}
-        onClick={() => update.mutate({ id: u.id, patch: { active: !u.active } })} />
+        onClick={() => {
+          // disabling an owner with leads → prompt to reassign; enabling or no leads → act directly
+          if (u.active && u.matched_leads > 0) setReassignFor("disable");
+          else update.mutate({ id: u.id, patch: { active: !u.active } });
+        }} />
       <button className="btn ghost sm" onClick={() => setEditing(true)}>✎ Edit</button>
       <button className="btn ghost sm" onClick={() => {
-        if (confirm(`Remove ${u.name || u.email}?`)) remove.mutate(u.id, { onSuccess: () => toast("User removed", "blue", "✓") });
+        if (u.matched_leads > 0) setReassignFor("remove");
+        else if (confirm(`Remove ${u.name || u.email}?`)) remove.mutate(u.id, { onSuccess: () => toast("User removed", "blue", "✓") });
       }}>Remove</button>
       {editing && <EditUserForm u={u} onClose={() => setEditing(false)} />}
+      {reassignFor && <ReassignModal u={u} action={reassignFor} candidates={candidates} onClose={() => setReassignFor(null)} />}
     </div>
   );
 }
@@ -212,7 +288,7 @@ export default function Settings() {
         ) : !data?.items.length ? (
           <div className="empty" style={{ padding: 30 }}>No users yet — add the first one.</div>
         ) : (
-          data.items.map((u) => <UserRow key={u.id} u={u} />)
+          data.items.map((u) => <UserRow key={u.id} u={u} allUsers={data.items} />)
         )}
       </div>
       {adding && <AddUserForm onClose={() => setAdding(false)} />}

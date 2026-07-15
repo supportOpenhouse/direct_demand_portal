@@ -153,10 +153,13 @@ export function useBulkAssign() {
 export function useUserMutations() {
   const qc = useQueryClient();
   const inv = () => qc.invalidateQueries({ queryKey: ["users"] });
+  // reassigning changes lead ownership too, so refresh leads + dashboard as well
+  const invAll = () => { inv(); qc.invalidateQueries({ queryKey: ["leads"] }); qc.invalidateQueries({ queryKey: ["dashboard"] }); };
   return {
     create: useMutation({ mutationFn: api.createUser, onSuccess: inv }),
     update: useMutation({ mutationFn: ({ id, patch }: { id: string; patch: any }) => api.updateUser(id, patch), onSuccess: inv }),
     remove: useMutation({ mutationFn: api.deleteUser, onSuccess: inv }),
+    reassign: useMutation({ mutationFn: ({ id, toUserId }: { id: string; toUserId: string }) => api.reassignUserLeads(id, toUserId), onSuccess: invAll }),
   };
 }
 

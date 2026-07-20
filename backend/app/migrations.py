@@ -33,6 +33,9 @@ _ADD_COLUMNS = [
     ("leads", "follow_up_at", "TIMESTAMPTZ"),
     ("leads", "miss_count", "INTEGER NOT NULL DEFAULT 0"),
     ("leads", "ever_connected", "BOOLEAN NOT NULL DEFAULT false"),
+    # when the lead first entered the Follow-up worklist (set on NULL→value, cleared
+    # when it leaves) — drives the "moved here today" highlight
+    ("leads", "follow_up_since", "TIMESTAMPTZ"),
     ("leads", "is_hot", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 

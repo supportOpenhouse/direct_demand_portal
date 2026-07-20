@@ -191,6 +191,10 @@ td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertic
 tbody tr:last-child td{border-bottom:0}
 tr.lead-row{cursor:pointer;transition:.1s}
 tr.lead-row:hover{background:var(--panel-2)}
+/* Follow-up highlights — green (arrived in this stage today) wins over blue (due today).
+   The :hover pairs keep the tint from being overridden by the row hover rule above. */
+tr.lead-row.fu-arrived,tr.lead-row.fu-arrived:hover{background:var(--emerald-soft)}
+tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .who{display:flex;align-items:center;gap:10px}
 .who .av{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#e4e9f1,#d3dbe8);display:grid;place-items:center;font-weight:700;color:var(--ink-2);font-size:12px;flex:none}
 .who .nm{font-weight:600}

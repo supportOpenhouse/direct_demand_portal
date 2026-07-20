@@ -92,6 +92,7 @@ def _lead_row(r) -> dict:
         "rejected_at": r["rejected_at"].isoformat() if r["rejected_at"] else None,
         "confirmed": r["confirmed"],
         "qualified_at": r["qualified_at"].isoformat() if r["qualified_at"] else None,
+        "follow_up_since": r["follow_up_since"].isoformat() if r["follow_up_since"] else None,
         "follow_up_at": r["follow_up_at"].isoformat() if r["follow_up_at"] else None,
         "miss_count": r["miss_count"] or 0,
         "ever_connected": r["ever_connected"],
@@ -298,6 +299,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                     "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
                     "stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END, "
                     "tat_deadline = NULL, follow_up_at = :t, "
+                    "follow_up_since = COALESCE(follow_up_since, now()), "
                     "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
                 ),
                 {"id": lead_id, "t": follow_up},
@@ -305,7 +307,8 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         else:
             # save details only — stays in Follow-up, not qualified
             await conn.execute(
-                text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t WHERE id = :id"),
+                text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t, "
+                     "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
                 {"id": lead_id, "t": follow_up},
             )
     return {"status": "ok"}
@@ -339,11 +342,13 @@ async def call_result(lead_id: UUID, payload: CallResult):
         to_rnr = (not row["ever_connected"]) and new_miss >= 10
         if to_rnr:
             await conn.execute(text(
-                "UPDATE leads SET miss_count = :m, stage = 'rnr', follow_up_at = NULL WHERE id = :id"),
+                "UPDATE leads SET miss_count = :m, stage = 'rnr', follow_up_at = NULL, "
+                "follow_up_since = NULL WHERE id = :id"),
                 {"m": new_miss, "id": lead_id})
         else:
             await conn.execute(text(
-                "UPDATE leads SET miss_count = :m, follow_up_at = now() + interval '3 hours' WHERE id = :id"),
+                "UPDATE leads SET miss_count = :m, follow_up_at = now() + interval '3 hours', "
+                "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
                 {"m": new_miss, "id": lead_id})
         return {"status": "ok", "connected": False, "moved_to_rnr": to_rnr, "miss_count": new_miss}
 
@@ -361,7 +366,8 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     async with engine.begin() as conn:
         res = await conn.execute(
-            text("UPDATE leads SET follow_up_at = :t, ever_connected = true, miss_count = 0 WHERE id = :id"),
+            text("UPDATE leads SET follow_up_at = :t, ever_connected = true, miss_count = 0, "
+                 "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
             {"t": follow_up, "id": lead_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="lead not found")

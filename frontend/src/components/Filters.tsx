@@ -94,14 +94,14 @@ export function inDatePreset(iso: string | null, preset: DatePreset, from: strin
 }
 
 /** Date filter: a preset select that reveals two date inputs when "Custom range" is picked. */
-export function DateFilter({ preset, from, to, onPreset, onFrom, onTo }: {
+export function DateFilter({ preset, from, to, onPreset, onFrom, onTo, label = "Date" }: {
   preset: DatePreset; from: string; to: string;
-  onPreset: (v: DatePreset) => void; onFrom: (v: string) => void; onTo: (v: string) => void;
+  onPreset: (v: DatePreset) => void; onFrom: (v: string) => void; onTo: (v: string) => void; label?: string;
 }) {
   const box = { padding: "7px 10px", fontSize: 12.5 } as const;
   return (
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      <FilterSelect label="Date" value={preset} options={DATE_PRESETS} onChange={(v) => onPreset(v as DatePreset)} width={140} />
+      <FilterSelect label={label} value={preset} options={DATE_PRESETS} onChange={(v) => onPreset(v as DatePreset)} width={150} />
       {preset === "custom" && (
         <div className="field" style={{ marginBottom: 0, display: "flex", gap: 6, alignItems: "center" }}>
           <input type="date" value={from} onChange={(e) => onFrom(e.target.value)} style={box} title="From date" />

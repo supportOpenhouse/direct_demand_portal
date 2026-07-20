@@ -7,7 +7,7 @@ import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
-import { FilterSelect, uniqueValues } from "../components/Filters";
+import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
@@ -26,12 +26,22 @@ function DueChip({ at }: { at: string | null }) {
   return <span className={`fu-chip${cls}`}>⏰ {label}{suffix}</span>;
 }
 
+// same calendar day as now (local)
+const isToday = (iso: string | null): boolean => {
+  if (!iso) return false;
+  const d = new Date(iso), n = new Date();
+  return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
+};
+
 export default function Followup() {
   const { data, isLoading } = useLeads("followup");
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
   const [owner, setOwner] = useState("");
+  const [datePreset, setDatePreset] = useState<DatePreset>("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const all = data?.items ?? [];
   const filtered = all.filter(
@@ -39,6 +49,7 @@ export default function Followup() {
       (!source || l.source === source) &&
       (!city || l.city === city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
       leadMatchesQuery(query, l)
   );
   // default order = backend's soonest-due-first; columns can re-sort
@@ -54,17 +65,28 @@ export default function Followup() {
   return (
     <>
       <div className="section-head">
-        <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-          callbacks due · soonest first. Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> reschedules +3h.
-        </p>
+        <div>
+          <p className="sec-sub" style={{ margin: 0 }}>
+            <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
+            callbacks due · soonest first. Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> reschedules +3h.
+          </p>
+          <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: "var(--emerald-soft)", border: "1px solid #aedcc4" }} /> moved here today
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <span style={{ width: 10, height: 10, borderRadius: 3, background: "var(--blue-soft)", border: "1px solid #b9d0fb" }} /> follow-up due today
+            </span>
+          </div>
+        </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
           <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
-          {(source || city || owner) && (
-            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); }}>Clear</button>
+          <DateFilter label="Due" preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
+          {(source || city || owner || datePreset) && (
+            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>
           )}
         </div>
       </div>
@@ -97,7 +119,12 @@ export default function Followup() {
               </div></td></tr>
             ) : (
               list.map((l) => (
-                <tr key={l.id} className="lead-row" style={{ cursor: "default" }}>
+                <tr
+                  key={l.id}
+                  /* green (arrived in Follow-up today) takes priority over blue (due today) */
+                  className={"lead-row" + (isToday(l.follow_up_since) ? " fu-arrived" : isToday(l.follow_up_at) ? " fu-due" : "")}
+                  style={{ cursor: "default" }}
+                >
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
                   </td>

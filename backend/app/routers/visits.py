@@ -117,6 +117,12 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     await conn.execute(
                         pg_insert(CrmVisit).values(rows).on_conflict_do_nothing(index_elements=["visit_id"])
                     )
+                    # a real booking is the ONLY thing that means "Visit Scheduled"
+                    # (this is also what moves the lead into Pipeline)
+                    await conn.execute(text(
+                        "UPDATE leads SET stage = CASE WHEN stage IN "
+                        "('won','lost','future_prospect','timepass','rejected','rnr') "
+                        "THEN stage ELSE 'visit_scheduled' END WHERE id = :id"), {"id": req.lead_id})
             except Exception:  # noqa: BLE001
                 log.exception("failed to persist booked visits (booking itself succeeded)")
 

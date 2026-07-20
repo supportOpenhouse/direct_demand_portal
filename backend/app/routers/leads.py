@@ -366,6 +366,22 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
     return {"status": "ok"}
 
 
+@router.get("/leads/{lead_id}/crm-visits")
+async def lead_crm_visits(lead_id: UUID):
+    """Every visit booked on the Openhouse app for this lead — each has its own visit id
+    and is a separate visit (a buyer often tours several societies)."""
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            "SELECT visit_id, home_id, society, city, selected_date, selected_time, status, "
+            "visit_date, buyer_feedback, sales_feedback, booked_by FROM crm_visits "
+            "WHERE lead_id = :id ORDER BY selected_date DESC NULLS LAST, visit_id DESC"
+        ), {"id": lead_id})).mappings().all()
+    return {"items": [dict(r) for r in rows]}
+
+
 class HotPayload(BaseModel):
     hot: bool
 
@@ -551,10 +567,14 @@ async def save_visit(lead_id: UUID, payload: VisitPlan):
             total_km=payload.total_km, total_min=payload.total_min, route_source=payload.route_source,
             stops=[s.model_dump() for s in payload.stops],
         ))
-        # advance to Visit Scheduled unless the lead is already in a terminal stage
+        # This is an internal trip plan, NOT an appointment with the buyer — mark it
+        # 'visit_planned' (Trip Planned). Only a real Openhouse booking sets
+        # 'visit_scheduled' (see POST /v1/visits/book), which is what drives Pipeline.
+        # Never downgrade a lead that already has a booked visit or is terminal.
         await conn.execute(text(
-            "UPDATE leads SET stage = CASE WHEN stage IN ('won','lost','future_prospect','timepass') "
-            "THEN stage ELSE 'visit_scheduled' END WHERE id = :id"), {"id": lead_id})
+            "UPDATE leads SET stage = CASE WHEN stage IN "
+            "('won','lost','future_prospect','timepass','rejected','rnr','visit_scheduled') "
+            "THEN stage ELSE 'visit_planned' END WHERE id = :id"), {"id": lead_id})
     return {"status": "ok"}
 
 

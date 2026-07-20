@@ -12,6 +12,7 @@ import { useSort, SortTh } from "../lib/useSort";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
 import { NotesCell } from "../components/NotesCell";
+import { VisitsCell } from "../components/VisitsCell";
 import { AssignControl } from "../components/AssignControl";
 import { VisitPlanner } from "../features/VisitPlanner";
 
@@ -44,22 +45,6 @@ function HotStar({ lead }: { lead: Lead }) {
     >
       {lead.is_hot ? "★" : "☆"}
     </button>
-  );
-}
-
-// booked-visit status, synced from the ops visits sheet
-const VISIT_LABEL: Record<string, [string, string]> = {
-  upcoming: ["upcoming", "Upcoming"],
-  completed: ["completed", "Completed"],
-  cancelled: ["cancelled", "Cancelled"],
-};
-function VisitChip({ lead }: { lead: Lead }) {
-  if (!lead.visit_status) return <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>;
-  const [cls, label] = VISIT_LABEL[lead.visit_status] || ["upcoming", lead.visit_status];
-  return (
-    <span className={`visit-chip ${cls}`} title={`${lead.visit_count} visit${lead.visit_count === 1 ? "" : "s"} booked`}>
-      {label}{lead.visit_date ? ` · ${lead.visit_date}` : ""}{lead.visit_count > 1 ? ` ×${lead.visit_count}` : ""}
-    </span>
   );
 }
 
@@ -185,7 +170,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       </div>
                     </div>
                   </td>
-                  {pipeline && <td><VisitChip lead={l} /></td>}
+                  {pipeline && <td><VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} /></td>}
                   <td><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
                   {rejected ? (
                     <>

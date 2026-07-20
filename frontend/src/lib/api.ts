@@ -269,6 +269,7 @@ export const api = {
       `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected }) }),
   setFollowup: (id: string, followUpAt: string) =>
     request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
+  leadCrmVisits: (id: string) => request<{ items: CrmVisitRow[] }>(`/v1/leads/${id}/crm-visits`),
   markHot: (id: string, hot: boolean) =>
     request<{ status: string; is_hot: boolean }>(`/v1/leads/${id}/hot`, { method: "POST", body: JSON.stringify({ hot }) }),
   syncVisits: () =>
@@ -319,6 +320,21 @@ export const api = {
   reassignUserLeads: (id: string, toUserId: string) =>
     request<{ status: string; moved: number }>(`/v1/users/${id}/reassign`, { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) }),
 };
+
+/** One visit booked on the Openhouse app. A lead can have many — each its own visit id. */
+export interface CrmVisitRow {
+  visit_id: number;
+  home_id: number | null;
+  society: string | null;
+  city: string | null;
+  selected_date: string | null;
+  selected_time: string | null;
+  status: "upcoming" | "completed" | "cancelled";
+  visit_date: string | null;
+  buyer_feedback: string | null;
+  sales_feedback: string | null;
+  booked_by: string | null;
+}
 
 export interface LeadNote {
   id: string | null;

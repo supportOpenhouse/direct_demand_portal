@@ -199,6 +199,16 @@ export function useCallResult() {
   });
 }
 
+/** All visits booked for a lead — fetched only when the row is expanded. */
+export function useLeadCrmVisits(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ["crm-visits", id],
+    queryFn: () => api.leadCrmVisits(id),
+    enabled: enabled && !!id,
+    staleTime: 30_000,
+  });
+}
+
 /** Star / un-star a lead as hot (optimistic — the star flips instantly). */
 export function useMarkHot() {
   const qc = useQueryClient();

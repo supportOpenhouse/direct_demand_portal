@@ -23,21 +23,18 @@ const WORK_START = 10, WORK_END = 19;
 /** Preview of the follow-up the backend will set. Mirrors _within_calling_hours()
     in backend/app/routers/leads.py — the backend stays authoritative (its response
     carries the real time); this only shows the RM what to expect before they save. */
-function previewFollowup(hours: number): { at: Date; rolled: boolean } {
+function previewFollowup(hours: number): Date {
   const due = new Date(Date.now() + hours * 3600_000);
   // shift so the getUTC* accessors read IST wall-clock, matching the backend's compare
   const ist = new Date(due.getTime() + IST_MIN * 60_000);
   const hour = ist.getUTCHours();
-  let rolled = false;
   if (hour < WORK_START) {
     ist.setUTCHours(WORK_START, 0, 0, 0);
-    rolled = true;
   } else if (hour >= WORK_END) {
     ist.setUTCDate(ist.getUTCDate() + 1);
     ist.setUTCHours(WORK_START, 0, 0, 0);
-    rolled = true;
   }
-  return { at: new Date(ist.getTime() - IST_MIN * 60_000), rolled };
+  return new Date(ist.getTime() - IST_MIN * 60_000);
 }
 
 const istLabel = (d: Date) =>
@@ -98,10 +95,7 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
             {preview ? (
               <>
                 <span className="cco-lbl">Follow-up will be set for</span>
-                <b className="cco-at">{istLabel(preview.at)}</b>
-                {preview.rolled && (
-                  <span className="cco-why">+{hours}h lands outside calling hours → next morning</span>
-                )}
+                <b className="cco-at">{istLabel(preview)}</b>
               </>
             ) : (
               <span className="cco-lbl">This lead will move to <b style={{ color: "var(--coral)" }}>Rejected</b> — no follow-up.</span>

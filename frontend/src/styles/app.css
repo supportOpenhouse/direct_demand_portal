@@ -406,7 +406,6 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .cc-outcome{margin-top:16px;padding:10px 12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)}
 .cc-outcome .cco-lbl{color:var(--muted)}
 .cc-outcome .cco-at{color:var(--ink);font-size:12.5px;margin-left:5px}
-.cc-outcome .cco-why{display:block;color:var(--muted);font-size:10.5px;margin-top:1px}
 
 /* cascaded suggestions — offered, not selected: dashed + muted until clicked */
 .sugg-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}

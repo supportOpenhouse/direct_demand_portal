@@ -10,20 +10,41 @@ import { useNavigate } from "react-router-dom";
 import { useCallResult } from "../lib/queries";
 import { useToast } from "./Toast";
 
-const MISS_REASONS = [
-  { value: "Did Not Pick / Not Reachable", hint: "Call back in 3 hours" },
-  { value: "Switched Off", hint: "Call back in 6 hours" },
-  { value: "Invalid Number", hint: "Moves the lead to Rejected" },
+// hours until the callback; null = the number is unusable, so the lead is rejected
+const MISS_REASONS: { value: string; hours: number | null }[] = [
+  { value: "Did Not Pick / Not Reachable", hours: 3 },
+  { value: "Switched Off", hours: 6 },
+  { value: "Invalid Number", hours: null },
 ];
 
-/** Local time of an ISO instant, e.g. "Tue 10:00 AM" — used to confirm when the
-    auto follow-up actually landed (it may have been pushed to the next morning). */
-const whenLabel = (iso?: string | null) =>
-  iso
-    ? new Date(iso).toLocaleString(undefined, {
-        weekday: "short", hour: "numeric", minute: "2-digit",
-      })
-    : null;
+const IST_MIN = 330;              // Asia/Kolkata is UTC+5:30 year-round (no DST)
+const WORK_START = 10, WORK_END = 19;
+
+/** Preview of the follow-up the backend will set. Mirrors _within_calling_hours()
+    in backend/app/routers/leads.py — the backend stays authoritative (its response
+    carries the real time); this only shows the RM what to expect before they save. */
+function previewFollowup(hours: number): { at: Date; rolled: boolean } {
+  const due = new Date(Date.now() + hours * 3600_000);
+  // shift so the getUTC* accessors read IST wall-clock, matching the backend's compare
+  const ist = new Date(due.getTime() + IST_MIN * 60_000);
+  const hour = ist.getUTCHours();
+  let rolled = false;
+  if (hour < WORK_START) {
+    ist.setUTCHours(WORK_START, 0, 0, 0);
+    rolled = true;
+  } else if (hour >= WORK_END) {
+    ist.setUTCDate(ist.getUTCDate() + 1);
+    ist.setUTCHours(WORK_START, 0, 0, 0);
+    rolled = true;
+  }
+  return { at: new Date(ist.getTime() - IST_MIN * 60_000), rolled };
+}
+
+const istLabel = (d: Date) =>
+  d.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", weekday: "short", day: "numeric", month: "short",
+    hour: "numeric", minute: "2-digit",
+  });
 
 function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
   const m = useCallResult();
@@ -31,7 +52,8 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
   const [reason, setReason] = useState(MISS_REASONS[0].value);
   const [notes, setNotes] = useState("");
   const [err, setErr] = useState(false);
-  const hint = MISS_REASONS.find((r) => r.value === reason)?.hint;
+  const hours = MISS_REASONS.find((r) => r.value === reason)?.hours ?? null;
+  const preview = hours != null ? previewFollowup(hours) : null;
 
   const submit = () => {
     if (!reason || !notes.trim()) { setErr(true); return; }
@@ -42,7 +64,7 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
           if (d.rejected) toast("Invalid number — moved to Rejected", "blue", "✕");
           else if (d.moved_to_rnr) toast("10 missed calls — moved to RNR", "gold", "✕");
           else {
-            const at = whenLabel(d.follow_up_at);
+            const at = d.follow_up_at ? istLabel(new Date(d.follow_up_at)) : null;
             toast(at ? `Not reached · follow-up ${at}` : "Not reached · follow-up set", "gold", "↻");
           }
           onClose();
@@ -62,7 +84,6 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
             <select value={reason} onChange={(e) => setReason(e.target.value)}>
               {MISS_REASONS.map((r) => <option key={r.value} value={r.value}>{r.value}</option>)}
             </select>
-            {hint && <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>→ {hint}</div>}
           </div>
           <div className={"field" + (err && !notes.trim() ? " invalid" : "")} style={{ marginBottom: 0 }}>
             <label>Notes <span className="req">*</span></label>
@@ -70,6 +91,22 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
               onChange={(e) => setNotes(e.target.value)} />
           </div>
           {err && !notes.trim() && <div className="mand-flag show">⚠ Notes are required.</div>}
+
+          {/* what saving will actually do — the +3h/+6h landing time, already
+              clamped to calling hours, or the terminal outcome */}
+          <div className="cc-outcome">
+            {preview ? (
+              <>
+                <span className="cco-lbl">Follow-up will be set for</span>
+                <b className="cco-at">{istLabel(preview.at)}</b>
+                {preview.rolled && (
+                  <span className="cco-why">+{hours}h lands outside calling hours → next morning</span>
+                )}
+              </>
+            ) : (
+              <span className="cco-lbl">This lead will move to <b style={{ color: "var(--coral)" }}>Rejected</b> — no follow-up.</span>
+            )}
+          </div>
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>Cancel</button>

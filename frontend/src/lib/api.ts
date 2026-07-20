@@ -148,6 +148,10 @@ export interface Lead {
   follow_up_at: string | null;  // next callback due (UTC); set → lead is in the Follow-up tab
   miss_count: number;           // consecutive not-connected calls (resets on connect)
   ever_connected: boolean;      // have we ever connected? gates RNR escalation
+  is_hot: boolean;              // starred as a hot lead
+  visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
+  visit_date: string | null;    // its scheduled date
+  visit_count: number;          // visits booked on the Openhouse app
   latest_note: string | null;   // newest note/remark, for the inline notes column
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
   note_count: number;           // total notes + source remarks
@@ -265,6 +269,10 @@ export const api = {
       `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected }) }),
   setFollowup: (id: string, followUpAt: string) =>
     request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
+  markHot: (id: string, hot: boolean) =>
+    request<{ status: string; is_hot: boolean }>(`/v1/leads/${id}/hot`, { method: "POST", body: JSON.stringify({ hot }) }),
+  syncVisits: () =>
+    request<{ status: string; checked: number; updated: number }>("/v1/visits/sync", { method: "POST" }),
   rejectLead: (id: string, reason: string, notes: string) =>
     request<{ status: string }>(`/v1/leads/${id}/reject`, { method: "POST", body: JSON.stringify({ reason, notes }) }),
   authGoogle: (credential: string) =>
@@ -371,11 +379,13 @@ export interface BookVisitIn {
   city: string | null;
   buyer_name: string;
   buyer_mobile: string;
+  society?: string | null;
 }
 export interface BookRequest {
   selected_date: string;
   selected_time: string;
   source: string;
+  lead_id?: string | null;   // links the booking to a lead → drives the Pipeline tab
   visits: BookVisitIn[];
 }
 export interface BookResultRow {

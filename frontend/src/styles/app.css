@@ -713,3 +713,13 @@ a.nav-item{text-decoration:none}
 /* follow-up scheduler row (lead detail) */
 .fu-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fu-row input[type="datetime-local"]{flex:1;min-width:180px}
+
+/* hot-lead star + booked-visit status chip (Pipeline) */
+.hot-star{border:0;background:0;cursor:pointer;font-size:17px;line-height:1;padding:2px 4px;color:var(--muted);transition:.14s}
+.hot-star:hover{color:var(--coral);transform:scale(1.15)}
+.hot-star.on{color:var(--coral)}
+.hot-star:disabled{opacity:.5;cursor:default}
+.visit-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;font-family:"Spline Sans Mono"}
+.visit-chip.upcoming{background:var(--blue-soft);color:var(--blue)}
+.visit-chip.completed{background:var(--emerald-soft);color:var(--emerald)}
+.visit-chip.cancelled{background:var(--coral-soft);color:var(--coral)}

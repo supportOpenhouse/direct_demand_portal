@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # (needs the service account to have EDITOR access on the leads sheet)
     LEADS_SYNC_WRITEBACK: bool = True
     LEADS_WRITEBACK_COLUMN: str = "DD Synced"
+    # Ops visits sheet — one row per Openhouse visit, keyed by the Core visit id.
+    # Read-only; drives crm_visits.status (upcoming | completed | cancelled).
+    VISITS_SHEET_ID: str = "17eEX021t97pGnJasMJ6v7ERE0jezKEC0S8teKepJRWQ"
+    VISITS_WORKSHEET: str = "Sheet1"
+    VISITS_SYNC_INTERVAL_MINUTES: int = 30
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
 

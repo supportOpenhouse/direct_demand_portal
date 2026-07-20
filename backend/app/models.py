@@ -166,6 +166,7 @@ class Lead(Base):
     follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     miss_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     ever_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")  # starred
     # rejection
     reject_reason: Mapped[str | None] = mapped_column(Text)
     reject_notes: Mapped[str | None] = mapped_column(Text)
@@ -222,6 +223,37 @@ class Visit(Base):
     total_min: Mapped[float | None] = mapped_column(Numeric)
     route_source: Mapped[str | None] = mapped_column(Text)  # 'google' | 'est'
     stops: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CrmVisit(Base):
+    """A visit actually booked on the Openhouse app via POST /v1/visits/book.
+
+    `visit_id` is the Core visit number returned by the booking API and is the join key
+    into the ops visits sheet, from which `status` (upcoming | completed | cancelled) and
+    the feedback fields are synced. A lead with any row here is a Pipeline lead."""
+
+    __tablename__ = "crm_visits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    visit_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=False)  # Core visit id
+    home_id: Mapped[int | None] = mapped_column(Integer)
+    society: Mapped[str | None] = mapped_column(Text)
+    city: Mapped[str | None] = mapped_column(Text)
+    selected_date: Mapped[str | None] = mapped_column(Text)
+    selected_time: Mapped[str | None] = mapped_column(Text)
+    # synced from the ops sheet
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="upcoming")
+    visit_date: Mapped[str | None] = mapped_column(Text)
+    buyer_feedback: Mapped[str | None] = mapped_column(Text)
+    sales_feedback: Mapped[str | None] = mapped_column(Text)
+    synced_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    booked_by: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

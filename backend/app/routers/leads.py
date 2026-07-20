@@ -24,6 +24,9 @@ router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 # stages that take a lead out of the active funnel (rnr = Ring No Response, terminal)
 _TERMINAL = "('won','lost','rejected','future_prospect','timepass','rnr')"
 
+# a lead is "in Pipeline" once a visit has been booked for it on the Openhouse app
+_HAS_VISIT = "SELECT 1 FROM crm_visits v WHERE v.lead_id = leads.id"
+
 # segment → SQL predicate on the leads spine.
 #   new       — untouched: no call logged yet (no open follow-up)
 #   followup  — any non-terminal lead with an open follow-up. Pre-qualification leads
@@ -33,10 +36,15 @@ _TERMINAL = "('won','lost','rejected','future_prospect','timepass','rnr')"
 SEGMENTS = {
     "new": "stage = 'new' AND follow_up_at IS NULL",
     "followup": f"stage NOT IN {_TERMINAL} AND follow_up_at IS NOT NULL",
-    "qualified": f"confirmed = true AND stage NOT IN {_TERMINAL} "
-                 "AND qualified_at IS NOT NULL AND now() - qualified_at < interval '7 days'",
-    "pipeline": f"confirmed = true AND stage NOT IN {_TERMINAL} "
-                "AND qualified_at IS NOT NULL AND now() - qualified_at >= interval '7 days'",
+    # Qualified = confirmed on call and no visit booked yet (booking one moves it to Pipeline)
+    "qualified": f"confirmed = true AND stage NOT IN {_TERMINAL} AND qualified_at IS NOT NULL "
+                 f"AND NOT EXISTS ({_HAS_VISIT})",
+    # Pipeline = a visit has actually been booked on the Openhouse app. PLUS a safety net:
+    # a lead worked past New but never qualified (e.g. a site visit planned straight from
+    # New Leads) matches no other tab, so it would vanish entirely — catch it here.
+    "pipeline": f"stage NOT IN {_TERMINAL} AND ("
+                f"EXISTS ({_HAS_VISIT}) "
+                "OR (stage <> 'new' AND qualified_at IS NULL AND follow_up_at IS NULL))",
     "converted": "stage = 'won'",
     "rnr": "stage = 'rnr'",
     "rejected": "stage = 'rejected'",
@@ -85,6 +93,11 @@ def _lead_row(r) -> dict:
         "follow_up_at": r["follow_up_at"].isoformat() if r["follow_up_at"] else None,
         "miss_count": r["miss_count"] or 0,
         "ever_connected": r["ever_connected"],
+        "is_hot": bool(r["is_hot"]),
+        # latest booked visit (Pipeline status chip) — only present on the list query
+        "visit_status": r.get("visit_status"),
+        "visit_date": r.get("visit_sel_date"),
+        "visit_count": int(r.get("visit_count") or 0),
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
         "note_count": int(r.get("note_count") or 0) + len(remarks),
@@ -122,7 +135,10 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                     "SELECT leads.*, "
                     "(SELECT body FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_body, "
                     "(SELECT created_at FROM lead_notes WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS latest_note_at, "
-                    "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count "
+                    "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count, "
+                    "(SELECT status FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_status, "
+                    "(SELECT selected_date FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_sel_date, "
+                    "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count "
                     f"FROM leads WHERE {predicate} ORDER BY is_test DESC, {order}"
                 ),
                 params,
@@ -348,6 +364,24 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="lead not found")
     return {"status": "ok"}
+
+
+class HotPayload(BaseModel):
+    hot: bool
+
+
+@router.post("/leads/{lead_id}/hot")
+async def mark_hot(lead_id: UUID, payload: HotPayload):
+    """Star / un-star a lead as hot (used by the Pipeline tab's filter)."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        res = await conn.execute(
+            text("UPDATE leads SET is_hot = :h WHERE id = :id"), {"h": payload.hot, "id": lead_id})
+        if res.rowcount == 0:
+            raise HTTPException(status_code=404, detail="lead not found")
+    return {"status": "ok", "is_hot": payload.hot}
 
 
 REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch", "No Requirement"}

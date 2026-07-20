@@ -199,6 +199,18 @@ export function useCallResult() {
   });
 }
 
+/** Star / un-star a lead as hot (optimistic — the star flips instantly). */
+export function useMarkHot() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, hot }: { id: string; hot: boolean }) => api.markHot(id, hot),
+    onSuccess: (_d, { id }) => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+    },
+  });
+}
+
 /** Set a manual follow-up (from the lead detail, after a connected call). */
 export function useSetFollowup(id: string) {
   const qc = useQueryClient();

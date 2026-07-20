@@ -33,6 +33,7 @@ _ADD_COLUMNS = [
     ("leads", "follow_up_at", "TIMESTAMPTZ"),
     ("leads", "miss_count", "INTEGER NOT NULL DEFAULT 0"),
     ("leads", "ever_connected", "BOOLEAN NOT NULL DEFAULT false"),
+    ("leads", "is_hot", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

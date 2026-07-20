@@ -579,7 +579,7 @@ export default function LeadDetail() {
           </button>
         </div>
       </div>
-      {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} onClose={() => setPlanner(false)} />}
+      {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} leadPhone={lead.phone} onClose={() => setPlanner(false)} />}
       {rejecting && <RejectModal id={id} name={lead.name} onClose={() => setRejecting(false)} />}
 
       <div className="detail-grid">

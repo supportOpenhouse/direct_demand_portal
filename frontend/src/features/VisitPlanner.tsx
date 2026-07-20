@@ -15,7 +15,7 @@ import { BookVisitsDrawer, BookUnit } from "./BookVisitsDrawer";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
-export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: string; leadName: string | null; leadCity: string | null; onClose: () => void }) {
+export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }: { leadId: string; leadName: string | null; leadCity: string | null; leadPhone?: string | null; onClose: () => void }) {
   const { data: inv } = useInventory();
   const { data: assignees } = useAssignees();
   const toast = useToast();
@@ -361,7 +361,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, onClose }: { leadId: 
           )}
         </div>
       </div>
-      {booking && <BookVisitsDrawer units={bookUnits} onClose={() => setBooking(false)} />}
+      {booking && <BookVisitsDrawer units={bookUnits} leadId={leadId} leadName={leadName} leadPhone={leadPhone} onClose={() => setBooking(false)} />}
     </div>
   );
 }

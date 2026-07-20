@@ -35,8 +35,10 @@ def start_scheduler(interval_minutes: int, leads_interval_hours: int = 4) -> Non
     from apscheduler.triggers.combining import OrTrigger
     from apscheduler.triggers.cron import CronTrigger
 
+    from ..config import get_settings
     from ..services.inventory_sync import run_sync
     from ..services.leads_sync import run_leads_sync
+    from ..services.visits_sync import run_visits_sync
 
     inv_min = max(1, interval_minutes)
     # lock TTL slightly under the interval so the next tick can re-race after expiry
@@ -67,9 +69,21 @@ def start_scheduler(interval_minutes: int, leads_interval_hours: int = 4) -> Non
         max_instances=1,
         id="leads_sync",
     )
+    # visit status (upcoming → completed/cancelled) from the ops sheet
+    vis_min = max(5, get_settings().VISITS_SYNC_INTERVAL_MINUTES)
+    _scheduler.add_job(
+        locked_job("visits_sync", run_visits_sync, max(60, vis_min * 60 - 30)),
+        "interval",
+        minutes=vis_min,
+        kwargs={"trigger": "scheduler"},
+        coalesce=True,
+        max_instances=1,
+        id="visits_sync",
+    )
     _scheduler.start()
     times = ", ".join(f"{h:02d}:{m:02d}" for h, m in LEADS_SYNC_TIMES_IST)
-    log.info("inventory sync every %d min; leads ingest at %s IST", inv_min, times)
+    log.info("inventory sync every %d min; leads ingest at %s IST; visit status every %d min",
+             inv_min, times, vis_min)
 
 
 def stop_scheduler() -> None:

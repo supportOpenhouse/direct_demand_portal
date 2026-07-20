@@ -1,14 +1,17 @@
 """Visit booking on the Openhouse app (server-to-server). Resolves the booker's
 SalesManager id (smid) from the logged-in user; derives the CP/broker per unit city."""
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
 from ..core.auth import current_user
 from ..db import neon_engine
+from ..models import CrmVisit
 from ..services.crm_booking import BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits
 
 log = logging.getLogger("visits")
@@ -25,6 +28,19 @@ async def _user_smid(user: dict) -> int | None:
             text("SELECT smid FROM users WHERE lower(email) = :e"), {"e": user["email"].lower()}
         )).first()
     return row[0] if row and row[0] is not None else None
+
+
+@router.post("/visits/sync")
+async def sync_visit_status():
+    """Pull the latest status (upcoming | completed | cancelled) for every visit we booked."""
+    from ..services.visits_sync import run_visits_sync
+
+    result = await run_visits_sync(trigger="manual")
+    if result["status"] == "not_configured":
+        raise HTTPException(status_code=503, detail=result.get("detail"))
+    if result["status"] == "error":
+        raise HTTPException(status_code=502, detail=result.get("detail"))
+    return result
 
 
 @router.get("/visits/booking-config")
@@ -46,12 +62,14 @@ class BookVisitIn(BaseModel):
     city: str | None = None
     buyer_name: str
     buyer_mobile: str
+    society: str | None = None
 
 
 class BookRequest(BaseModel):
     selected_date: str
     selected_time: str
     source: str = DEFAULT_SOURCE
+    lead_id: UUID | None = None   # links the booking to a lead → drives the Pipeline tab
     visits: list[BookVisitIn]
 
 
@@ -77,4 +95,29 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
     log.info("book: user=%s smid=%s n=%s date=%s slot=%s", user.get("email"), smid, len(req.visits), req.selected_date, req.selected_time)
     results = await book_visits(smid, req.selected_date, req.selected_time, req.source, [v.model_dump() for v in req.visits])
     booked = sum(1 for r in results if r["ok"])
+
+    # persist each successful booking so the Pipeline tab can track it and the sheet sync
+    # can update its status. Fail-soft: a storage hiccup must not lose the booking result.
+    if req.lead_id:
+        by_home = {v.home_id: v for v in req.visits}
+        rows = [
+            {
+                "lead_id": req.lead_id, "visit_id": r["visit_id"], "home_id": r["home_id"],
+                "society": (by_home.get(r["home_id"]).society if by_home.get(r["home_id"]) else None),
+                "city": (by_home.get(r["home_id"]).city if by_home.get(r["home_id"]) else None),
+                "selected_date": req.selected_date, "selected_time": req.selected_time,
+                "status": "upcoming", "booked_by": user.get("email"),
+            }
+            for r in results if r.get("ok") and r.get("visit_id")
+        ]
+        if rows:
+            try:
+                engine = neon_engine()
+                async with engine.begin() as conn:
+                    await conn.execute(
+                        pg_insert(CrmVisit).values(rows).on_conflict_do_nothing(index_elements=["visit_id"])
+                    )
+            except Exception:  # noqa: BLE001
+                log.exception("failed to persist booked visits (booking itself succeeded)")
+
     return {"booked": booked, "failed": len(results) - booked, "results": results}

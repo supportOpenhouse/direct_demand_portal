@@ -27,26 +27,39 @@ type Result = { homeId: string | number; ok: boolean; visitId?: number; reason?:
 
 const STEPS = ["Details", "Review", "Done"] as const;
 
-export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClose: () => void }) {
+/** Core matches the buyer on the LAST 5 digits — send exactly those. */
+const last5 = (phone: string | null | undefined) => (phone || "").replace(/\D/g, "").slice(-5);
+
+export function BookVisitsDrawer({
+  units, onClose, leadId, leadName, leadPhone,
+}: {
+  units: BookUnit[];
+  onClose: () => void;
+  leadId?: string;
+  leadName?: string | null;
+  leadPhone?: string | null;
+}) {
   const toast = useToast();
   const cfg = useBookingConfig();
   const days = useMemo(() => next7Days(), []);
   const [step, setStep] = useState(0);
 
-  // step 1 state
+  // step 1 state — buyer prefilled from the lead (name + last 5 phone digits)
   const [date, setDate] = useState<DayOption>(days[0]);
   const [slot, setSlot] = useState<string>("");
   const [oneBuyer, setOneBuyer] = useState(true);
-  const [shared, setShared] = useState<Buyer>({ name: "", mobile: "" });
+  const [shared, setShared] = useState<Buyer>({ name: (leadName || "").trim(), mobile: last5(leadPhone) });
   const [perUnit, setPerUnit] = useState<Record<string, Buyer>>({});
 
   // step 3 state
   const [booking, setBooking] = useState(false);
   const [results, setResults] = useState<Result[]>([]);
 
-  const buyerFor = (u: BookUnit): Buyer => (oneBuyer ? shared : perUnit[String(u.homeId)] || { name: "", mobile: "" });
+  // per-unit rows also start from the lead's details
+  const leadBuyer = (): Buyer => ({ name: (leadName || "").trim(), mobile: last5(leadPhone) });
+  const buyerFor = (u: BookUnit): Buyer => (oneBuyer ? shared : perUnit[String(u.homeId)] || leadBuyer());
   const setBuyerFor = (u: BookUnit, patch: Partial<Buyer>) =>
-    setPerUnit((p) => ({ ...p, [String(u.homeId)]: { ...(p[String(u.homeId)] || { name: "", mobile: "" }), ...patch } }));
+    setPerUnit((p) => ({ ...p, [String(u.homeId)]: { ...(p[String(u.homeId)] || leadBuyer()), ...patch } }));
 
   const buyerValid = (b: Buyer) => b.name.trim().length > 0 && b.mobile.replace(/\D/g, "").length >= 5;
   const buyersOk = oneBuyer ? buyerValid(shared) : units.every((u) => buyerValid(buyerFor(u)));
@@ -65,9 +78,13 @@ export function BookVisitsDrawer({ units, onClose }: { units: BookUnit[]; onClos
       selected_date: date.date,
       selected_time: slot,
       source: cfg.data?.default_source || "direct",
+      lead_id: leadId ?? null,   // links each booked visit to the lead → Pipeline tab
       visits: units.map((u) => {
         const b = buyerFor(u);
-        return { home_id: Number(u.homeId), city: u.city, buyer_name: b.name.trim(), buyer_mobile: b.mobile };
+        return {
+          home_id: Number(u.homeId), city: u.city, society: u.society,
+          buyer_name: b.name.trim(), buyer_mobile: b.mobile,
+        };
       }),
     })
       .then((res) => {

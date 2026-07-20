@@ -3,7 +3,7 @@
    for all three segments, switched by the `segment` prop. */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useLeads, formatDate } from "../lib/queries";
+import { useLeads, formatDate, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, stageClass, stageLabel, initials, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
@@ -16,8 +16,8 @@ import { AssignControl } from "../components/AssignControl";
 import { VisitPlanner } from "../features/VisitPlanner";
 
 const SUBS: Record<string, string> = {
-  qualified: "Confirmed on call, within 7 days of qualifying. After 7 days a lead auto-moves to Pipeline.",
-  pipeline: "Qualified leads that have aged 7+ days in the funnel — still active.",
+  qualified: "Confirmed on call — no site visit booked yet. Booking one moves the lead to Pipeline.",
+  pipeline: "A site visit is booked on the Openhouse app — status syncs from the ops sheet.",
   converted: "Won — token received.",
   rejected: "Leads rejected with a reason and notes.",
 };
@@ -32,14 +32,48 @@ function TatChip({ deadline }: { deadline: string | null }) {
   return <span className="tat ok">{mins}m left</span>;
 }
 
+// ★ toggle — marks a lead hot (Pipeline filter uses it)
+function HotStar({ lead }: { lead: Lead }) {
+  const mark = useMarkHot();
+  return (
+    <button
+      className={"hot-star" + (lead.is_hot ? " on" : "")}
+      title={lead.is_hot ? "Unmark as hot" : "Mark as hot"}
+      disabled={mark.isPending}
+      onClick={(e) => { e.stopPropagation(); mark.mutate({ id: lead.id, hot: !lead.is_hot }); }}
+    >
+      {lead.is_hot ? "★" : "☆"}
+    </button>
+  );
+}
+
+// booked-visit status, synced from the ops visits sheet
+const VISIT_LABEL: Record<string, [string, string]> = {
+  upcoming: ["upcoming", "Upcoming"],
+  completed: ["completed", "Completed"],
+  cancelled: ["cancelled", "Cancelled"],
+};
+function VisitChip({ lead }: { lead: Lead }) {
+  if (!lead.visit_status) return <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>;
+  const [cls, label] = VISIT_LABEL[lead.visit_status] || ["upcoming", lead.visit_status];
+  return (
+    <span className={`visit-chip ${cls}`} title={`${lead.visit_count} visit${lead.visit_count === 1 ? "" : "s"} booked`}>
+      {label}{lead.visit_date ? ` · ${lead.visit_date}` : ""}{lead.visit_count > 1 ? ` ×${lead.visit_count}` : ""}
+    </span>
+  );
+}
+
 export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "converted" | "rejected" }) {
   const rejected = segment === "rejected";
+  const pipeline = segment === "pipeline";
   const { data, isLoading } = useLeads(segment);
   const nav = useNavigate();
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
   const [owner, setOwner] = useState("");
+  const [hotOnly, setHotOnly] = useState(false);
+  const [visitStatus, setVisitStatus] = useState("");
   const [planner, setPlanner] = useState<Lead | null>(null);
 
   const all = data?.items ?? [];
@@ -48,6 +82,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
       (!source || l.source === source) &&
       (!city || l.city === city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      (!hotOnly || l.is_hot) &&
+      (!visitStatus || l.visit_status === visitStatus) &&
       leadMatchesQuery(query, l)
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
@@ -60,6 +96,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     reason: (l) => l.reject_reason,
     rejected: (l) => (l.rejected_at ? Date.parse(l.rejected_at) : null),
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
+    visit: (l) => l.visit_status,
   });
   const sel = useRowSelection(list.map((l) => l.id));
 
@@ -75,8 +112,21 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
           <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
-          {(source || city || owner) && (
-            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); }}>Clear</button>
+          {pipeline && (
+            <>
+              <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
+              <button
+                className={"btn sm " + (hotOnly ? "" : "ghost")}
+                style={hotOnly ? { background: "var(--coral)", color: "#fff" } : undefined}
+                onClick={() => setHotOnly((v) => !v)}
+                title="Show only leads starred as hot"
+              >
+                ★ Hot only{hotOnly ? ` (${filtered.length})` : ""}
+              </button>
+            </>
+          )}
+          {(source || city || owner || hotOnly || visitStatus) && (
+            <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setHotOnly(false); setVisitStatus(""); }}>Clear</button>
           )}
         </div>
       </div>
@@ -90,7 +140,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               <th style={{ width: 30 }}>
                 <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
               </th>
+              {pipeline && <th style={{ width: 34 }} title="Hot">★</th>}
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
+              {pipeline && <SortTh label="Visit" sortKey="visit" activeKey={sortKey} dir={dir} onSort={onSort} />}
               <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
               {rejected ? (
                 <>
@@ -112,9 +164,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={pipeline ? 11 : 9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={pipeline ? 11 : 9}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -123,6 +175,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
                   </td>
+                  {pipeline && <td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
                   <td>
                     <div className="who">
                       <div className="av">{initials(l.name)}</div>
@@ -132,6 +185,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       </div>
                     </div>
                   </td>
+                  {pipeline && <td><VisitChip lead={l} /></td>}
                   <td><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
                   {rejected ? (
                     <>
@@ -163,7 +217,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
         </table>
       </div>
       {planner && (
-        <VisitPlanner leadId={planner.id} leadName={planner.name} leadCity={planner.city} onClose={() => setPlanner(null)} />
+        <VisitPlanner leadId={planner.id} leadName={planner.name} leadCity={planner.city} leadPhone={planner.phone} onClose={() => setPlanner(null)} />
       )}
     </>
   );

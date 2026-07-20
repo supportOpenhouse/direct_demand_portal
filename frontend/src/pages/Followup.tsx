@@ -88,7 +88,7 @@ export default function Followup() {
         <div>
           <p className="sec-sub" style={{ margin: 0 }}>
             <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-            callbacks · moved-in today, then due today, then overdue (latest first). Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> asks why, then reschedules inside calling hours (10 AM–7 PM).
+            callbacks
           </p>
           <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>

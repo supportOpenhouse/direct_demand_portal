@@ -279,7 +279,7 @@ export default function Settings() {
         <div className="section-head">
           <div>
             <div className="panel-title" style={{ marginBottom: 2 }}>Users & access</div>
-            <p className="sec-sub" style={{ margin: 0 }}>Only these people can sign in. Each maps to their leads by the sheet's “Assigned to” name.</p>
+            <p className="sec-sub" style={{ margin: 0 }}>Each user maps to their leads by the sheet's “Assigned to” name.</p>
           </div>
           <button className="btn green" onClick={() => setAdding(true)}>+ Add user</button>
         </div>

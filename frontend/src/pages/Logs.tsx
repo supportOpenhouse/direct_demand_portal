@@ -62,7 +62,6 @@ export default function Logs() {
     <>
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
-          Every action taken in the portal, with the actor and result.{" "}
           <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> events{isFetching ? " · updating…" : ""}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>

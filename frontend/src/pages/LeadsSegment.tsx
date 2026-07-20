@@ -16,12 +16,6 @@ import { VisitsCell } from "../components/VisitsCell";
 import { AssignControl } from "../components/AssignControl";
 import { VisitPlanner } from "../features/VisitPlanner";
 
-const SUBS: Record<string, string> = {
-  qualified: "Confirmed on call — no site visit booked yet. Booking one moves the lead to Pipeline.",
-  pipeline: "A site visit is booked on the Openhouse app — status syncs from the ops sheet.",
-  converted: "Won — token received.",
-  rejected: "Leads rejected with a reason and notes.",
-};
 const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
 
 // minutes from a TAT deadline → the prototype's ok/warn/breach chip (null → —)
@@ -90,7 +84,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
       <div className="section-head">
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-          {NOUN[segment]} · {SUBS[segment]}
+          {NOUN[segment]}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}

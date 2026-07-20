@@ -243,13 +243,9 @@ function FollowupWidget({ id, value, onChange, invalid, current }: { id: string;
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M9 2h6" /></svg>{" "}
         Schedule a follow-up <span style={{ color: "var(--coral)" }}>*</span>
       </div>
-      <div style={{ fontSize: 11.5, color: "var(--muted)", margin: "-4px 0 10px" }}>
-        Required for every lead. <b>Save &amp; move</b> sets a plain callback; or fill the form below and qualify / save details — both use this time.
-      </div>
       {current && (
         <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
-          Currently set: <span className="fu-chip">⏰ {formatDateTime(current)}</span>{" "}
-          <span style={{ color: "var(--muted)" }}>— kept until you save a new time</span>
+          Currently set: <span className="fu-chip">⏰ {formatDateTime(current)}</span>
         </div>
       )}
       <div className="fu-row">

@@ -14,7 +14,7 @@ export default function Dashboard() {
         <div>
           <h1 style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 24, margin: 0, letterSpacing: "-.02em" }}>Hello, {name} 👋</h1>
           <p className="sec-sub" style={{ margin: "2px 0 0" }}>
-            Lead &amp; supply analytics · {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
+            {new Date().toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "long" })}
           </p>
         </div>
       </div>

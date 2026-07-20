@@ -40,7 +40,7 @@ export default function Rnr() {
       <div className="section-head">
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-          unreachable leads — 10 consecutive missed calls, never connected. Terminal, like Rejected.
+          unreachable leads
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}

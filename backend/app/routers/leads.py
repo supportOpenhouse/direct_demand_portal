@@ -36,15 +36,17 @@ _HAS_VISIT = "SELECT 1 FROM crm_visits v WHERE v.lead_id = leads.id"
 SEGMENTS = {
     "new": "stage = 'new' AND follow_up_at IS NULL",
     "followup": f"stage NOT IN {_TERMINAL} AND follow_up_at IS NOT NULL",
-    # Qualified = confirmed on call and no visit booked yet (booking one moves it to Pipeline)
-    "qualified": f"confirmed = true AND stage NOT IN {_TERMINAL} AND qualified_at IS NOT NULL "
-                 f"AND NOT EXISTS ({_HAS_VISIT})",
-    # Pipeline = a visit has actually been booked on the Openhouse app. PLUS a safety net:
-    # a lead worked past New but never qualified (e.g. a site visit planned straight from
-    # New Leads) matches no other tab, so it would vanish entirely — catch it here.
+    # Qualified = confirmed on call, or a trip planned locally (preparation) — but no visit
+    # booked yet. Booking a real visit moves the lead to Pipeline.
+    "qualified": f"stage NOT IN {_TERMINAL} AND stage <> 'visit_scheduled' "
+                 f"AND NOT EXISTS ({_HAS_VISIT}) "
+                 "AND (confirmed = true OR stage = 'visit_planned')",
+    # Pipeline = a visit is actually booked on the Openhouse app. PLUS a safety net: a lead
+    # worked past New that matches no other tab would vanish entirely — catch it here.
     "pipeline": f"stage NOT IN {_TERMINAL} AND ("
-                f"EXISTS ({_HAS_VISIT}) "
-                "OR (stage <> 'new' AND qualified_at IS NULL AND follow_up_at IS NULL))",
+                f"EXISTS ({_HAS_VISIT}) OR stage = 'visit_scheduled' "
+                "OR (stage NOT IN ('new','visit_planned') AND confirmed = false "
+                "AND qualified_at IS NULL AND follow_up_at IS NULL))",
     "converted": "stage = 'won'",
     "rnr": "stage = 'rnr'",
     "rejected": "stage = 'rejected'",

@@ -127,7 +127,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               </th>
               {pipeline && <th style={{ width: 34 }} title="Hot">★</th>}
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
-              {pipeline && <SortTh label="Visit" sortKey="visit" activeKey={sortKey} dir={dir} onSort={onSort} />}
               <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
               {rejected ? (
                 <>
@@ -149,9 +148,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={pipeline ? 11 : 9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={pipeline ? 10 : 9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={pipeline ? 11 : 9}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={pipeline ? 10 : 9}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -170,7 +169,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       </div>
                     </div>
                   </td>
-                  {pipeline && <td><VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} /></td>}
                   <td><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
                   {rejected ? (
                     <>
@@ -180,7 +178,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     </>
                   ) : (
                     <>
-                      <td><span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span></td>
+                      <td>{l.visit_status
+                        ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} />
+                        : <span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span>}</td>
                       <td><TatChip deadline={l.tat_deadline} /></td>
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     </>

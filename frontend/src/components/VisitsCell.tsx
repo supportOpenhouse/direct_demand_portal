@@ -4,8 +4,13 @@
 import { useState } from "react";
 import { useLeadCrmVisits } from "../lib/queries";
 
-const LABEL: Record<string, string> = { upcoming: "Upcoming", completed: "Completed", cancelled: "Cancelled" };
-const cls = (s: string | null) => `visit-chip ${s && LABEL[s] ? s : "upcoming"}`;
+// the booked-visit state IS the lead's stage once a visit exists, so it renders as a
+// stage chip in the Stage column rather than a separate one
+const LABEL: Record<string, string> = {
+  upcoming: "Visit Scheduled", completed: "Visit Completed", cancelled: "Visit Cancelled",
+};
+const STAGE_CLS: Record<string, string> = { upcoming: "visit", completed: "won", cancelled: "lost" };
+const cls = (s: string | null) => `stage ${(s && STAGE_CLS[s]) || "visit"}`;
 
 export function VisitsCell({
   leadId, status, date, count,
@@ -20,7 +25,8 @@ export function VisitsCell({
     <div className="visits-cell" onClick={(e) => e.stopPropagation()}>
       {!open ? (
         <>
-          <span className={cls(status)}>{LABEL[status] || status}{date ? ` · ${date}` : ""}</span>
+          <span className={cls(status)}>{LABEL[status] || status}</span>
+          {date && <div className="vc-date">{date}</div>}
           {count > 1 && (
             <button className="note-toggle" onClick={() => setOpen(true)}>▾ all {count} visits</button>
           )}

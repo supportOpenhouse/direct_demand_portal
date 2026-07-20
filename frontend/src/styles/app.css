@@ -737,3 +737,4 @@ a.nav-item{text-decoration:none}
 
 /* inventory unit with no lat/lng yet — visitable, just not routable */
 .no-geo{color:var(--gold);font-weight:600}
+.visits-cell .vc-date{font-size:10.5px;color:var(--muted);font-family:"Spline Sans Mono";margin-top:3px}

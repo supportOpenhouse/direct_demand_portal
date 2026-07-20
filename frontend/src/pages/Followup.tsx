@@ -52,8 +52,27 @@ export default function Followup() {
       inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
       leadMatchesQuery(query, l)
   );
-  // default order = backend's soonest-due-first; columns can re-sort
-  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
+  /* Default order mirrors the row highlights, most-actionable first:
+       0 green    — moved into Follow-up today
+       1 blue     — follow-up due today
+       2 overdue  — due before today, latest → oldest (freshest misses first)
+       3 upcoming — due later, soonest first
+     Picking a column header still overrides all of this. */
+  const dayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
+  const rank = (l: Lead): number => {
+    if (isToday(l.follow_up_since)) return 0;
+    if (isToday(l.follow_up_at)) return 1;
+    const t = l.follow_up_at ? Date.parse(l.follow_up_at) : null;
+    return t !== null && t < dayStart ? 2 : 3;
+  };
+  const ordered = [...filtered].sort((a, b) => {
+    const ra = rank(a), rb = rank(b);
+    if (ra !== rb) return ra - rb;
+    const ta = a.follow_up_at ? Date.parse(a.follow_up_at) : 0;
+    const tb = b.follow_up_at ? Date.parse(b.follow_up_at) : 0;
+    return ra === 2 ? tb - ta : ta - tb; // overdue: latest first · others: soonest first
+  });
+  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(ordered, {
     name: (l) => l.name,
     due: (l) => (l.follow_up_at ? Date.parse(l.follow_up_at) : null),
     misses: (l) => l.miss_count,
@@ -68,7 +87,7 @@ export default function Followup() {
         <div>
           <p className="sec-sub" style={{ margin: 0 }}>
             <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-            callbacks due · soonest first. Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> reschedules +3h.
+            callbacks · moved-in today, then due today, then overdue (latest first). Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> reschedules +3h.
           </p>
           <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>

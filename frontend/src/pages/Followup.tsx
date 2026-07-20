@@ -1,7 +1,8 @@
 /* Follow-up — the callback worklist. Any non-terminal lead with an open follow-up
    lands here (not-connected + saved-not-qualified live ONLY here; qualified leads
    also appear as a due reminder). Rows are gated: Yes logs a connected call and opens
-   the lead, No reschedules +3h (10 misses on a never-reached lead → RNR). */
+   the lead, No asks why and reschedules accordingly (10 misses on a never-reached
+   lead → RNR; an invalid number → Rejected). */
 import { useState } from "react";
 import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
@@ -87,7 +88,7 @@ export default function Followup() {
         <div>
           <p className="sec-sub" style={{ margin: 0 }}>
             <b style={{ color: "var(--ink-2)" }}>{filtered.length !== all.length ? `${filtered.length} of ${all.length}` : all.length}</b>{" "}
-            callbacks · moved-in today, then due today, then overdue (latest first). Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> reschedules +3h.
+            callbacks · moved-in today, then due today, then overdue (latest first). Log every attempt — <b style={{ color: "var(--emerald)" }}>Yes</b> opens the lead, <b style={{ color: "var(--coral)" }}>No</b> asks why, then reschedules inside calling hours (10 AM–7 PM).
           </p>
           <div style={{ display: "flex", gap: 14, alignItems: "center", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>
             <span style={{ display: "flex", alignItems: "center", gap: 5 }}>

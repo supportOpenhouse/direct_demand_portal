@@ -449,6 +449,9 @@ export default function LeadDetail() {
   const [micromarkets, setMicromarkets] = useState<string[]>([]);
   const [societies, setSocieties] = useState<string[]>([]);
   const [localities, setLocalities] = useState<string[]>([]);
+  // cascaded "+" options — offered by the level above, never auto-selected
+  const [localitySuggest, setLocalitySuggest] = useState<string[]>([]);
+  const [societySuggest, setSocietySuggest] = useState<string[]>([]);
   const [office, setOffice] = useState("");
   const [officeDate, setOfficeDate] = useState("");
   const [remark, setRemark] = useState("");
@@ -468,17 +471,22 @@ export default function LeadDetail() {
     setMicromarkets(c?.preferred_micromarkets || []);
     setSocieties(c?.shortlisted_societies?.length ? c.shortlisted_societies : lead.society ? [lead.society] : []);
     setLocalities(c?.preferred_localities || []);
+    setLocalitySuggest([]);
+    setSocietySuggest([]);
     setOffice(c?.office_willing || "");
     setOfficeDate(c?.office_preferred_date || "");
     setRemark(c?.remark || "");
     setFollowUp("");  // always blank on open — RM enters a fresh follow-up for this connected call
   }, [lead]);
 
-  // cascade: a micro-market fills its localities AND their societies; a locality fills its societies
-  const addSocietiesFor = async (locs: string[]) => {
+  // Cascade: a micro-market OFFERS its localities and their societies; a locality offers
+  // its societies. Nothing is auto-selected — a micro-market can carry 30+ societies and
+  // silently shortlisting all of them buries the handful the buyer actually named. The RM
+  // picks from the "+" chips; picking one moves it into the selected (✕) chips.
+  const suggestSocietiesFor = async (locs: string[]) => {
     const lists = await Promise.all(locs.map((l) => api.societiesByLocality(l).then((r) => r.items).catch(() => [])));
     const socs = lists.flat();
-    if (socs.length) setSocieties((prev) => Array.from(new Set([...prev, ...socs])));
+    if (socs.length) setSocietySuggest((prev) => Array.from(new Set([...prev, ...socs])));
   };
   const onMicromarketsChange = (next: string[]) => {
     const added = next.filter((m) => !micromarkets.includes(m));
@@ -486,15 +494,15 @@ export default function LeadDetail() {
     added.forEach(async (mm) => {
       try {
         const locs = (await api.localitiesByMicromarket(mm)).items;
-        setLocalities((prev) => Array.from(new Set([...prev, ...locs])));
-        addSocietiesFor(locs); // cascade the second level too
+        setLocalitySuggest((prev) => Array.from(new Set([...prev, ...locs])));
+        suggestSocietiesFor(locs); // offer the second level too
       } catch { /* ignore */ }
     });
   };
   const onLocalitiesChange = (next: string[]) => {
     const added = next.filter((l) => !localities.includes(l));
     setLocalities(next);
-    addSocietiesFor(added);
+    suggestSocietiesFor(added);
   };
 
   // live matching — recomputes (debounced) as any requirement field changes
@@ -642,7 +650,7 @@ export default function LeadDetail() {
             </div>
 
             <div className="field">
-              <label>Q5. Micro-markets <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— auto-fills localities + societies</span></label>
+              <label>Q5. Micro-markets <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— suggests localities + societies</span></label>
               <AutocompleteChips
                 value={micromarkets}
                 onChange={onMicromarketsChange}
@@ -652,10 +660,11 @@ export default function LeadDetail() {
             </div>
 
             <div className="field">
-              <label>Q6. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— auto-fills societies</span></label>
+              <label>Q6. Preferred localities <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— suggests societies</span></label>
               <AutocompleteChips
                 value={localities}
                 onChange={onLocalitiesChange}
+                suggestions={localitySuggest}
                 placeholder="Search localities…"
                 fetcher={async (q) => (await api.searchLocalities(q)).items.map((l) => ({ label: l }))}
               />
@@ -666,6 +675,7 @@ export default function LeadDetail() {
               <AutocompleteChips
                 value={societies}
                 onChange={setSocieties}
+                suggestions={societySuggest}
                 placeholder="Search societies…"
                 fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", ") }))}
               />

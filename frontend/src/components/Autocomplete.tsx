@@ -72,12 +72,15 @@ export function AutocompleteChips({
   fetcher,
   placeholder,
   renderHit,
+  suggestions = [],
 }: {
   value: string[];
   onChange: (v: string[]) => void;
   fetcher: (q: string) => Promise<{ label: string; sub?: string | null }[]>;
   placeholder: string;
   renderHit?: (h: { label: string; sub?: string | null }) => React.ReactNode;
+  /** Cascaded options offered as "+" chips — nothing is selected until clicked. */
+  suggestions?: string[];
 }) {
   const [text, setText] = useState("");
   const [hits, setHits] = useState<{ label: string; sub?: string | null }[]>([]);
@@ -119,6 +122,9 @@ export function AutocompleteChips({
     setOpen(false);
   };
 
+  // a cascade only offers — picking one moves it out of the suggestions into the chips
+  const pending = suggestions.filter((s) => !value.includes(s));
+
   return (
     <div className="ms" ref={box} style={{ position: "relative" }}>
       {value.length > 0 && (
@@ -128,6 +134,16 @@ export function AutocompleteChips({
               {v}
               <span style={{ cursor: "pointer" }} onClick={() => onChange(value.filter((x) => x !== v))}>✕</span>
             </span>
+          ))}
+        </div>
+      )}
+      {pending.length > 0 && (
+        <div className="sugg-row">
+          <span className="sugg-lbl">Suggested</span>
+          {pending.map((s) => (
+            <button type="button" key={s} className="sugg-chip" onClick={() => onChange([...value, s])}>
+              <span className="sc-plus">+</span>{s}
+            </button>
           ))}
         </div>
       )}

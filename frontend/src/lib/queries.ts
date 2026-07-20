@@ -190,10 +190,13 @@ export function useRejectLead(id: string) {
 export function useCallResult() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, connected }: { id: string; connected: boolean }) => api.callResult(id, connected),
+    mutationFn: ({ id, connected, reason, notes }:
+      { id: string; connected: boolean; reason?: string; notes?: string }) =>
+      api.callResult(id, connected, reason, notes),
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["lead-notes", id] });  // a "No" writes a note
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });

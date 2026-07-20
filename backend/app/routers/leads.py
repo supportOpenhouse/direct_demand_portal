@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -316,18 +316,56 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
 
 # --- call worklist (New Leads / Follow-up) -----------------------------------
 
+IST = timezone(timedelta(hours=5, minutes=30))
+WORK_START_HOUR, WORK_END_HOUR = 10, 19  # calling hours, IST
+
+# "No" on the worklist → why, and what it costs the lead. Value = auto follow-up
+# delay in hours; None = the number is unusable, so the lead is rejected outright.
+MISS_REASONS: dict[str, int | None] = {
+    "Did Not Pick / Not Reachable": 3,
+    "Switched Off": 6,
+    "Invalid Number": None,
+}
+
+
+def _within_calling_hours(dt: datetime) -> datetime:
+    """Clamp an AUTO-computed follow-up into the 10:00–19:00 IST calling window:
+    before 10:00 → same day 10:00, at/after 19:00 → next day 10:00. Manually set
+    follow-ups deliberately bypass this — the RM may book any time the buyer asks for."""
+    local = dt.astimezone(IST)
+    if local.hour < WORK_START_HOUR:
+        local = local.replace(hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
+    elif local.hour >= WORK_END_HOUR:
+        local = (local + timedelta(days=1)).replace(
+            hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
+    return local.astimezone(timezone.utc)
+
+
 class CallResult(BaseModel):
     connected: bool
+    reason: str | None = None
+    notes: str | None = None
 
 
 @router.post("/leads/{lead_id}/call-result")
-async def call_result(lead_id: UUID, payload: CallResult):
+async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(current_user)):
     """Log a call attempt from the New Leads / Follow-up worklist.
     connected=True  → opens the lead (caller navigates); resets the miss streak.
-    connected=False → +3h follow-up; 10 consecutive misses on a never-connected lead → RNR."""
+    connected=False → reason + notes are both mandatory. Did Not Pick → +3h,
+    Switched Off → +6h (both clamped to calling hours); Invalid Number → Rejected.
+    10 consecutive misses on a never-connected lead still escalate to RNR."""
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+
+    note = (payload.notes or "").strip()
+    if not payload.connected:
+        if payload.reason not in MISS_REASONS:
+            raise HTTPException(status_code=422, detail={"fields": ["reason"], "message": "pick a reason"})
+        if not note:
+            raise HTTPException(status_code=422, detail={"fields": ["notes"], "message": "notes are required"})
+    author = user.get("name") or user.get("email") or "You"
+
     async with engine.begin() as conn:
         row = (await conn.execute(
             text("SELECT miss_count, ever_connected FROM leads WHERE id = :id"), {"id": lead_id}
@@ -337,20 +375,36 @@ async def call_result(lead_id: UUID, payload: CallResult):
         if payload.connected:
             await conn.execute(
                 text("UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"), {"id": lead_id})
-            return {"status": "ok", "connected": True, "moved_to_rnr": False}
+            return {"status": "ok", "connected": True, "moved_to_rnr": False, "rejected": False}
+
+        # goes into the shared thread, so it surfaces in the Notes column like any other note
+        await conn.execute(pg_insert(LeadNote).values(
+            lead_id=lead_id, body=note, author=author, source="call"))
+
+        delay = MISS_REASONS[payload.reason]
+        if delay is None:  # Invalid Number — no point calling back
+            await conn.execute(text(
+                "UPDATE leads SET stage = 'rejected', reject_reason = :r, reject_notes = :n, "
+                "rejected_at = now(), follow_up_at = NULL, follow_up_since = NULL WHERE id = :id"),
+                {"r": payload.reason, "n": note, "id": lead_id})
+            return {"status": "ok", "connected": False, "moved_to_rnr": False,
+                    "rejected": True, "follow_up_at": None}
+
         new_miss = (row["miss_count"] or 0) + 1
-        to_rnr = (not row["ever_connected"]) and new_miss >= 10
-        if to_rnr:
+        if (not row["ever_connected"]) and new_miss >= 10:
             await conn.execute(text(
                 "UPDATE leads SET miss_count = :m, stage = 'rnr', follow_up_at = NULL, "
-                "follow_up_since = NULL WHERE id = :id"),
-                {"m": new_miss, "id": lead_id})
-        else:
-            await conn.execute(text(
-                "UPDATE leads SET miss_count = :m, follow_up_at = now() + interval '3 hours', "
-                "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
-                {"m": new_miss, "id": lead_id})
-        return {"status": "ok", "connected": False, "moved_to_rnr": to_rnr, "miss_count": new_miss}
+                "follow_up_since = NULL WHERE id = :id"), {"m": new_miss, "id": lead_id})
+            return {"status": "ok", "connected": False, "moved_to_rnr": True, "rejected": False,
+                    "miss_count": new_miss, "follow_up_at": None}
+
+        due = _within_calling_hours(datetime.now(timezone.utc) + timedelta(hours=delay))
+        await conn.execute(text(
+            "UPDATE leads SET miss_count = :m, follow_up_at = :t, "
+            "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
+            {"m": new_miss, "t": due, "id": lead_id})
+        return {"status": "ok", "connected": False, "moved_to_rnr": False, "rejected": False,
+                "miss_count": new_miss, "follow_up_at": due.isoformat()}
 
 
 class FollowupPayload(BaseModel):
@@ -408,7 +462,10 @@ async def mark_hot(lead_id: UUID, payload: HotPayload):
     return {"status": "ok", "is_hot": payload.hot}
 
 
-REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch", "No Requirement"}
+# every value reject_reason can hold. "Invalid Number" is only ever set by the
+# worklist's No → Invalid Number path, not offered in the manual reject dropdown.
+REJECT_REASONS = {"Broker", "Budget", "Location", "Requirement Mismatch", "No Requirement",
+                  "Invalid Number"}
 
 
 class RejectPayload(BaseModel):

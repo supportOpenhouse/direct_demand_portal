@@ -402,6 +402,13 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .field select[multiple]{height:auto;padding:6px}
 .field select[multiple] option{padding:4px 7px;border-radius:5px}
 .bucket-tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--gold-soft);color:#8a6408;border:1px solid #ead9a0}
+/* cascaded suggestions — offered, not selected: dashed + muted until clicked */
+.sugg-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
+.sugg-lbl{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-right:2px}
+.sugg-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:6px;background:transparent;color:var(--ink-2);border:1px dashed var(--line-2,#d7dce5);cursor:pointer;transition:all .15s}
+.sugg-chip:hover{background:var(--gold-soft);color:#8a6408;border-color:#ead9a0;border-style:solid}
+.sugg-chip .sc-plus{font-weight:800;color:var(--muted)}
+.sugg-chip:hover .sc-plus{color:#8a6408}
 .bucket-card{overflow:hidden}
 .bucket-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background-size:cover;background-position:center;color:#fff}
 .bucket-head .bn{font-family:"Bricolage Grotesque";font-weight:700;font-size:16px;letter-spacing:-.01em}

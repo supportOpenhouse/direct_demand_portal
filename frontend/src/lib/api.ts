@@ -265,9 +265,10 @@ export const api = {
     request<{ status: string; meta_new: number; listing_new: number }>("/v1/leads/sync", { method: "POST" }),
   confirmLead: (id: string, payload: ConfirmPayload) =>
     request<{ status: string }>(`/v1/leads/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }),
-  callResult: (id: string, connected: boolean) =>
-    request<{ status: string; connected: boolean; moved_to_rnr: boolean; miss_count?: number }>(
-      `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected }) }),
+  callResult: (id: string, connected: boolean, reason?: string, notes?: string) =>
+    request<{ status: string; connected: boolean; moved_to_rnr: boolean; rejected: boolean;
+              miss_count?: number; follow_up_at?: string | null }>(
+      `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected, reason, notes }) }),
   setFollowup: (id: string, followUpAt: string) =>
     request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
   leadCrmVisits: (id: string) => request<{ items: CrmVisitRow[] }>(`/v1/leads/${id}/crm-visits`),

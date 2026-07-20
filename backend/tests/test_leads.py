@@ -1,3 +1,6 @@
+from datetime import datetime
+
+from app.routers.leads import IST, MISS_REASONS, _within_calling_hours
 from app.services.leads_sync import (
     build_listing,
     build_meta,
@@ -75,3 +78,33 @@ def test_build_listing_maps_source_and_property():
     assert spine[0]["society"] == "Supertech Cape Town"
     assert spine[0]["city"] == "Noida"
     assert spine[0]["origin_key"] == "listing:9971652700"
+
+
+# --- calling-hours clamp on auto follow-ups ----------------------------------
+
+def _ist(y, mo, d, h, mi=0):
+    return datetime(y, mo, d, h, mi, tzinfo=IST)
+
+
+def test_auto_followup_inside_calling_hours_is_untouched():
+    # 12:00 + 3h = 15:00 IST — well inside 10:00-19:00
+    assert _within_calling_hours(_ist(2026, 7, 20, 15)).astimezone(IST) == _ist(2026, 7, 20, 15)
+
+
+def test_auto_followup_after_close_rolls_to_next_morning():
+    # missed call at 17:00 → +3h lands at 20:00, past the 19:00 cutoff
+    assert _within_calling_hours(_ist(2026, 7, 20, 20)).astimezone(IST) == _ist(2026, 7, 21, 10)
+    # exactly 19:00 is already outside the window
+    assert _within_calling_hours(_ist(2026, 7, 20, 19)).astimezone(IST) == _ist(2026, 7, 21, 10)
+    # switched-off at 18:30 → +6h crosses midnight; the date must roll with it
+    assert _within_calling_hours(_ist(2026, 7, 21, 0, 30)).astimezone(IST) == _ist(2026, 7, 21, 10)
+
+
+def test_auto_followup_before_open_waits_for_10am():
+    assert _within_calling_hours(_ist(2026, 7, 20, 9, 45)).astimezone(IST) == _ist(2026, 7, 20, 10)
+
+
+def test_miss_reasons_delays():
+    assert MISS_REASONS["Did Not Pick / Not Reachable"] == 3
+    assert MISS_REASONS["Switched Off"] == 6
+    assert MISS_REASONS["Invalid Number"] is None  # rejected, never re-queued

@@ -39,7 +39,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
   const markers = useRef<any[]>([]);
   const dirRenderer = useRef<any>(null);
 
-  const units = useMemo(() => (inv?.items ?? []).filter((u) => u.lat != null && u.lng != null), [inv]);
+  // Every live unit is pickable. Units without lat/lng (geocoding pending) can still be
+  // added as stops — they just can't be plotted or routed, so they're flagged instead of
+  // silently hidden, which used to make ~22% of inventory look missing here.
+  const units = useMemo(() => inv?.items ?? [], [inv]);
+  const hasGeo = (u: InventoryItem) => u.lat != null && u.lng != null;
   const cities = useMemo(() => Array.from(new Set(units.map((u) => u.city).filter((c): c is string => !!c))).sort(), [units]);
   const sq = societyQuery.trim().toLowerCase();
   // scope to the chosen city first, then filter by the society search within it
@@ -49,11 +53,13 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     : inCity;
   const byId = (id: number) => units.find((u) => u.id === id);
   const stops = stopIds.map(byId).filter((u): u is InventoryItem => !!u);
+  const mapStops = stops.filter(hasGeo);          // only these can be drawn / routed
+  const unmapped = stops.filter((u) => !hasGeo(u));
 
   // estimate metrics (instant, haversine); replaced by Google driving values when available
   const est = useMemo(() => {
-    const legs = stops.slice(1).map((s, i) => estimateLeg(stops[i] as Pt, s as Pt));
-    const fromStart = start && stops.length ? estimateLeg(start, stops[0] as Pt) : null;
+    const legs = mapStops.slice(1).map((s, i) => estimateLeg(mapStops[i] as Pt, s as Pt));
+    const fromStart = start && mapStops.length ? estimateLeg(start, mapStops[0] as Pt) : null;
     const all = fromStart ? [fromStart, ...legs] : legs;
     return {
       legs,
@@ -61,7 +67,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
       totalKm: +all.reduce((a, l) => a + l.km, 0).toFixed(1),
       totalMin: all.reduce((a, l) => a + l.min, 0),
     };
-  }, [stopIds, start]);
+  }, [stopIds, start, inv]);
 
   const total = googleMetrics
     ? { km: googleMetrics.km, min: googleMetrics.min, source: "google" as const }
@@ -117,7 +123,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
       }));
       bounds.extend(start);
     }
-    stops.forEach((s, i) => {
+    mapStops.forEach((s, i) => {
       markers.current.push(new g.maps.Marker({
         position: { lat: s.lat!, lng: s.lng! }, map: mapObj.current,
         label: { text: String(i + 1), color: "#fff", fontWeight: "700" }, title: `Visit ${i + 1} · ${s.name}`,
@@ -125,16 +131,16 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
       bounds.extend({ lat: s.lat!, lng: s.lng! });
     });
     if (dirRenderer.current) dirRenderer.current.set("directions", null);
-    if (!stops.length) return;
+    if (!mapStops.length) return;
     if (markers.current.length) mapObj.current.fitBounds(bounds, 60);
 
-    const waypts = stops.slice(0, -1).map((s) => ({ location: { lat: s.lat!, lng: s.lng! }, stopover: true }));
-    const origin = start || { lat: stops[0].lat!, lng: stops[0].lng! };
+    const waypts = mapStops.slice(0, -1).map((s) => ({ location: { lat: s.lat!, lng: s.lng! }, stopover: true }));
+    const origin = start || { lat: mapStops[0].lat!, lng: mapStops[0].lng! };
     const startIdx = start ? 0 : 1;
     new g.maps.DirectionsService().route(
       {
         origin,
-        destination: { lat: stops[stops.length - 1].lat!, lng: stops[stops.length - 1].lng! },
+        destination: { lat: mapStops[mapStops.length - 1].lat!, lng: mapStops[mapStops.length - 1].lng! },
         waypoints: start ? waypts : waypts.slice(1),
         travelMode: g.maps.TravelMode.DRIVING,
       },
@@ -256,7 +262,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                     <div key={p.id} className={"pick-row" + (added ? " added" : "")}>
                       <div style={{ minWidth: 0 }}>
                         <div className="pk-n">{p.name}</div>
-                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}</div>
+                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}{!hasGeo(p) && <span className="no-geo" title="No map location yet — can be visited, but not plotted or routed"> · 📍 no map location</span>}</div>
                       </div>
                       <button className={"btn sm pk-add " + (added ? "ghost" : "primary")} disabled={added} onClick={() => add(p.id)}>
                         {added ? "Added ✓" : "+ Add"}
@@ -286,7 +292,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                       {leg && <div className="leg"><span className="lp" />{leg.km} km · {fmtMin(leg.min)} {legLabel || "(est.)"}</div>}
                       <div className="itin-stop">
                         <div className="num">{i + 1}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}</div></div>
+                        <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}{!hasGeo(p) && <span className="no-geo"> · 📍 not on map</span>}</div></div>
                         <div className="ops">
                           <button title="Up" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
                           <button title="Down" onClick={() => move(i, 1)} disabled={i === stops.length - 1}>↓</button>

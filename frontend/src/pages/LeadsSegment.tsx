@@ -113,6 +113,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
       <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
 
       <div className="card">
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -194,6 +195,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
             )}
           </tbody>
         </table>
+        </div>
       </div>
       {planner && (
         <VisitPlanner leadId={planner.id} leadName={planner.name} leadCity={planner.city} leadPhone={planner.phone} onClose={() => setPlanner(null)} />

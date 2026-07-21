@@ -316,6 +316,7 @@ export default function Analytics() {
         {m.reps.length === 0 ? (
           <div className="empty" style={{ padding: 24 }}>No assigned leads yet.</div>
         ) : (
+          <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -350,6 +351,7 @@ export default function Analytics() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

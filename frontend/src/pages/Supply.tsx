@@ -130,6 +130,7 @@ export default function Supply() {
               : "No units match the current search / filters."}
           </div>
         ) : (
+          <div className="table-wrap">
           <table>
             <thead>
               <tr>
@@ -166,6 +167,7 @@ export default function Supply() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </>

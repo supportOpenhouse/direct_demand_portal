@@ -117,6 +117,7 @@ export default function NewLeads() {
             Qualified Leads →
           </button>
         </div>
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -190,6 +191,7 @@ export default function NewLeads() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

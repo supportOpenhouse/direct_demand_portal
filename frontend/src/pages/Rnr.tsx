@@ -54,6 +54,7 @@ export default function Rnr() {
       </div>
 
       <div className="card">
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -96,6 +97,7 @@ export default function Rnr() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

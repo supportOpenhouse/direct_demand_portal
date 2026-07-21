@@ -82,6 +82,7 @@ export default function Logs() {
       </div>
 
       <div className="card panel-pad">
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -122,6 +123,7 @@ export default function Logs() {
             )}
           </tbody>
         </table>
+        </div>
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12 }}>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>

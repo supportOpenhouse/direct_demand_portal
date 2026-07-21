@@ -114,6 +114,7 @@ export default function Followup() {
       <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
 
       <div className="card">
+        <div className="table-wrap">
         <table>
           <thead>
             <tr>
@@ -177,6 +178,7 @@ export default function Followup() {
             )}
           </tbody>
         </table>
+        </div>
       </div>
     </>
   );

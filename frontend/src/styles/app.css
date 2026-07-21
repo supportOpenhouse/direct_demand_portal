@@ -185,6 +185,11 @@ body{
 .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
 
 /* table */
+/* A table can't shrink below its content's min-width, so on zoom / narrow viewports
+   it used to overflow the card and spill onto the page background. Scrolling the
+   table inside this wrapper keeps it inside the card's rounded box; the card's own
+   headings and filters stay put because only the table is wrapped. */
+.table-wrap{overflow-x:auto;border-radius:inherit}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line)}
 td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}

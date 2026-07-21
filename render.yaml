@@ -21,6 +21,9 @@ services:
         sync: false # paste the Neon URL in the dashboard
       - key: PROPERTIES_DATABASE_URL
         sync: false # paste the supply DB URL
+      - key: DIRECT_INVENTORY_DB_URL
+        sync: false # oh_pricing reference prices — WITHOUT this the Supply Pipeline
+                    # loses unit pricing and /v1/health just says "not_configured"
       - key: GOOGLE_SERVICE_ACCOUNT_JSON
         sync: false # paste the FULL service-account JSON (inline, single line)
       - key: SHEET_ID

@@ -1,5 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -147,9 +147,11 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                 params,
             )
             items = [_lead_row(m) for m in res.mappings()]
+            # on the same connection — a second checkout here costs another round trip
+            sync = await read_leads_state(conn)
     except Exception as e:  # table missing / conn error
         return {"status": "error", "detail": str(e), "items": [], "sync": None}
-    return {"status": "ok", "detail": None, "items": items, "sync": await read_leads_state()}
+    return {"status": "ok", "detail": None, "items": items, "sync": sync}
 
 
 @router.get("/leads/{lead_id}")
@@ -367,44 +369,54 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
     author = user.get("name") or user.get("email") or "You"
 
     async with engine.begin() as conn:
-        row = (await conn.execute(
-            text("SELECT miss_count, ever_connected FROM leads WHERE id = :id"), {"id": lead_id}
-        )).mappings().first()
-        if row is None:
-            raise HTTPException(status_code=404, detail="lead not found")
         if payload.connected:
-            await conn.execute(
-                text("UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"), {"id": lead_id})
+            res = await conn.execute(text(
+                "UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"), {"id": lead_id})
+            if res.rowcount == 0:
+                raise HTTPException(status_code=404, detail="lead not found")
             return {"status": "ok", "connected": True, "moved_to_rnr": False, "rejected": False}
 
-        # goes into the shared thread, so it surfaces in the Notes column like any other note
-        await conn.execute(pg_insert(LeadNote).values(
-            lead_id=lead_id, body=note, author=author, source="call"))
+        # One round trip: append the note and apply the outcome together. This runs on
+        # every "No" from the worklist, and each extra statement is a full Neon
+        # round trip — the branch (RNR vs reschedule) is decided in SQL off the
+        # pre-update row so we never need to read it first.
+        reject = MISS_REASONS[payload.reason] is None
+        due = None if reject else _within_calling_hours(
+            datetime.now(timezone.utc) + timedelta(hours=MISS_REASONS[payload.reason]))
+        res = await conn.execute(text("""
+            WITH n AS (
+                -- guarded by EXISTS so a stale lead id fails the UPDATE's RETURNING
+                -- (→ clean 404) instead of blowing up on the note's foreign key
+                INSERT INTO lead_notes (id, lead_id, body, author, source, created_at)
+                SELECT :nid, :id, :note, :author, 'call', now()
+                WHERE EXISTS (SELECT 1 FROM leads WHERE id = :id)
+            )
+            UPDATE leads SET
+                miss_count = CASE WHEN CAST(:reject AS boolean) THEN miss_count ELSE miss_count + 1 END,
+                stage = CASE WHEN CAST(:reject AS boolean) THEN 'rejected'
+                             WHEN NOT ever_connected AND miss_count + 1 >= 10 THEN 'rnr'
+                             ELSE stage END,
+                follow_up_at = CASE
+                             WHEN CAST(:reject AS boolean) OR (NOT ever_connected AND miss_count + 1 >= 10) THEN NULL
+                             ELSE CAST(:due AS timestamptz) END,
+                follow_up_since = CASE
+                             WHEN CAST(:reject AS boolean) OR (NOT ever_connected AND miss_count + 1 >= 10) THEN NULL
+                             ELSE COALESCE(follow_up_since, now()) END,
+                reject_reason = CASE WHEN CAST(:reject AS boolean) THEN CAST(:reason AS text) ELSE reject_reason END,
+                reject_notes  = CASE WHEN CAST(:reject AS boolean) THEN CAST(:note AS text) ELSE reject_notes END,
+                rejected_at   = CASE WHEN CAST(:reject AS boolean) THEN now() ELSE rejected_at END
+            WHERE id = :id
+            RETURNING miss_count, stage
+        """), {"nid": uuid4(), "id": lead_id, "note": note, "author": author,
+               "reject": reject, "reason": payload.reason, "due": due})
+        out = res.mappings().first()
+        if out is None:
+            raise HTTPException(status_code=404, detail="lead not found")
 
-        delay = MISS_REASONS[payload.reason]
-        if delay is None:  # Invalid Number — no point calling back
-            await conn.execute(text(
-                "UPDATE leads SET stage = 'rejected', reject_reason = :r, reject_notes = :n, "
-                "rejected_at = now(), follow_up_at = NULL, follow_up_since = NULL WHERE id = :id"),
-                {"r": payload.reason, "n": note, "id": lead_id})
-            return {"status": "ok", "connected": False, "moved_to_rnr": False,
-                    "rejected": True, "follow_up_at": None}
-
-        new_miss = (row["miss_count"] or 0) + 1
-        if (not row["ever_connected"]) and new_miss >= 10:
-            await conn.execute(text(
-                "UPDATE leads SET miss_count = :m, stage = 'rnr', follow_up_at = NULL, "
-                "follow_up_since = NULL WHERE id = :id"), {"m": new_miss, "id": lead_id})
-            return {"status": "ok", "connected": False, "moved_to_rnr": True, "rejected": False,
-                    "miss_count": new_miss, "follow_up_at": None}
-
-        due = _within_calling_hours(datetime.now(timezone.utc) + timedelta(hours=delay))
-        await conn.execute(text(
-            "UPDATE leads SET miss_count = :m, follow_up_at = :t, "
-            "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
-            {"m": new_miss, "t": due, "id": lead_id})
-        return {"status": "ok", "connected": False, "moved_to_rnr": False, "rejected": False,
-                "miss_count": new_miss, "follow_up_at": due.isoformat()}
+    to_rnr = out["stage"] == "rnr"
+    return {"status": "ok", "connected": False, "moved_to_rnr": to_rnr, "rejected": reject,
+            "miss_count": out["miss_count"],
+            "follow_up_at": None if (reject or to_rnr) else due.isoformat()}
 
 
 class FollowupPayload(BaseModel):

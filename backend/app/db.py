@@ -18,11 +18,15 @@ def neon_engine() -> AsyncEngine | None:
     if not settings.neon_configured:
         return None
     if _neon_engine is None:
+        # Neon sits a long round trip away, so re-establishing a connection (TLS +
+        # auth) costs ~1s and shows up directly in request latency. Recycling every
+        # 5 min meant normal bursty use kept paying that; pre_ping already discards
+        # anything the server dropped, so a long recycle is the safe way to stay warm.
         _neon_engine = create_async_engine(
             settings.neon_url,
             pool_size=5,
             max_overflow=5,
-            pool_recycle=300,
+            pool_recycle=1800,
             pool_pre_ping=True,
         )
     return _neon_engine

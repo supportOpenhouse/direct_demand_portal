@@ -393,13 +393,15 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
         return {"status": "error", "detail": str(e)}
 
 
-async def read_leads_state() -> dict:
+async def read_leads_state(conn=None) -> dict:
+    """Last-sync banner data. Pass an open connection to avoid a second pool
+    checkout — callers that already hold one (the leads list) should always do so."""
     engine = neon_engine()
-    if engine is None:
+    if engine is None and conn is None:
         return {"listing": None, "meta": None}
     try:
-        async with engine.connect() as conn:
-            res = await conn.execute(
+        async def _read(c):
+            res = await c.execute(
                 text("SELECT key, last_synced_at, last_status, detail, row_count FROM sync_state WHERE key IN (:a, :b)"),
                 {"a": LISTING_KEY, "b": META_KEY},
             )
@@ -409,6 +411,11 @@ async def read_leads_state() -> dict:
                     "last_synced_at": row["last_synced_at"].isoformat() if row["last_synced_at"] else None,
                     "last_status": row["last_status"], "detail": row["detail"], "row_count": row["row_count"],
                 }
-        return {"listing": out.get(LISTING_KEY), "meta": out.get(META_KEY)}
+            return {"listing": out.get(LISTING_KEY), "meta": out.get(META_KEY)}
+
+        if conn is not None:
+            return await _read(conn)
+        async with engine.connect() as c:
+            return await _read(c)
     except Exception as e:  # noqa: BLE001
         return {"listing": None, "meta": None, "error": str(e)}

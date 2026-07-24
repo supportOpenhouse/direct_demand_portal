@@ -244,6 +244,19 @@ export function useSyncInventory() {
   });
 }
 
+/** Pull new leads from the Google Sheets now (same job the 11:30/14:00 cron runs).
+    Insert-only + idempotent, so re-running is safe. Admin-triggered from New Leads. */
+export function useSyncLeads() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.syncLeads,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 /** "86.5 L" / 132 lacs → display string like the prototype's ₹ pricing */
 export function formatPrice(priceLacs: number | null, priceText: string | null): string {
   if (priceLacs != null) {

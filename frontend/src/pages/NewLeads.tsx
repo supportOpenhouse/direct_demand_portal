@@ -1,10 +1,12 @@
 /* New Leads — 1:1 with the prototype's tplNewLeads(), wired to GET /v1/leads?segment=new.
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
 import { useNavigate } from "react-router-dom";
-import { useLeads, formatDate } from "../lib/queries";
+import { useLeads, useSyncLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcLabel, planClass, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
+import { useAuth } from "../components/AuthContext";
+import { useToast } from "../components/Toast";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
@@ -29,6 +31,18 @@ export default function NewLeads() {
   const { data, isLoading } = useLeads("new");
   const nav = useNavigate();
   const { query } = useSearch();
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
+  const toast = useToast();
+  const sync = useSyncLeads();
+  const runSync = () =>
+    sync.mutate(undefined, {
+      onSuccess: (r) => {
+        const added = (r.meta_new ?? 0) + (r.listing_new ?? 0);
+        toast(added ? `Synced · ${added} new lead${added > 1 ? "s" : ""}` : "Synced · no new leads", "green", "⟳");
+      },
+      onError: (e) => toast(e.message, "gold", "⚠"),
+    });
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");
   const [owner, setOwner] = useState("");
@@ -83,6 +97,12 @@ export default function NewLeads() {
           )}
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          {isAdmin && (
+            <button className="btn ghost sm" disabled={sync.isPending} onClick={runSync}
+              title="Pull new leads from the Google Sheets now (runs automatically at 11:30 AM & 2 PM IST)">
+              {sync.isPending ? "Syncing…" : "⟳ Sync now"}
+            </button>
+          )}
           <FilterSelect label="Source" value={source}
             options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
             onChange={onSource} width={130} />

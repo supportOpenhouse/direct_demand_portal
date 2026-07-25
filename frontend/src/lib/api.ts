@@ -245,8 +245,8 @@ export interface ConfirmPayload {
   office_willing: string;
   office_preferred_date: string | null;
   remark: string | null;
-  follow_up_at: string;   // mandatory — UTC ISO; a follow-up is required to confirm/save
-  qualify: boolean;       // true → qualify the lead; false → save details + follow-up only
+  follow_up_at: string | null;  // UTC ISO; null = save details only (Pipeline, no callback)
+  qualify: boolean;       // true → qualify the lead; false → save details (+ follow-up if given)
 }
 
 export const api = {

@@ -160,7 +160,10 @@ async def get_lead(lead_id: UUID):
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     async with engine.connect() as conn:
-        res = await conn.execute(text("SELECT * FROM leads WHERE id = :id"), {"id": lead_id})
+        res = await conn.execute(text(
+            "SELECT leads.*, "
+            "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count "
+            "FROM leads WHERE id = :id"), {"id": lead_id})
         row = res.mappings().first()
         if row is None:
             raise HTTPException(status_code=404, detail="lead not found")
@@ -244,8 +247,11 @@ class ConfirmPayload(BaseModel):
     office_willing: str
     office_preferred_date: str | None = None
     remark: str | None = None
-    follow_up_at: str             # mandatory — a follow-up is required to confirm/save
-    qualify: bool = True          # True → qualify the lead; False → just save details + follow-up
+    # follow-up is mandatory to qualify or to save-with-callback; omitted (null) means
+    # "save the details only" — used for Pipeline leads, which are past qualification and
+    # shouldn't be forced to set a callback or re-qualify.
+    follow_up_at: str | None = None
+    qualify: bool = True          # True → qualify the lead; False → save details (+ follow-up if given)
 
 
 @router.post("/leads/{lead_id}/confirm")
@@ -267,7 +273,11 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         raise HTTPException(status_code=422, detail={"fields": missing})
     if payload.budget_min_lacs > payload.budget_max_lacs:
         raise HTTPException(status_code=422, detail={"fields": ["budget_max_lacs"], "message": "max must be ≥ min"})
-    follow_up = _parse_followup(payload.follow_up_at)
+    # a follow-up is required to qualify or to save-with-callback, but not for a pure
+    # save (Pipeline leads pass follow_up_at = null)
+    follow_up = _parse_followup(payload.follow_up_at) if payload.follow_up_at else None
+    if payload.qualify and follow_up is None:
+        raise HTTPException(status_code=422, detail={"fields": ["follow_up_at"], "message": "follow-up is required to qualify"})
     office_date: date | None = None
     if payload.office_preferred_date:
         try:
@@ -293,7 +303,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
             set_={k: v for k, v in values.items() if k != "lead_id"},
         )
         await conn.execute(stmt)
-        # reaching this form means the call connected → never RNR. Always set the follow-up.
+        # reaching this form means the call connected → never RNR.
         if payload.qualify:
             # qualify: new → contacted, start the 7-day clock (only on first confirm)
             await conn.execute(
@@ -306,12 +316,18 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                 ),
                 {"id": lead_id, "t": follow_up},
             )
-        else:
-            # save details only — stays in Follow-up, not qualified
+        elif follow_up is not None:
+            # save details + set a follow-up — stays in Follow-up, not qualified
             await conn.execute(
                 text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t, "
                      "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
                 {"id": lead_id, "t": follow_up},
+            )
+        else:
+            # save details only (Pipeline) — no callback, don't touch stage/follow-up
+            await conn.execute(
+                text("UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"),
+                {"id": lead_id},
             )
     return {"status": "ok"}
 

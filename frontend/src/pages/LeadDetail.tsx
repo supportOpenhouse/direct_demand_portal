@@ -520,8 +520,29 @@ export default function LeadDetail() {
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
 
+  // Pipeline leads (a visit is booked) are past qualification — re-qualifying or forcing a
+  // callback makes no sense there, so they get a single plain Save instead of the two buttons.
+  const isPipeline = lead.stage === "visit_scheduled" || (lead.visit_count ?? 0) > 0;
+
   const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office, followup: !followUp };
-  const anyInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office || invalid.followup;
+  // the follow-up is only required when we're qualifying / setting a callback, not for a Pipeline save
+  const reqInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
+  const anyInvalid = reqInvalid || invalid.followup;
+
+  const basePayload = () => ({
+    purpose,
+    budget_min_lacs: bMin,
+    budget_max_lacs: bMax,
+    configuration: config,
+    size_min_sqft: sMin > 0 ? sMin : null,
+    size_max_sqft: sMax > 0 ? sMax : null,
+    preferred_micromarkets: micromarkets,
+    shortlisted_societies: societies,
+    preferred_localities: localities,
+    office_willing: office,
+    office_preferred_date: office === "Yes" || office === "Maybe" ? officeDate || null : null,
+    remark: remark || null,
+  });
 
   // qualify=true → Qualified; qualify=false → save details + follow-up only (stays in Follow-up)
   const save = (qualify: boolean) => {
@@ -531,27 +552,28 @@ export default function LeadDetail() {
       return;
     }
     confirm.mutate(
-      {
-        purpose,
-        budget_min_lacs: bMin,
-        budget_max_lacs: bMax,
-        configuration: config,
-        size_min_sqft: sMin > 0 ? sMin : null,
-        size_max_sqft: sMax > 0 ? sMax : null,
-        preferred_micromarkets: micromarkets,
-        shortlisted_societies: societies,
-        preferred_localities: localities,
-        office_willing: office,
-        office_preferred_date: office === "Yes" || office === "Maybe" ? officeDate || null : null,
-        remark: remark || null,
-        follow_up_at: new Date(followUp).toISOString(),
-        qualify,
-      },
+      { ...basePayload(), follow_up_at: new Date(followUp).toISOString(), qualify },
       {
         onSuccess: () => {
           if (qualify) toast("Lead confirmed & qualified", "green", "✓");
           else { toast("Details saved · follow-up set", "green", "⏰"); nav("/leads/followup"); }
         },
+        onError: (e) => toast(e.message, "gold", "⚠"),
+      }
+    );
+  };
+
+  // Pipeline: persist the requirement details only — no callback, no stage/qualify change
+  const saveOnly = () => {
+    if (reqInvalid) {
+      setShowErr(true);
+      toast("Fill the required (*) fields", "gold", "⚠");
+      return;
+    }
+    confirm.mutate(
+      { ...basePayload(), follow_up_at: null, qualify: false },
+      {
+        onSuccess: () => toast("Details saved", "green", "✓"),
         onError: (e) => toast(e.message, "gold", "⚠"),
       }
     );
@@ -595,7 +617,7 @@ export default function LeadDetail() {
           <NotesThread id={id} />
 
           {/* QUICK FOLLOW-UP SCHEDULER — the single (mandatory) follow-up input */}
-          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && invalid.followup} current={lead.follow_up_at} />
+          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && !isPipeline && invalid.followup} current={lead.follow_up_at} />
 
           {/* CONFIRMED call form */}
           <div className="card panel-pad compact-form">
@@ -707,7 +729,9 @@ export default function LeadDetail() {
               <textarea rows={2} value={remark} placeholder="Anything notable from the call" onChange={(e) => setRemark(e.target.value)} />
             </div>
 
-            {showErr && anyInvalid && <div className="mand-flag show">⚠ Fill all starred (*) fields, including the follow-up time above.</div>}
+            {showErr && (isPipeline ? reqInvalid : anyInvalid) && (
+              <div className="mand-flag show">⚠ Fill all starred (*) fields{isPipeline ? "." : ", including the follow-up time above."}</div>
+            )}
             <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               {lead.stage === "rejected" ? (
                 <span className="stage lost">Rejected — {lead.reject_reason}</span>
@@ -717,12 +741,21 @@ export default function LeadDetail() {
                 </button>
               )}
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
-                  Save details &amp; set follow-up
-                </button>
-                <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
-                  {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
-                </button>
+                {isPipeline ? (
+                  // a visit is booked — past qualification, so just save the details
+                  <button className="btn green" onClick={saveOnly} disabled={confirm.isPending}>
+                    {confirm.isPending ? "Saving…" : "Save"}
+                  </button>
+                ) : (
+                  <>
+                    <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
+                      Save details &amp; set follow-up
+                    </button>
+                    <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
+                      {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

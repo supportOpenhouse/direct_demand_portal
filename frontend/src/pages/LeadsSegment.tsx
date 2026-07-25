@@ -9,6 +9,7 @@ import { srcClass, srcLabel, stageClass, stageLabel, initials, leadMatchesQuery 
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
 import { NotesCell } from "../components/NotesCell";
@@ -107,6 +108,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           {(source || city || owner || hotOnly || visitStatus) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setHotOnly(false); setVisitStatus(""); }}>Clear</button>
           )}
+          <ExportCsvButton leads={list} name={segment} />
         </div>
       </div>
 

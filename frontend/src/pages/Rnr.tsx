@@ -8,6 +8,7 @@ import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { ExportCsvButton } from "../components/ExportCsvButton";
 import { AssignControl } from "../components/AssignControl";
 
 export default function Rnr() {
@@ -50,6 +51,7 @@ export default function Rnr() {
           {(source || city || owner) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); }}>Clear</button>
           )}
+          <ExportCsvButton leads={list} name="rnr" />
         </div>
       </div>
 

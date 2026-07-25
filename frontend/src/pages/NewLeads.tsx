@@ -12,6 +12,7 @@ import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
 import { AssignControl } from "../components/AssignControl";
 import { useSort, SortTh } from "../lib/useSort";
+import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
 import { useState } from "react";
@@ -115,6 +116,7 @@ export default function NewLeads() {
           {(source || city || plan || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>
           )}
+          <ExportCsvButton leads={list} name="new-leads" />
         </div>
       </div>
 

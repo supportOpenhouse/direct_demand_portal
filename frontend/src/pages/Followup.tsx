@@ -10,6 +10,7 @@ import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
+import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
 import { BulkAssignBar } from "../components/BulkAssignBar";
 import { CallConnected } from "../components/CallConnected";
@@ -108,6 +109,7 @@ export default function Followup() {
           {(source || city || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>
           )}
+          <ExportCsvButton leads={list} name="follow-up" />
         </div>
       </div>
 

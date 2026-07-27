@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..core.auth import assignment_aliases, require_admin
+from ..core.auth import assignment_aliases, force_logout_all, require_admin
 from ..db import neon_engine
 from ..models import User
 
@@ -115,6 +115,13 @@ async def delete_user(user_id: UUID):
         res = await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="user not found")
+    return {"status": "ok"}
+
+
+@router.post("/sessions/logout-all")
+async def logout_all_sessions(user: dict = Depends(require_admin)):
+    """Force every user (including the caller) to sign in again."""
+    await force_logout_all(user.get("email") or "admin")
     return {"status": "ok"}
 
 

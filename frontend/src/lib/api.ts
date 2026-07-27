@@ -321,6 +321,7 @@ export const api = {
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
   reassignUserLeads: (id: string, toUserId: string) =>
     request<{ status: string; moved: number }>(`/v1/users/${id}/reassign`, { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) }),
+  forceLogoutAll: () => request<{ status: string }>("/v1/sessions/logout-all", { method: "POST" }),
 };
 
 /** One visit booked on the Openhouse app. A lead can have many — each its own visit id. */

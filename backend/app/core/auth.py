@@ -4,6 +4,7 @@ Graceful: when GOOGLE_OAUTH_CLIENT_ID is unset, `current_user` returns a synthet
 admin so the API stays open (the live deployment never locks out until auth is
 deliberately configured on both sides)."""
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -54,6 +55,61 @@ def issue_jwt(user: dict) -> str:
     return jwt.encode(payload, settings.JWT_SECRET, algorithm="HS256")
 
 
+# --- "force logout everyone" cutoff -----------------------------------------
+# A token is honoured only if it was issued at/after this timestamp; bumping the
+# cutoff to now() invalidates every live session at once. Stored in sync_state
+# (durable) and cached in-process (short TTL) so auth doesn't hit the DB on every
+# request. Multi-instance: other workers pick up the new cutoff within the TTL.
+_AUTH_EPOCH_KEY = "auth:sessions_valid_from"
+_EPOCH_TTL = 30.0
+_epoch_cache: dict = {"value": None, "read_at": 0.0}  # value = unix seconds | None
+
+
+async def _read_auth_epoch() -> float | None:
+    if time.monotonic() - _epoch_cache["read_at"] < _EPOCH_TTL:
+        return _epoch_cache["value"]
+    from sqlalchemy import text
+
+    from ..db import neon_engine
+
+    value = _epoch_cache["value"]  # fail-open: keep last known if the DB read blips
+    engine = neon_engine()
+    if engine is not None:
+        try:
+            async with engine.connect() as conn:
+                row = (await conn.execute(
+                    text("SELECT last_synced_at FROM sync_state WHERE key = :k"),
+                    {"k": _AUTH_EPOCH_KEY},
+                )).first()
+            value = row[0].timestamp() if row and row[0] else None
+        except Exception:
+            log.warning("auth epoch read failed — honouring token", exc_info=True)
+    _epoch_cache.update(value=value, read_at=time.monotonic())
+    return value
+
+
+async def force_logout_all(actor_email: str) -> None:
+    """Sign every user out (including the caller) by moving the session cutoff to now."""
+    from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+    from ..db import neon_engine
+    from ..models import SyncState
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    now = datetime.now(timezone.utc)
+    stmt = pg_insert(SyncState).values(
+        key=_AUTH_EPOCH_KEY, last_synced_at=now, last_status="force_logout", detail=actor_email, row_count=None,
+    ).on_conflict_do_update(
+        index_elements=[SyncState.key],
+        set_={"last_synced_at": now, "last_status": "force_logout", "detail": actor_email},
+    )
+    async with engine.begin() as conn:
+        await conn.execute(stmt)
+    _epoch_cache.update(value=now.timestamp(), read_at=time.monotonic())  # enforce instantly on this worker
+
+
 async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
     settings = get_settings()
     if not settings.auth_enabled:
@@ -64,6 +120,9 @@ async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bea
         payload = jwt.decode(creds.credentials, settings.JWT_SECRET, algorithms=["HS256"])
     except jwt.PyJWTError as e:
         raise HTTPException(status_code=401, detail=f"invalid session: {e}")
+    epoch = await _read_auth_epoch()
+    if epoch is not None and payload.get("iat", 0) < epoch:
+        raise HTTPException(status_code=401, detail="session ended — please sign in again")
     return {
         "id": payload["sub"], "email": payload["email"], "role": payload.get("role", "rm"),
         "name": payload.get("name"), "picture": payload.get("picture"),

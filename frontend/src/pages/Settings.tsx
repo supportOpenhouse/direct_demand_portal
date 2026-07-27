@@ -2,7 +2,7 @@
    each maps to their leads via the sheet's "Assigned to" name. */
 import { useState } from "react";
 import { useUsers, useUserMutations } from "../lib/queries";
-import { ManagedUser } from "../lib/api";
+import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
 
@@ -258,14 +258,31 @@ function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
 }
 
 export default function Settings() {
-  const { enabled, user } = useAuth();
+  const { enabled, user, logout } = useAuth();
   const { data, isLoading } = useUsers();
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const isAdmin = !enabled || user?.role === "admin";
 
   if (!isAdmin) {
     return <div className="card"><div className="empty" style={{ padding: 40 }}>Only admins can manage users.</div></div>;
   }
+
+  // Sign everyone out (self included) — the server invalidates all tokens, then we
+  // drop the current session so this admin lands back on the sign-in screen.
+  const forceLogout = async () => {
+    if (!confirm("Force-log-out ALL users? Everyone — including you — will have to sign in again.")) return;
+    setLoggingOut(true);
+    try {
+      await api.forceLogoutAll();
+      toast("All users signed out — redirecting to sign-in…", "green", "✓");
+      setTimeout(logout, 1200);
+    } catch (e: any) {
+      toast(e.message, "gold", "⚠");
+      setLoggingOut(false);
+    }
+  };
 
   return (
     <>
@@ -281,7 +298,15 @@ export default function Settings() {
             <div className="panel-title" style={{ marginBottom: 2 }}>Users & access</div>
             <p className="sec-sub" style={{ margin: 0 }}>Each user maps to their leads by the sheet's “Assigned to” name.</p>
           </div>
-          <button className="btn green" onClick={() => setAdding(true)}>+ Add user</button>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {enabled && (
+              <button className="btn ghost" onClick={forceLogout} disabled={loggingOut}
+                style={{ color: "var(--coral)", borderColor: "#f3c6cd" }} title="Invalidate every active session">
+                {loggingOut ? "Signing out…" : "⎋ Force logout all"}
+              </button>
+            )}
+            <button className="btn green" onClick={() => setAdding(true)}>+ Add user</button>
+          </div>
         </div>
         {isLoading ? (
           <div className="empty" style={{ padding: 30 }}>Loading users…</div>

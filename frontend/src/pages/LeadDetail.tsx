@@ -13,6 +13,7 @@ import { useToast } from "../components/Toast";
 import { AutocompleteChips, AutocompleteInput } from "../components/Autocomplete";
 import { AssignControl } from "../components/AssignControl";
 import { WhatsAppIcon } from "../components/icons";
+import WaLeadCard from "../components/WaLeadCard";
 import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
 import { openInMaps } from "../lib/maps";
@@ -764,6 +765,7 @@ export default function LeadDetail() {
         {/* RIGHT column — saved visit plan + live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           <SavedVisitCard id={id} onEdit={() => setPlanner(true)} />
+          <WaLeadCard phone={lead.phone} />
           <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
           <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
         </div>

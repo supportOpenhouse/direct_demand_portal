@@ -8,8 +8,12 @@ export function useInventory() {
 
 /* Polls — the webhook has no push channel to the browser, so an interval is the
    whole sync mechanism. 5s on the conversation, since someone is watching it. */
-export function useWaMessages() {
-  return useQuery({ queryKey: ["wa-messages"], queryFn: api.waMessages, refetchInterval: 5_000 });
+export function useWaMessages(phone?: string) {
+  return useQuery({
+    queryKey: ["wa-messages", phone ?? "all"],
+    queryFn: () => api.waMessages(phone),
+    refetchInterval: 5_000,
+  });
 }
 
 export function useSendWa() {

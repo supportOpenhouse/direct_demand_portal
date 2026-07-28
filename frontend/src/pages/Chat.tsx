@@ -9,8 +9,9 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  useWaMessages, useSendWa, useCreateWaLead, useSocietiesByCity, useGupshupRecent, formatDateTime,
+  useWaMessages, useCreateWaLead, useSocietiesByCity, useGupshupRecent, formatDateTime,
 } from "../lib/queries";
+import WaThread from "../components/WaThread";
 import { WaMessage } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { WhatsAppIcon } from "../components/icons";
@@ -44,36 +45,12 @@ function toThreads(items: WaMessage[]): Thread[] {
   return threads.sort((a, b) => b.lastAt - a.lastAt);
 }
 
-function Bubble({ m }: { m: WaMessage }) {
-  const out = m.direction === "out";
-  return (
-    <div style={{ display: "flex", justifyContent: out ? "flex-end" : "flex-start", marginBottom: 8 }}>
-      <div
-        style={{
-          maxWidth: "72%", padding: "8px 11px", borderRadius: 12, fontSize: 13, lineHeight: 1.45,
-          background: out ? "#d6f5e0" : "var(--panel-2)", color: "var(--ink)",
-          borderBottomRightRadius: out ? 3 : 12, borderBottomLeftRadius: out ? 12 : 3,
-          wordBreak: "break-word",
-        }}
-      >
-        {m.body || <i style={{ color: "var(--muted)" }}>[{m.msg_type}]</i>}
-        <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, textAlign: "right" }}>
-          {formatDateTime(m.created_at)}
-          {out && m.status ? ` · ${m.status}` : ""}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Chat() {
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
 
   const { data, isLoading, error } = useWaMessages();
-  const send = useSendWa();
   const [active, setActive] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
   const [showRaw, setShowRaw] = useState(false);
   const [creating, setCreating] = useState(false);
 
@@ -82,14 +59,7 @@ export default function Chat() {
   // leads are keyed by the last 10 digits — leads store "+91 98715 78484", WhatsApp "919871578484"
   const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
 
-  // WhatsApp's rule, not ours: the clock runs from THEIR last message.
-  const windowOpen = thread?.lastInboundAt != null && Date.now() - thread.lastInboundAt < WINDOW_MS;
   const sendEnabled = data?.send_enabled ?? false;
-  const blocked = !sendEnabled
-    ? "Sending isn’t configured yet — GUPSHUP_SOURCE_NUMBER and GUPSHUP_APP_NAME are missing."
-    : !windowOpen
-      ? "The 24-hour reply window has closed. Only an approved template message can reach them now."
-      : null;
 
   if (!isAdmin) {
     return (
@@ -109,12 +79,6 @@ export default function Chat() {
       </div>
     );
   }
-
-  const submit = () => {
-    const text = draft.trim();
-    if (!text || !thread || blocked || send.isPending) return;
-    send.mutate({ phone: thread.phone, text }, { onSuccess: () => setDraft("") });
-  };
 
   return (
     // fills .view (a bounded flex child of .main) so the thread list and conversation
@@ -195,43 +159,12 @@ export default function Chat() {
                   </div>
                 </div>
 
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 6px 2px 2px" }}>
-                  {thread.messages.map((m) => <Bubble key={m.id} m={m} />)}
-                </div>
-
-                {blocked ? (
-                  <div style={{
-                    marginTop: 10, padding: "10px 12px", borderRadius: 9, fontSize: 12.5,
-                    background: "var(--panel-2)", color: "var(--ink-2)", lineHeight: 1.5,
-                  }}>
-                    {blocked}
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-end" }}>
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-                      }}
-                      placeholder="Message… (Enter to send, Shift+Enter for a new line)"
-                      rows={2}
-                      style={{
-                        flex: 1, resize: "none", font: "inherit", fontSize: 13, padding: "9px 11px",
-                        borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)",
-                        color: "var(--ink)",
-                      }}
-                    />
-                    <button className="btn wa" onClick={submit} disabled={send.isPending || !draft.trim()}>
-                      {send.isPending ? "Sending…" : "Send"}
-                    </button>
-                  </div>
-                )}
-                {send.isError && (
-                  <div style={{ marginTop: 7, fontSize: 12, color: "var(--coral)" }}>
-                    {(send.error as Error).message}
-                  </div>
-                )}
+                <WaThread
+                  phone={thread.phone}
+                  messages={thread.messages}
+                  lastInboundAt={thread.lastInboundAt}
+                  sendEnabled={sendEnabled}
+                />
               </>
             )}
           </div>

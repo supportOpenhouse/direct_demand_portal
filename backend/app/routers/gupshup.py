@@ -155,20 +155,28 @@ async def gupshup_recent():
 
 
 @router.get("/gupshup/messages")
-async def gupshup_messages(user: dict = Depends(require_admin)):
-    """Every stored message, newest first. The client groups by phone into threads —
-    at this volume that's cheaper than a per-thread endpoint."""
+async def gupshup_messages(phone: str | None = None, user: dict = Depends(require_admin)):
+    """Stored messages, newest first. The client groups by phone into threads — at this
+    volume that's cheaper than a per-thread endpoint. Pass `phone` to narrow to one
+    conversation (the lead-detail card); numbers are matched on their last 10 digits."""
     settings = get_settings()
     engine = neon_engine()
     if engine is None:
-        return {"status": "not_configured", "send_enabled": False, "items": []}
+        return {"status": "not_configured", "send_enabled": False, "leads": {}, "items": []}
+    q = select(
+        WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
+        WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
+        WaMessage.created_at,
+    )
+    if phone is not None:
+        want = normalize_phone(phone)[-10:]
+        if not want:
+            return {"status": "ok", "send_enabled": settings.gupshup_send_configured,
+                    "leads": {}, "items": []}
+        q = q.where(func.right(WaMessage.phone, 10) == want)
     async with engine.connect() as conn:
         rows = (await conn.execute(
-            select(
-                WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
-                WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
-                WaMessage.created_at,
-            ).order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
+            q.order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
         )).mappings().all()
 
         # which of these numbers already have a lead. Leads store a formatted phone

@@ -167,17 +167,18 @@ export default function Chat() {
           </div>
 
           {/* conversation */}
-          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
+          {/* .card carries no padding of its own — every page adds its own inset */}
+          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0, padding: 14 }}>
             {thread && (
               <>
                 <div style={{ borderBottom: "1px solid var(--line)", paddingBottom: 9, marginBottom: 11 }}>
                   <b style={{ fontSize: 14 }}>{thread.name || thread.phone}</b>
-                  <span style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 8, fontVariantNumeric: "tabular-nums" }}>
+                  <span style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 16, fontVariantNumeric: "tabular-nums" }}>
                     +{thread.phone}
                   </span>
                 </div>
 
-                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 6px 2px 2px" }}>
                   {thread.messages.map((m) => <Bubble key={m.id} m={m} />)}
                 </div>
 

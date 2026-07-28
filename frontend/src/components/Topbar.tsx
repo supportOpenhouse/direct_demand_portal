@@ -2,6 +2,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
+import { useAuth } from "./AuthContext";
 import GlobalSearch from "./GlobalSearch";
 
 const TITLES: Record<string, string> = {
@@ -26,6 +27,8 @@ const TITLES: Record<string, string> = {
 export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
   const title =
     TITLES[pathname] ||
     (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details" : "Dashboard");
@@ -40,9 +43,11 @@ export default function Topbar() {
       <button className="btn green" onClick={() => toast("Lead capture arrives in a later phase", "blue", "＋")}>
         <IconPlusBold /> Add New Lead
       </button>
-      <Link className="btn wa" to="/chat">
-        <WhatsAppIcon /> WhatsApp
-      </Link>
+      {isAdmin && (
+        <Link className="btn wa" to="/chat">
+          <WhatsAppIcon /> WhatsApp
+        </Link>
+      )}
     </div>
   );
 }

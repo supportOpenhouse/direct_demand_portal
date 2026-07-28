@@ -83,10 +83,15 @@ class Settings(BaseSettings):
     CRM_BOOKING_API_BASE_URL: str = ""
     CRM_API_KEY: str = ""
 
-    # --- Gupshup WhatsApp callback ---
+    # --- Gupshup WhatsApp ---
     # Shared secret appended to the callback URL as ?token=... . Empty = no check
     # (fine in dev; set it in prod — the endpoint is public by definition).
     GUPSHUP_WEBHOOK_SECRET: str = ""
+    GUPSHUP_API_KEY: str = ""
+    # the registered WhatsApp Business number, country code included, digits only
+    GUPSHUP_SOURCE_NUMBER: str = ""
+    # the Gupshup app name bound to that number — sent as src.name
+    GUPSHUP_APP_NAME: str = ""
 
     # --- Google OAuth (optional; app stays open until both sides are configured) ---
     GOOGLE_OAUTH_CLIENT_ID: str = ""
@@ -131,6 +136,11 @@ class Settings(BaseSettings):
     @property
     def crm_booking_configured(self) -> bool:
         return bool(self.CRM_BOOKING_API_BASE_URL) and bool(self.CRM_API_KEY)
+
+    @property
+    def gupshup_send_configured(self) -> bool:
+        """Receiving works with no config at all; sending needs all three."""
+        return bool(self.GUPSHUP_API_KEY and self.GUPSHUP_SOURCE_NUMBER and self.GUPSHUP_APP_NAME)
 
     @property
     def redis_configured(self) -> bool:

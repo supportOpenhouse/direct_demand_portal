@@ -1,12 +1,24 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.routers.gupshup import _RECENT, parse_body, router
+from app import config
+from app.routers.gupshup import _RECENT, normalize_phone, parse_body, router
 
 # bare app — the real one's lifespan wants a DB; the router is what's under test
 app = FastAPI()
 app.include_router(router, prefix="/v1")
 client = TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_env(monkeypatch):
+    """Settings load the developer's real ../.env, so a filled-in GUPSHUP_* would
+    otherwise decide these tests — and a configured send would fire real WhatsApp
+    traffic. Each test starts from unconfigured and opts in explicitly."""
+    s = config.get_settings()  # lru_cached: the same object the app reads
+    for key in ("GUPSHUP_WEBHOOK_SECRET", "GUPSHUP_API_KEY", "GUPSHUP_SOURCE_NUMBER", "GUPSHUP_APP_NAME"):
+        monkeypatch.setattr(s, key, "")
 
 # real Gupshup WhatsApp callback shapes
 INBOUND = {
@@ -51,6 +63,25 @@ def test_malformed_body_still_returns_200():
     )
     assert r.status_code == 200
     assert list(_RECENT)[0]["body"] == "<xml>surprise</xml>"
+
+
+def test_normalize_phone():
+    assert normalize_phone("9953998821") == "919953998821"   # bare Indian mobile
+    assert normalize_phone("+91 99539 98821") == "919953998821"
+    assert normalize_phone("919953998821") == "919953998821"  # already prefixed
+    assert normalize_phone(None) == ""
+
+
+def test_send_refuses_when_unconfigured():
+    """No API key → a clear 503, not an obscure failure against Gupshup."""
+    r = client.post("/v1/gupshup/send", json={"phone": "9953998821", "text": "hi"})
+    assert r.status_code == 503
+    assert "GUPSHUP_API_KEY" in r.json()["detail"]
+
+
+def test_send_rejects_empty_text():
+    r = client.post("/v1/gupshup/send", json={"phone": "9953998821", "text": ""})
+    assert r.status_code == 422
 
 
 def test_token_enforced_when_configured(monkeypatch):

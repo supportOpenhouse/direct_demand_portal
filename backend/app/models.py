@@ -300,6 +300,31 @@ class LeadNote(Base):
     )
 
 
+class WaMessage(Base):
+    """WhatsApp conversation, both directions. Inbound rows are written by the Gupshup
+    webhook, outbound by the send endpoint. `phone` is always the CUSTOMER's number
+    regardless of direction, so it keys the thread."""
+
+    __tablename__ = "wa_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    direction: Mapped[str] = mapped_column(Text, nullable=False)  # 'in' | 'out'
+    phone: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    name: Mapped[str | None] = mapped_column(Text)          # sender name, inbound only
+    body: Mapped[str | None] = mapped_column(Text)          # text, or a caption
+    msg_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="text")
+    # provider message id — the join key for the delivery events that arrive later
+    gupshup_id: Mapped[str | None] = mapped_column(Text, index=True)
+    status: Mapped[str | None] = mapped_column(Text)        # submitted|sent|delivered|read|failed
+    author: Mapped[str | None] = mapped_column(Text)        # portal user who sent it
+    raw: Mapped[dict | None] = mapped_column(JSONB)         # full callback, for anything unmodelled
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (Index("ix_wa_messages_phone_created", phone, created_at.desc()),)
+
+
 class AuditLog(Base):
     """Audit trail — one row per meaningful API action, written by the audit
     middleware. Insert-only; surfaced on the admin Logs page."""

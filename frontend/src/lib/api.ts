@@ -264,9 +264,27 @@ export interface GupshupEvent {
   body: Record<string, any>;
 }
 
+export interface WaMessage {
+  id: string;
+  direction: "in" | "out";
+  phone: string;
+  name: string | null;
+  body: string | null;
+  msg_type: string;
+  status: string | null;   // submitted | sent | delivered | read | failed (outbound)
+  author: string | null;   // portal user who sent it
+  created_at: string;
+}
+
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
+  waMessages: () =>
+    request<{ status: string; send_enabled: boolean; items: WaMessage[] }>("/v1/gupshup/messages"),
+  waSend: (phone: string, text: string) =>
+    request<{ status: string; gupshup_id: string | null }>("/v1/gupshup/send", {
+      method: "POST", body: JSON.stringify({ phone, text }),
+    }),
   syncInventory: () =>
     request<{ status: string; rows: number; synced_at: string }>("/v1/inventory/sync", { method: "POST" }),
   supply: () => request<SupplyResponse>("/v1/supply"),

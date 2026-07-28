@@ -1,33 +1,53 @@
-"""Gupshup WhatsApp callback endpoint — plumbing only.
+"""Gupshup WhatsApp — inbound callback, persistence, and outbound send.
 
-Gupshup POSTs everything (inbound messages, delivery events, opt-ins, billing) to a
-single callback URL. This phase receives it, checks the optional shared secret, and
-keeps the last N payloads in memory so the real shapes can be read off
-GET /v1/gupshup/recent before anything is modelled. No table, no lead matching, no
-outbound send yet.
+Receiving needs no config at all. Sending needs GUPSHUP_API_KEY + _SOURCE_NUMBER +
+_APP_NAME; without them /send reports "not configured" rather than failing obscurely.
 
-Hard requirement: answer 2xx, fast. Gupshup retries a failing callback and eventually
-disables the URL, so every failure path below is swallowed into a 200 — except a bad
-shared secret, which isn't Gupshup calling in the first place.
+The callback must answer 2xx with an empty body inside 10s (Gupshup retries, then
+disables the URL), so the handler only appends to an in-memory ring and hands the DB
+write to a background task — the same fire-and-forget shape the audit middleware uses.
+
+The 24-hour rule is WhatsApp's, not Gupshup's: free-form text only reaches a customer
+within 24h of THEIR last message. Outside it, only pre-approved templates. This module
+records the window; refusing the send is left to the UI and, ultimately, to Gupshup.
 """
+import asyncio
 import json
 import logging
+import re
 import secrets
 from collections import deque
 from datetime import datetime, timezone
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
+from sqlalchemy import desc, select, update
 from urllib.parse import parse_qsl
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-
 from ..config import get_settings
+# admin-only for now: reading a whole customer thread and messaging as the business
+# are both wider than an RM's remit. Widen deliberately, not by default.
 from ..core.auth import require_admin
+from ..db import neon_engine
+from ..models import WaMessage
 
 log = logging.getLogger("gupshup")
 router = APIRouter(tags=["gupshup"])
 
-# ponytail: in-memory ring, not a table — its whole job is to reveal payload shapes,
-# and losing it on restart costs nothing. Model it properly once the shapes are known.
+SEND_URL = "https://api.gupshup.io/wa/api/v1/msg"
+THREAD_LIMIT = 500  # ponytail: one flat fetch, grouped client-side. Paginate if it bites.
+
+# ponytail: raw-callback ring for reading shapes that aren't modelled yet (billing,
+# system events). The conversation itself lives in wa_messages, not here.
 _RECENT: deque[dict] = deque(maxlen=50)
+
+
+def normalize_phone(phone: str | None) -> str:
+    """Digits only, with India's country code added to a bare 10-digit mobile —
+    Gupshup addresses everyone in full international form."""
+    d = re.sub(r"\D", "", phone or "")
+    return "91" + d if len(d) == 10 else d
 
 
 def parse_body(raw: bytes, content_type: str) -> dict | list | str:
@@ -53,6 +73,51 @@ def _check_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="invalid token")
 
 
+def _text_of(inner: dict, kind: str | None) -> str | None:
+    """Readable body for the thread — the text itself, or a caption/label for media."""
+    if kind == "text":
+        return inner.get("text")
+    if kind == "location":
+        return inner.get("name") or inner.get("address")
+    return inner.get("caption") or None
+
+
+async def _persist(entry: dict) -> None:
+    """Write an inbound message, or apply a delivery event to the row it belongs to.
+    Fire-and-forget: a DB blip must never affect the callback's 200."""
+    engine = neon_engine()
+    if engine is None:
+        return
+    body = entry.get("body")
+    if not isinstance(body, dict):
+        return
+    payload = body.get("payload") or {}
+    try:
+        if entry["type"] == "message":
+            inner = payload.get("payload") or {}
+            kind = payload.get("type")
+            async with engine.begin() as conn:
+                await conn.execute(WaMessage.__table__.insert().values(
+                    direction="in",
+                    phone=normalize_phone(payload.get("sender", {}).get("phone") or payload.get("source")),
+                    name=payload.get("sender", {}).get("name"),
+                    body=_text_of(inner, kind),
+                    msg_type=kind or "text",
+                    gupshup_id=payload.get("id"),
+                    raw=body,
+                ))
+        elif entry["type"] == "message-event" and payload.get("id"):
+            # delivery receipts arrive minutes later, keyed by the id /send stored
+            async with engine.begin() as conn:
+                await conn.execute(
+                    update(WaMessage)
+                    .where(WaMessage.gupshup_id == payload["id"])
+                    .values(status=payload.get("type"))
+                )
+    except Exception:  # noqa: BLE001 — logging only; the callback already answered 200
+        log.exception("gupshup: failed to persist callback")
+
+
 @router.get("/gupshup/webhook")
 async def gupshup_verify(request: Request):
     """Smoke-test / verification hit — Gupshup and browsers both GET the URL first."""
@@ -63,7 +128,7 @@ async def gupshup_verify(request: Request):
 @router.post("/gupshup/webhook", status_code=200, response_class=Response)
 async def gupshup_webhook(request: Request):
     """Gupshup wants 2xx with an EMPTY body inside 10s (<500ms recommended), or it
-    retries and eventually disables the callback. Everything here is O(1)."""
+    retries and eventually disables the callback. Nothing here blocks on I/O."""
     _check_token(request)
     try:
         body = parse_body(await request.body(), request.headers.get("content-type", ""))
@@ -78,10 +143,91 @@ async def gupshup_webhook(request: Request):
     }
     _RECENT.appendleft(entry)
     log.info("gupshup callback type=%s body=%s", entry["type"], json.dumps(body, default=str)[:2000])
+    asyncio.create_task(_persist(entry))
     return Response(status_code=200)
 
 
 @router.get("/gupshup/recent", dependencies=[Depends(require_admin)])
 async def gupshup_recent():
-    """The last 50 callbacks, newest first — for reading real payload shapes."""
+    """The last 50 raw callbacks, newest first — for shapes wa_messages doesn't model."""
     return {"count": len(_RECENT), "items": list(_RECENT)}
+
+
+@router.get("/gupshup/messages")
+async def gupshup_messages(user: dict = Depends(require_admin)):
+    """Every stored message, newest first. The client groups by phone into threads —
+    at this volume that's cheaper than a per-thread endpoint."""
+    settings = get_settings()
+    engine = neon_engine()
+    if engine is None:
+        return {"status": "not_configured", "send_enabled": False, "items": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            select(
+                WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
+                WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
+                WaMessage.created_at,
+            ).order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
+        )).mappings().all()
+    return {
+        "status": "ok",
+        "send_enabled": settings.gupshup_send_configured,
+        "items": [dict(r) | {"id": str(r["id"])} for r in rows],
+    }
+
+
+class SendRequest(BaseModel):
+    phone: str
+    text: str = Field(min_length=1, max_length=4096)
+
+
+@router.post("/gupshup/send")
+async def gupshup_send(req: SendRequest, user: dict = Depends(require_admin)):
+    settings = get_settings()
+    if not settings.gupshup_send_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Sending isn't configured — set GUPSHUP_API_KEY, GUPSHUP_SOURCE_NUMBER "
+                   "and GUPSHUP_APP_NAME.",
+        )
+    destination = normalize_phone(req.phone)
+    if len(destination) < 10:
+        raise HTTPException(status_code=400, detail="invalid phone number")
+
+    form = {
+        "channel": "whatsapp",
+        "source": settings.GUPSHUP_SOURCE_NUMBER,
+        "destination": destination,
+        "src.name": settings.GUPSHUP_APP_NAME,
+        "message": json.dumps({"type": "text", "text": req.text}),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            r = await client.post(
+                SEND_URL, data=form,
+                headers={"apikey": settings.GUPSHUP_API_KEY,
+                         "Content-Type": "application/x-www-form-urlencoded"},
+            )
+    except httpx.HTTPError as e:
+        log.warning("gupshup send failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"couldn't reach Gupshup: {e}")
+
+    detail = r.text[:300]
+    if r.status_code >= 300:
+        # the usual cause is the 24-hour window having closed — Gupshup says so here
+        log.warning("gupshup send rejected (%s): %s", r.status_code, detail)
+        raise HTTPException(status_code=502, detail=f"Gupshup rejected the message: {detail}")
+
+    try:
+        gupshup_id = r.json().get("messageId")
+    except Exception:  # noqa: BLE001 — a 2xx without parseable JSON still means sent
+        gupshup_id = None
+
+    engine = neon_engine()
+    if engine is not None:
+        async with engine.begin() as conn:
+            await conn.execute(WaMessage.__table__.insert().values(
+                direction="out", phone=destination, body=req.text, msg_type="text",
+                gupshup_id=gupshup_id, status="submitted", author=user.get("email"),
+            ))
+    return {"status": "sent", "gupshup_id": gupshup_id}

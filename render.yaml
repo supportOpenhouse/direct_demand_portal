@@ -54,6 +54,12 @@ services:
         sync: false               # server-side Geocoding key (referrer-restricted)
       - key: GUPSHUP_WEBHOOK_SECRET
         sync: false               # ?token= on the Gupshup callback URL (public endpoint)
+      - key: GUPSHUP_API_KEY
+        sync: false               # all three needed to SEND; receiving needs none
+      - key: GUPSHUP_SOURCE_NUMBER
+        sync: false               # WABA number, country code included, digits only
+      - key: GUPSHUP_APP_NAME
+        sync: false               # Gupshup app bound to that number (sent as src.name)
       - key: LEADS_SHEET_ID
         sync: false               # leads source sheet (or rely on the in-code default)
       # RUN_SCHEDULER defaults true. If you scale this web service to >1 instance,

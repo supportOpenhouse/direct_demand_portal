@@ -6,8 +6,20 @@ export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
 }
 
-/* Polls — the webhook has no push channel to the browser yet, and the server keeps
-   only an in-memory ring, so a short interval is the whole sync mechanism. */
+/* Polls — the webhook has no push channel to the browser, so an interval is the
+   whole sync mechanism. 5s on the conversation, since someone is watching it. */
+export function useWaMessages() {
+  return useQuery({ queryKey: ["wa-messages"], queryFn: api.waMessages, refetchInterval: 5_000 });
+}
+
+export function useSendWa() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ phone, text }: { phone: string; text: string }) => api.waSend(phone, text),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-messages"] }),
+  });
+}
+
 export function useGupshupRecent() {
   return useQuery({ queryKey: ["gupshup-recent"], queryFn: api.gupshupRecent, refetchInterval: 10_000 });
 }

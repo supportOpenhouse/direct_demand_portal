@@ -2,6 +2,8 @@ from datetime import datetime
 
 from app.routers.leads import IST, MISS_REASONS, _within_calling_hours
 from app.services.leads_sync import (
+    PARAM_LIMIT,
+    _chunk_size,
     build_listing,
     build_meta,
     clean_name,
@@ -9,6 +11,20 @@ from app.services.leads_sync import (
     map_source,
     norm_phone,
 )
+
+
+def test_chunk_size_never_exceeds_bind_param_cap():
+    """asyncpg raises InterfaceError above 32767 bind params — one per column per row.
+    A full leads sheet (19 cols, 2000+ rows) used to hit it and fail the whole sync."""
+    for cols in (1, 19, 40, 200):
+        rows = [{f"c{i}": i for i in range(cols)}] * 5000
+        size = _chunk_size(rows)
+        assert size >= 1
+        assert size * cols <= PARAM_LIMIT
+
+    # the case that actually broke: 19-column spine rows must chunk, not go in one shot
+    spine = [{f"c{i}": i for i in range(19)}] * 2500
+    assert _chunk_size(spine) < len(spine)
 
 
 def test_norm_phone():

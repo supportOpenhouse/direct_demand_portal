@@ -301,13 +301,32 @@ TEST_LISTING = {
 # ---- sync core ----------------------------------------------------------------
 
 
+# Postgres' wire protocol allows at most 32767 bind parameters in one statement, and
+# a multi-row INSERT spends one per column per row. Exceed it and asyncpg raises
+# InterfaceError before the query is even sent — which is what a full sheet of leads
+# (19 columns × 2000+ rows) did.
+PARAM_LIMIT = 32767
+
+
+def _chunk_size(rows: list[dict]) -> int:
+    """How many of these rows fit in one INSERT without blowing the parameter cap."""
+    per_row = max((len(r) for r in rows), default=1) or 1
+    return max(1, PARAM_LIMIT // per_row)
+
+
 async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
-    """Bulk INSERT ... ON CONFLICT DO NOTHING. Returns count of rows that landed."""
+    """Bulk INSERT ... ON CONFLICT DO NOTHING. Returns count of rows that landed.
+    Chunked to stay under the bind-parameter cap; the caller's transaction spans every
+    chunk, so a failure part-way still rolls the whole sync back."""
     if not rows:
         return 0
-    stmt = pg_insert(model).values(rows).on_conflict_do_nothing(index_elements=[conflict_col])
-    result = await conn.execute(stmt)
-    return result.rowcount or 0
+    size = _chunk_size(rows)
+    total = 0
+    for i in range(0, len(rows), size):
+        stmt = (pg_insert(model).values(rows[i:i + size])
+                .on_conflict_do_nothing(index_elements=[conflict_col]))
+        total += (await conn.execute(stmt)).rowcount or 0
+    return total
 
 
 async def run_leads_sync(trigger: str = "manual") -> dict:

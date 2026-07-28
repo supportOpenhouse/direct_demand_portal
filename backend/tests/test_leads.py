@@ -1,9 +1,9 @@
 from datetime import datetime
 
 from app.routers.leads import IST, MISS_REASONS, _within_calling_hours
+from app.models import Lead
 from app.services.leads_sync import (
-    PARAM_LIMIT,
-    _chunk_size,
+    _cols_per_row,
     build_listing,
     build_meta,
     clean_name,
@@ -12,19 +12,35 @@ from app.services.leads_sync import (
     norm_phone,
 )
 
+# Postgres' hard cap — the fix must keep every chunk strictly under this.
+PG_BIND_CAP = 32767
 
-def test_chunk_size_never_exceeds_bind_param_cap():
-    """asyncpg raises InterfaceError above 32767 bind params — one per column per row.
-    A full leads sheet (19 cols, 2000+ rows) used to hit it and fail the whole sync."""
-    for cols in (1, 19, 40, 200):
-        rows = [{f"c{i}": i for i in range(cols)}] * 5000
-        size = _chunk_size(rows)
-        assert size >= 1
-        assert size * cols <= PARAM_LIMIT
 
-    # the case that actually broke: 19-column spine rows must chunk, not go in one shot
-    spine = [{f"c{i}": i for i in range(19)}] * 2500
-    assert _chunk_size(spine) < len(spine)
+def test_cols_per_row_counts_client_side_default_columns():
+    """The regression: a spine row dict has 18 keys, but Lead.id has a client-side
+    default (uuid.uuid4) that SQLAlchemy binds anyway → 19 params/row. Counting only
+    dict keys undercounted by one and a 'chunked' insert still blew the 32767 cap."""
+    spine_row = {k: k for k in (
+        "origin_key", "source_category", "source", "name", "phone", "email",
+        "assigned_to", "city", "society", "configuration", "budget_band", "plan_to_buy",
+        "preferred_visit_day", "source_remarks", "source_meta", "received_at",
+        "tat_deadline", "is_test")}  # 18 keys, no id
+    assert len(spine_row) == 18
+    assert _cols_per_row(Lead, [spine_row]) == 19  # +1 for the auto-generated id
+
+
+def test_chunking_stays_under_hard_cap_for_a_full_sheet():
+    """A full sheet (well past the cap) must chunk so no single INSERT exceeds 32767."""
+    spine_row = {k: k for k in (
+        "origin_key", "source_category", "source", "name", "phone", "email",
+        "assigned_to", "city", "society", "configuration", "budget_band", "plan_to_buy",
+        "preferred_visit_day", "source_remarks", "source_meta", "received_at",
+        "tat_deadline", "is_test")}
+    rows = [dict(spine_row) for _ in range(2500)]
+    per_row = _cols_per_row(Lead, rows)
+    size = max(1, 30000 // per_row)
+    assert size < len(rows)                 # must actually split
+    assert size * per_row <= PG_BIND_CAP    # every chunk stays under the real cap
 
 
 def test_norm_phone():

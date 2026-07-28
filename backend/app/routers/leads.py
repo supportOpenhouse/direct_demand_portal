@@ -108,6 +108,19 @@ def _lead_row(r) -> dict:
     }
 
 
+def _role_scope(user: dict) -> tuple[str, dict]:
+    """Row visibility by role, as a standalone boolean clause: admins see everything,
+    CM sees all assigned leads (no unassigned), RM sees only their own. Shared by the
+    list and the counts endpoints so both scope identically."""
+    role = user.get("role")
+    if role == "cm":
+        return "assigned_to IS NOT NULL", {}
+    if role == "rm":
+        aliases = assignment_aliases(user)
+        return ("lower(assigned_to) = ANY(:aliases)", {"aliases": aliases}) if aliases else ("false", {})
+    return "true", {}
+
+
 @router.get("/leads")
 async def list_leads(segment: str = Query("new"), user: dict = Depends(current_user)):
     engine = neon_engine()
@@ -116,19 +129,8 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
     predicate = SEGMENTS.get(segment)
     if predicate is None:
         raise HTTPException(status_code=400, detail=f"unknown segment '{segment}'")
-    # role-scoping: unassigned leads are visible to admins only. RM → own assigned
-    # leads only; CM → all assigned leads (no unassigned); Admin → everything.
-    params: dict = {}
-    role = user.get("role")
-    if role == "cm":
-        predicate += " AND assigned_to IS NOT NULL"
-    elif role == "rm":
-        aliases = assignment_aliases(user)
-        if aliases:
-            predicate += " AND lower(assigned_to) = ANY(:aliases)"
-            params["aliases"] = aliases
-        else:
-            predicate += " AND false"
+    scope, params = _role_scope(user)
+    predicate = f"({predicate}) AND ({scope})"
     # Follow-up is a worklist — soonest/overdue callbacks first; others newest-first.
     order = "follow_up_at ASC NULLS LAST" if segment == "followup" else "created_at DESC"
     try:
@@ -152,6 +154,29 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
     except Exception as e:  # table missing / conn error
         return {"status": "error", "detail": str(e), "items": [], "sync": None}
     return {"status": "ok", "detail": None, "items": items, "sync": sync}
+
+
+@router.get("/leads/counts")
+async def lead_counts(user: dict = Depends(current_user)):
+    """Per-segment counts + role-scoped total, in one query. Each segment count reuses
+    the exact SEGMENTS predicate (via count(*) FILTER) so it can never drift from the
+    list pages. `total` is every lead the caller may see — the % denominator."""
+    engine = neon_engine()
+    if engine is None:
+        return {"status": "not_configured", "counts": {}, "total": 0}
+    scope, params = _role_scope(user)
+    cols = ", ".join(f'count(*) FILTER (WHERE {pred}) AS "{seg}"' for seg, pred in SEGMENTS.items())
+    try:
+        async with engine.connect() as conn:
+            row = (await conn.execute(
+                text(f"SELECT {cols}, count(*) AS total, "
+                     f"count(*) FILTER (WHERE NOT is_test) AS total_nontest FROM leads WHERE {scope}"), params
+            )).mappings().one()
+    except Exception as e:
+        return {"status": "error", "detail": str(e), "counts": {}, "total": 0, "total_nontest": 0}
+    counts = {seg: int(row[seg]) for seg in SEGMENTS}
+    return {"status": "ok", "counts": counts, "total": int(row["total"]),
+            "total_nontest": int(row["total_nontest"])}
 
 
 @router.get("/leads/{lead_id}")

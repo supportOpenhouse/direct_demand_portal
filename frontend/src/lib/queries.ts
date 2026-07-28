@@ -14,6 +14,10 @@ export function useLeads(segment: string) {
   return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });
 }
 
+export function useLeadCounts() {
+  return useQuery({ queryKey: ["lead-counts"], queryFn: api.leadCounts, staleTime: 60_000 });
+}
+
 /* Fetch every segment at once (parallel, cached under the same ["leads", seg]
    keys the per-tab pages use) and return a flat list tagged with each lead's
    segment. Only fires while `enabled` — i.e. when the global search is active. */

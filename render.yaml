@@ -52,6 +52,8 @@ services:
         sync: false               # X-CRM-Key secret (server-to-server only)
       - key: MAPS_API_KEY
         sync: false               # server-side Geocoding key (referrer-restricted)
+      - key: GUPSHUP_WEBHOOK_SECRET
+        sync: false               # ?token= on the Gupshup callback URL (public endpoint)
       - key: LEADS_SHEET_ID
         sync: false               # leads source sheet (or rely on the in-code default)
       # RUN_SCHEDULER defaults true. If you scale this web service to >1 instance,

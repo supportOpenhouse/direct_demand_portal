@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     CRM_BOOKING_API_BASE_URL: str = ""
     CRM_API_KEY: str = ""
 
+    # --- Gupshup WhatsApp callback ---
+    # Shared secret appended to the callback URL as ?token=... . Empty = no check
+    # (fine in dev; set it in prod — the endpoint is public by definition).
+    GUPSHUP_WEBHOOK_SECRET: str = ""
+
     # --- Google OAuth (optional; app stays open until both sides are configured) ---
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     JWT_SECRET: str = "dev-insecure-change-me"

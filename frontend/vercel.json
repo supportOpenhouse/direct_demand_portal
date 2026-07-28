@@ -1,3 +1,9 @@
 {
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    {
+      "source": "/api/gupshup/:path*",
+      "destination": "https://direct-demand-api-7k48.onrender.com/v1/gupshup/:path*"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }

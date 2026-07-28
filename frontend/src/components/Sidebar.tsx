@@ -1,6 +1,7 @@
 /* 1:1 port of the prototype's <aside class="sidebar"> markup. */
 import { NavLink } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+import { useLeadCounts } from "../lib/queries";
 import {
   OpenhouseLogo,
   IconDashboard,
@@ -17,6 +18,31 @@ import {
 } from "./icons";
 
 const navClass = ({ isActive }: { isActive: boolean }) => "nav-item" + (isActive ? " active" : "");
+
+/* Share of the role-scoped total this segment holds. Intentionally omitted for
+   "new" (per product), and hidden until there's a nonzero total to divide by. */
+function Pct({ seg }: { seg: string }) {
+  const { data } = useLeadCounts();
+  const total = data?.total ?? 0;
+  if (!total) return null;
+  const p = Math.round(((data!.counts[seg] ?? 0) / total) * 100);
+  return (
+    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+      {p}%
+    </span>
+  );
+}
+
+/* New Leads shows "{new} | {total}" (non-test total) instead of a % — per product. */
+function NewCount() {
+  const { data } = useLeadCounts();
+  if (data?.status !== "ok") return null;
+  return (
+    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--muted)", fontVariantNumeric: "tabular-nums" }}>
+      {(data.counts.new ?? 0).toLocaleString("en-IN")} | {data.total_nontest.toLocaleString("en-IN")}
+    </span>
+  );
+}
 
 const IconLogs = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -58,25 +84,25 @@ export default function Sidebar() {
           <IconDashboard /> Dashboard
         </NavLink>
         <NavLink to="/leads/new" className={navClass}>
-          <IconPlus /> New Leads
+          <IconPlus /> New Leads <NewCount />
         </NavLink>
         <NavLink to="/leads/followup" className={navClass}>
-          <IconFollowup /> Follow-up
+          <IconFollowup /> Follow-up <Pct seg="followup" />
         </NavLink>
         <NavLink to="/leads/qualified" className={navClass}>
-          <IconQualified /> Qualified Leads
+          <IconQualified /> Qualified Leads <Pct seg="qualified" />
         </NavLink>
         <NavLink to="/leads/pipeline" className={navClass}>
-          <IconFunnel /> Pipeline Leads
+          <IconFunnel /> Pipeline Leads <Pct seg="pipeline" />
         </NavLink>
         <NavLink to="/leads/converted" className={navClass}>
-          <IconCheckCircle /> Converted Leads
+          <IconCheckCircle /> Converted Leads <Pct seg="converted" />
         </NavLink>
         <NavLink to="/leads/rnr" className={navClass}>
-          <IconRnr /> RNR
+          <IconRnr /> RNR <Pct seg="rnr" />
         </NavLink>
         <NavLink to="/leads/rejected" className={navClass}>
-          <IconReject /> Rejected Leads
+          <IconReject /> Rejected Leads <Pct seg="rejected" />
         </NavLink>
         <div className="nav-label">Discovery</div>
         <NavLink to="/inventory" className={navClass}>

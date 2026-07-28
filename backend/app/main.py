@@ -18,7 +18,7 @@ from .core.ratelimit import limiter
 from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
-from .routers import auth, health, inventory, leads, logs, metrics, supply, users, visits
+from .routers import auth, gupshup, health, inventory, leads, logs, metrics, supply, users, visits
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 _settings = get_settings()
@@ -167,3 +167,4 @@ app.include_router(users.router, prefix="/v1")
 app.include_router(visits.router, prefix="/v1")
 app.include_router(logs.router, prefix="/v1")
 app.include_router(metrics.router, prefix="/v1")
+app.include_router(gupshup.router, prefix="/v1")

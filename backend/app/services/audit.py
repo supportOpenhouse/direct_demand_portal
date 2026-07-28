@@ -62,7 +62,8 @@ def should_log(method: str, path: str) -> bool:
     page itself, OPTIONS preflight, and high-frequency list/poll GET refetches."""
     if method == "OPTIONS":
         return False
-    if path.startswith("/v1/health") or path.startswith("/v1/logs"):
+    # /v1/gupshup: an inbound-webhook POST per WhatsApp message would flood audit_logs
+    if path.startswith(("/v1/health", "/v1/logs", "/v1/gupshup")):
         return False
     if method == "GET":  # only the meaningful detail view, not list refetches
         return path.startswith("/v1/leads/") and path.count("/") == 3

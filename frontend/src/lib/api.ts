@@ -249,6 +249,13 @@ export interface ConfirmPayload {
   qualify: boolean;       // true → qualify the lead; false → save details (+ follow-up if given)
 }
 
+export interface LeadCountsResponse {
+  status: string;
+  counts: Record<string, number>; // segment -> count
+  total: number; // role-scoped total leads (incl. test), the sidebar % denominator
+  total_nontest: number; // same, excluding is_test leads (matches Analytics)
+}
+
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
   syncInventory: () =>
@@ -257,6 +264,7 @@ export const api = {
   markPriority: (uid: string, priority: boolean) =>
     request<{ status: string; priority: boolean }>(`/v1/supply/${encodeURIComponent(uid)}/priority`, { method: "POST", body: JSON.stringify({ priority }) }),
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),
+  leadCounts: () => request<LeadCountsResponse>("/v1/leads/counts"),
   lead: (id: string) => request<LeadDetail>(`/v1/leads/${id}`),
   leadMatches: (id: string) => request<LeadMatches>(`/v1/leads/${id}/matches`),
   matchPreview: (payload: MatchPreviewReq) =>

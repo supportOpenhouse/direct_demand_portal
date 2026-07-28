@@ -1,7 +1,7 @@
 /* New Leads — 1:1 with the prototype's tplNewLeads(), wired to GET /v1/leads?segment=new.
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
 import { useNavigate } from "react-router-dom";
-import { useLeads, useSyncLeads, formatDate } from "../lib/queries";
+import { useLeads, useLeadCounts, useSyncLeads, formatDate } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcLabel, planClass, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
@@ -30,6 +30,7 @@ const isFreshLead = (l: Lead) => {
 
 export default function NewLeads() {
   const { data, isLoading } = useLeads("new");
+  const { data: counts } = useLeadCounts();
   const nav = useNavigate();
   const { query } = useSearch();
   const { enabled, user } = useAuth();
@@ -92,7 +93,8 @@ export default function NewLeads() {
                 {(list.length !== all.length ? list.length : all.length).toLocaleString("en-IN")}
               </span>
               <span style={{ fontSize: 12.5, color: "var(--muted)", fontWeight: 500 }}>
-                {list.length !== all.length ? `of ${all.length.toLocaleString("en-IN")} leads` : "total leads"}
+                {list.length !== all.length ? `of ${all.length.toLocaleString("en-IN")} new` : "new leads"}
+                {counts?.status === "ok" && ` · ${counts.total_nontest.toLocaleString("en-IN")} total`}
               </span>
             </>
           )}

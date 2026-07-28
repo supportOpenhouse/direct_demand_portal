@@ -336,6 +336,7 @@ export const api = {
   searchMicromarkets: (q: string) => request<{ items: { micro_market: string; city: string | null }[] }>(`/v1/micromarkets/search?q=${encodeURIComponent(q)}`),
   localitiesByMicromarket: (mm: string) => request<{ items: string[] }>(`/v1/localities/by-micromarket?micro_market=${encodeURIComponent(mm)}`),
   societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
+  societiesByCity: (city: string) => request<{ items: string[] }>(`/v1/societies/by-city?city=${encodeURIComponent(city)}`),
   saveVisit: (id: string, plan: VisitPlan) =>
     request<{ status: string }>(`/v1/leads/${id}/visits`, { method: "POST", body: JSON.stringify(plan) }),
   // Openhouse app visit booking

@@ -16,6 +16,7 @@ from ..services.societies import (
     search_localities,
     search_micromarkets,
     search_societies,
+    societies_in_city,
     societies_in_locality,
 )
 
@@ -796,3 +797,10 @@ async def localities_by_mm(micro_market: str = Query(...)):
 async def societies_by_locality(locality: str = Query(...)):
     """All societies inside a locality (for cascade auto-populate)."""
     return {"items": await societies_in_locality(locality)}
+
+
+@router.get("/societies/by-city")
+async def societies_by_city(city: str = Query(...)):
+    """All societies in a city — backs the city→society cascade on the WhatsApp
+    create-lead modal."""
+    return {"items": await societies_in_city(city)}

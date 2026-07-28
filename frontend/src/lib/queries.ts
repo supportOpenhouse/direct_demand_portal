@@ -20,6 +20,16 @@ export function useSendWa() {
   });
 }
 
+/* master_societies is cached server-side and rarely changes — no need to refetch. */
+export function useSocietiesByCity(city: string) {
+  return useQuery({
+    queryKey: ["societies-by-city", city],
+    queryFn: () => api.societiesByCity(city),
+    enabled: !!city,
+    staleTime: Infinity,
+  });
+}
+
 export function useCreateWaLead() {
   const qc = useQueryClient();
   return useMutation({

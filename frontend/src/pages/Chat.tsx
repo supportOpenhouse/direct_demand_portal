@@ -8,12 +8,15 @@
    dead page. */
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useWaMessages, useSendWa, useCreateWaLead, useGupshupRecent, formatDateTime } from "../lib/queries";
+import {
+  useWaMessages, useSendWa, useCreateWaLead, useSocietiesByCity, useGupshupRecent, formatDateTime,
+} from "../lib/queries";
 import { WaMessage } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { WhatsAppIcon } from "../components/icons";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
+const CITIES = ["Ghaziabad", "Noida", "Gurgaon"];
 
 interface Thread {
   phone: string;
@@ -255,6 +258,8 @@ function CreateLeadModal(
 ) {
   const create = useCreateWaLead();
   const [form, setForm] = useState({ name, city: "", society: "" });
+  const societies = useSocietiesByCity(form.city);
+  const societyOptions = societies.data?.items ?? [];
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -285,11 +290,30 @@ function CreateLeadModal(
           </div>
           <div className="field">
             <label>City</label>
-            <input value={form.city} onChange={set("city")} placeholder="Optional" />
+            <select
+              value={form.city}
+              // changing city invalidates the chosen society — it may not exist there
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, society: "" }))}
+            >
+              <option value="">Choose city (optional)</option>
+              {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Society</label>
-            <input value={form.society} onChange={set("society")} placeholder="Optional" />
+            <select
+              value={form.society}
+              disabled={!form.city}
+              onChange={(e) => setForm((f) => ({ ...f, society: e.target.value }))}
+            >
+              <option value="">
+                {!form.city ? "Enter city first"
+                  : societies.isLoading ? "Loading…"
+                  : societyOptions.length ? "Choose society (optional)"
+                  : "No societies found for this city"}
+              </option>
+              {societyOptions.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
           </div>
           {create.isError && (
             <div style={{ marginTop: 10, fontSize: 12, color: "var(--coral)" }}>

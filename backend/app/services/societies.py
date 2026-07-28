@@ -117,6 +117,26 @@ async def localities_in_micromarket(mm: str) -> list[str]:
     return sorted(out)
 
 
+async def societies_in_city(city: str) -> list[str]:
+    """All societies in a city. Compared through normalize_city so the table's
+    'Gurugram' and a caller's 'Gurgaon' resolve to the same place."""
+    from .normalize import normalize_city
+
+    rows = await _load()
+    want = normalize_city(city)
+    if not want:
+        return []
+    seen, out = set(), []
+    for r in rows:
+        if normalize_city(r.get("city")) != want:
+            continue
+        s = (r.get("society_name") or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return sorted(out)
+
+
 async def societies_in_locality(loc: str) -> list[str]:
     rows = await _load()
     ll = (loc or "").strip().lower()

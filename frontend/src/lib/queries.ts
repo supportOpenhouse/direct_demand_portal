@@ -20,6 +20,18 @@ export function useSendWa() {
   });
 }
 
+export function useCreateWaLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.waCreateLead,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wa-messages"] });  // the thread now has a lead
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useGupshupRecent() {
   return useQuery({ queryKey: ["gupshup-recent"], queryFn: api.gupshupRecent, refetchInterval: 10_000 });
 }

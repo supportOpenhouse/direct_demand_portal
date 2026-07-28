@@ -17,12 +17,13 @@ import logging
 import re
 import secrets
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, select, update
+from sqlalchemy import desc, func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from urllib.parse import parse_qsl
 
 from ..config import get_settings
@@ -30,7 +31,7 @@ from ..config import get_settings
 # are both wider than an RM's remit. Widen deliberately, not by default.
 from ..core.auth import require_admin
 from ..db import neon_engine
-from ..models import WaMessage
+from ..models import Lead, WaMessage
 
 log = logging.getLogger("gupshup")
 router = APIRouter(tags=["gupshup"])
@@ -169,11 +170,64 @@ async def gupshup_messages(user: dict = Depends(require_admin)):
                 WaMessage.created_at,
             ).order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
         )).mappings().all()
+
+        # which of these numbers already have a lead. Leads store a formatted phone
+        # ("+91 98715 78484") while WhatsApp gives "919871578484", so both sides are
+        # reduced to the last 10 digits — the same key leads_sync dedupes on.
+        phones10 = sorted({r["phone"][-10:] for r in rows if r["phone"]})
+        leads = {}
+        if phones10:
+            p10 = func.right(func.regexp_replace(Lead.phone, r"\D", "", "g"), 10)
+            found = (await conn.execute(
+                select(Lead.id, Lead.name, p10.label("p10")).where(p10.in_(phones10))
+            )).mappings().all()
+            leads = {f["p10"]: {"id": str(f["id"]), "name": f["name"]} for f in found}
+
     return {
         "status": "ok",
         "send_enabled": settings.gupshup_send_configured,
+        "leads": leads,  # last-10-digits → the lead that already exists for it
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
+
+
+class CreateLeadRequest(BaseModel):
+    phone: str
+    name: str = Field(min_length=1, max_length=120)
+    city: str | None = None
+    society: str | None = None
+
+
+@router.post("/gupshup/leads")
+async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(require_admin)):
+    """Create a spine lead from a WhatsApp conversation. Idempotent on origin_key, so
+    a double-click returns the existing lead rather than a duplicate."""
+    from ..services.leads_sync import TAT_HOURS, display_phone, norm_phone
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    phone10 = norm_phone(req.phone)
+    if not phone10 or len(phone10) != 10:
+        raise HTTPException(status_code=400, detail="invalid phone number")
+
+    now = datetime.now(timezone.utc)
+    city = (req.city or "").strip() or None
+    society = (req.society or "").strip() or None
+    values = {
+        "origin_key": f"whatsapp:{phone10}", "source_category": "whatsapp", "source": "whatsapp",
+        "name": req.name.strip(), "phone": display_phone(phone10), "city": city, "society": society,
+        "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
+        "source_meta": {"created_from": "whatsapp_chat", "created_by": user.get("email")},
+    }
+    async with engine.begin() as conn:
+        await conn.execute(
+            pg_insert(Lead).values(values).on_conflict_do_nothing(index_elements=["origin_key"])
+        )
+        row = (await conn.execute(
+            select(Lead.id).where(Lead.origin_key == values["origin_key"])
+        )).first()
+    return {"status": "ok", "lead_id": str(row[0]) if row else None}
 
 
 class SendRequest(BaseModel):

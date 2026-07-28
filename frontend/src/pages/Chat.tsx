@@ -7,7 +7,8 @@
    Admin-only for now — the API refuses non-admins too, this just avoids showing a
    dead page. */
 import { useMemo, useState } from "react";
-import { useWaMessages, useSendWa, useGupshupRecent, formatDateTime } from "../lib/queries";
+import { Link } from "react-router-dom";
+import { useWaMessages, useSendWa, useCreateWaLead, useGupshupRecent, formatDateTime } from "../lib/queries";
 import { WaMessage } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { WhatsAppIcon } from "../components/icons";
@@ -71,9 +72,12 @@ export default function Chat() {
   const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [showRaw, setShowRaw] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const threads = useMemo(() => toThreads(data?.items ?? []), [data]);
   const thread = threads.find((t) => t.phone === active) ?? threads[0] ?? null;
+  // leads are keyed by the last 10 digits — leads store "+91 98715 78484", WhatsApp "919871578484"
+  const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
 
   // WhatsApp's rule, not ours: the clock runs from THEIR last message.
   const windowOpen = thread?.lastInboundAt != null && Date.now() - thread.lastInboundAt < WINDOW_MS;
@@ -171,11 +175,21 @@ export default function Chat() {
           <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0, padding: 14 }}>
             {thread && (
               <>
-                <div style={{ borderBottom: "1px solid var(--line)", paddingBottom: 9, marginBottom: 11 }}>
+                <div style={{
+                  borderBottom: "1px solid var(--line)", paddingBottom: 9, marginBottom: 11,
+                  display: "flex", alignItems: "center",
+                }}>
                   <b style={{ fontSize: 14 }}>{thread.name || thread.phone}</b>
                   <span style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 16, fontVariantNumeric: "tabular-nums" }}>
                     +{thread.phone}
                   </span>
+                  <div style={{ marginLeft: "auto" }}>
+                    {lead ? (
+                      <Link to={`/leads/${lead.id}`} className="btn ghost sm">View lead</Link>
+                    ) : (
+                      <button className="btn green sm" onClick={() => setCreating(true)}>+ Create new lead</button>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "2px 6px 2px 2px" }}>
@@ -222,6 +236,74 @@ export default function Chat() {
       )}
 
       {showRaw && <RawFeed />}
+
+      {creating && thread && (
+        <CreateLeadModal
+          phone={thread.phone}
+          name={thread.name || ""}
+          onClose={() => setCreating(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Name and number come from the conversation; city and society are optional because
+   a WhatsApp lead usually hasn't told us either yet. Source is fixed server-side. */
+function CreateLeadModal(
+  { phone, name, onClose }: { phone: string; name: string; onClose: () => void },
+) {
+  const create = useCreateWaLead();
+  const [form, setForm] = useState({ name, city: "", society: "" });
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const submit = () => {
+    if (!form.name.trim() || create.isPending) return;
+    create.mutate(
+      { phone, name: form.name.trim(), city: form.city.trim(), society: form.society.trim() },
+      { onSuccess: onClose },
+    );
+  };
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <h3>Create lead from WhatsApp</h3>
+          <div className="icon-btn" onClick={onClose}>✕</div>
+        </div>
+        <div className="mb">
+          <div className="field">
+            <label>Name <span className="req">*</span></label>
+            <input value={form.name} autoFocus onChange={set("name")} placeholder="Full name" />
+          </div>
+          <div className="field">
+            <label>Phone</label>
+            {/* the conversation's number — editing it would detach the lead from the thread */}
+            <input value={`+${phone}`} readOnly style={{ background: "var(--panel-2)", color: "var(--muted)" }} />
+          </div>
+          <div className="field">
+            <label>City</label>
+            <input value={form.city} onChange={set("city")} placeholder="Optional" />
+          </div>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Society</label>
+            <input value={form.society} onChange={set("society")} placeholder="Optional" />
+          </div>
+          {create.isError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--coral)" }}>
+              {(create.error as Error).message}
+            </div>
+          )}
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn green" onClick={submit} disabled={create.isPending || !form.name.trim()}>
+            {create.isPending ? "Creating…" : "Create lead"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

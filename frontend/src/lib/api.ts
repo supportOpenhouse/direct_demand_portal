@@ -280,7 +280,15 @@ export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
   waMessages: () =>
-    request<{ status: string; send_enabled: boolean; items: WaMessage[] }>("/v1/gupshup/messages"),
+    request<{
+      status: string; send_enabled: boolean;
+      leads: Record<string, { id: string; name: string | null }>;  // last-10-digits → lead
+      items: WaMessage[];
+    }>("/v1/gupshup/messages"),
+  waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
+    request<{ status: string; lead_id: string | null }>("/v1/gupshup/leads", {
+      method: "POST", body: JSON.stringify(payload),
+    }),
   waSend: (phone: string, text: string) =>
     request<{ status: string; gupshup_id: string | null }>("/v1/gupshup/send", {
       method: "POST", body: JSON.stringify({ phone, text }),

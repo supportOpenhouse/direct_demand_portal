@@ -11,7 +11,6 @@ import { useWaMessages, useSendWa, useGupshupRecent, formatDateTime } from "../l
 import { WaMessage } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { WhatsAppIcon } from "../components/icons";
-import { initials } from "../lib/leads";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -111,8 +110,10 @@ export default function Chat() {
   };
 
   return (
-    <>
-      <div className="section-head" style={{ marginBottom: 10 }}>
+    // fills .view (a bounded flex child of .main) so the thread list and conversation
+    // scroll inside themselves rather than growing the page
+    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
+      <div className="section-head" style={{ marginBottom: 10, flex: "none" }}>
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{threads.length}</b> conversation{threads.length === 1 ? "" : "s"}
         </p>
@@ -133,9 +134,12 @@ export default function Chat() {
           </div>
         </div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "minmax(200px, 280px) 1fr", gap: 12 }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: "minmax(200px, 280px) 1fr", gap: 12,
+          flex: 1, minHeight: 0,  // minHeight:0 or the grid refuses to shrink below content
+        }}>
           {/* thread list */}
-          <div className="card" style={{ padding: 0, overflow: "hidden", alignSelf: "start" }}>
+          <div className="card" style={{ padding: 0, overflowY: "auto" }}>
             {threads.map((t, i) => {
               const last = t.messages[t.messages.length - 1];
               return (
@@ -149,9 +153,6 @@ export default function Chat() {
                     background: t.phone === thread?.phone ? "var(--panel-2)" : "transparent",
                   }}
                 >
-                  <div className="av" style={{ background: "#daf3e3", color: "#12823f", flexShrink: 0 }}>
-                    {initials(t.name || t.phone)}
-                  </div>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {t.name || t.phone}
@@ -166,7 +167,7 @@ export default function Chat() {
           </div>
 
           {/* conversation */}
-          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 420 }}>
+          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
             {thread && (
               <>
                 <div style={{ borderBottom: "1px solid var(--line)", paddingBottom: 9, marginBottom: 11 }}>
@@ -176,7 +177,7 @@ export default function Chat() {
                   </span>
                 </div>
 
-                <div style={{ flex: 1, overflowY: "auto", maxHeight: 460, paddingRight: 4 }}>
+                <div style={{ flex: 1, minHeight: 0, overflowY: "auto", paddingRight: 4 }}>
                   {thread.messages.map((m) => <Bubble key={m.id} m={m} />)}
                 </div>
 
@@ -220,7 +221,7 @@ export default function Chat() {
       )}
 
       {showRaw && <RawFeed />}
-    </>
+    </div>
   );
 }
 

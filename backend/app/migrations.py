@@ -83,6 +83,22 @@ async def run_migrations(engine) -> None:
             # everything still null (meta has no source date) → use ingest time
             await conn.execute(text("UPDATE leads SET received_at = created_at WHERE received_at IS NULL"))
 
+            # back-fill WhatsApp media off the stored callback. Messages received
+            # before the media columns existed rendered as a bare "[audio]", but the
+            # whole payload was kept in raw — so the download link is recoverable.
+            # (Whether it still resolves depends on urlExpiry; the UI says which.)
+            await conn.execute(text("""
+                UPDATE wa_messages SET
+                  media_url  = raw->'payload'->'payload'->>'url',
+                  media_name = raw->'payload'->'payload'->>'name',
+                  media_expiry = CASE
+                    WHEN (raw->'payload'->'payload'->>'urlExpiry') ~ '^[0-9]+$'
+                    THEN to_timestamp((raw->'payload'->'payload'->>'urlExpiry')::bigint / 1000.0)
+                  END
+                WHERE media_url IS NULL
+                  AND raw->'payload'->'payload'->>'url' IS NOT NULL
+            """))
+
             # seed Openhouse SalesManager ids (smid) for the booking team by name —
             # only fills blanks, so admin edits via Settings are never clobbered. Runs
             # every boot, so a seed user added later still gets mapped on next deploy.

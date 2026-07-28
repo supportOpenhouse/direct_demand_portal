@@ -37,6 +37,10 @@ _ADD_COLUMNS = [
     # when it leaves) — drives the "moved here today" highlight
     ("leads", "follow_up_since", "TIMESTAMPTZ"),
     ("leads", "is_hot", "BOOLEAN NOT NULL DEFAULT false"),
+    # WhatsApp media — wa_messages predates these, so create_all() won't add them
+    ("wa_messages", "media_url", "TEXT"),
+    ("wa_messages", "media_expiry", "TIMESTAMPTZ"),
+    ("wa_messages", "media_name", "TEXT"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

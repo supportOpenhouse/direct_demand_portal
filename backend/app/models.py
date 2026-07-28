@@ -313,6 +313,14 @@ class WaMessage(Base):
     name: Mapped[str | None] = mapped_column(Text)          # sender name, inbound only
     body: Mapped[str | None] = mapped_column(Text)          # text, or a caption
     msg_type: Mapped[str] = mapped_column(Text, nullable=False, server_default="text")
+    # inbound media (audio/voice notes, images, documents). Gupshup hosts the file on
+    # filemanager.gupshup.io behind a link that EXPIRES at media_expiry — we store the
+    # link, not the bytes, so an old voice note stops playing once that passes.
+    # ponytail: no blob storage in this stack; to keep media, fetch it in _persist and
+    # push it to S3/R2, then store that URL here instead.
+    media_url: Mapped[str | None] = mapped_column(Text)
+    media_expiry: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    media_name: Mapped[str | None] = mapped_column(Text)   # documents carry a filename
     # provider message id — the join key for the delivery events that arrive later
     gupshup_id: Mapped[str | None] = mapped_column(Text, index=True)
     status: Mapped[str | None] = mapped_column(Text)        # submitted|sent|delivered|read|failed

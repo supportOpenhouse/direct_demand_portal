@@ -24,6 +24,17 @@ export function useSendWa() {
   });
 }
 
+/* Topbar unread dot. One MAX() server-side, so a 30s poll from every page is fine —
+   unlike useWaMessages, which pulls the whole conversation set. */
+export function useWaLatest(enabled: boolean) {
+  return useQuery({
+    queryKey: ["wa-latest"],
+    queryFn: api.waLatest,
+    enabled,
+    refetchInterval: 30_000,
+  });
+}
+
 /* master_societies is cached server-side and rarely changes — no need to refetch. */
 export function useSocietiesByCity(city: string) {
   return useQuery({

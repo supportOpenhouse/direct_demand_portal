@@ -273,6 +273,9 @@ export interface WaMessage {
   msg_type: string;
   status: string | null;   // submitted | sent | delivered | read | failed (outbound)
   author: string | null;   // portal user who sent it
+  media_url: string | null;      // temporary Gupshup link — dead after media_expiry
+  media_expiry: string | null;
+  media_name: string | null;     // documents carry a filename
   created_at: string;
 }
 
@@ -285,6 +288,7 @@ export const api = {
       leads: Record<string, { id: string; name: string | null }>;  // last-10-digits → lead
       items: WaMessage[];
     }>("/v1/gupshup/messages" + (phone ? `?phone=${encodeURIComponent(phone)}` : "")),
+  waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
   waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
     request<{ status: string; lead_id: string | null }>("/v1/gupshup/leads", {
       method: "POST", body: JSON.stringify(payload),

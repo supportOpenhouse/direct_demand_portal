@@ -83,6 +83,23 @@ def _text_of(inner: dict, kind: str | None) -> str | None:
     return inner.get("caption") or None
 
 
+def _media_of(inner: dict) -> dict:
+    """Media columns from an inbound payload. Voice notes, images and documents all
+    arrive as {url, contentType, urlExpiry} — the URL is a temporary Gupshup link, so
+    urlExpiry is kept to tell "not sent" apart from "link has since expired"."""
+    url = inner.get("url")
+    if not url:
+        return {}
+    expiry = inner.get("urlExpiry")
+    return {
+        "media_url": url,
+        "media_name": inner.get("name"),
+        # urlExpiry is unix MILLIseconds
+        "media_expiry": (datetime.fromtimestamp(expiry / 1000, timezone.utc)
+                         if isinstance(expiry, (int, float)) else None),
+    }
+
+
 async def _persist(entry: dict) -> None:
     """Write an inbound message, or apply a delivery event to the row it belongs to.
     Fire-and-forget: a DB blip must never affect the callback's 200."""
@@ -106,6 +123,7 @@ async def _persist(entry: dict) -> None:
                     msg_type=kind or "text",
                     gupshup_id=payload.get("id"),
                     raw=body,
+                    **_media_of(inner),
                 ))
         elif entry["type"] == "message-event" and payload.get("id"):
             # delivery receipts arrive minutes later, keyed by the id /send stored
@@ -166,6 +184,7 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(requir
     q = select(
         WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
         WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
+        WaMessage.media_url, WaMessage.media_expiry, WaMessage.media_name,
         WaMessage.created_at,
     )
     if phone is not None:
@@ -197,6 +216,21 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(requir
         "leads": leads,  # last-10-digits → the lead that already exists for it
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
+
+
+@router.get("/gupshup/latest")
+async def gupshup_latest(user: dict = Depends(require_admin)):
+    """Timestamp of the newest inbound message — one indexed MAX(), cheap enough for
+    the topbar to poll from every page. The client compares it against the last time
+    this browser opened the WhatsApp page to decide whether to show the dot."""
+    engine = neon_engine()
+    if engine is None:
+        return {"last_inbound_at": None}
+    async with engine.connect() as conn:
+        row = (await conn.execute(
+            select(func.max(WaMessage.created_at)).where(WaMessage.direction == "in")
+        )).first()
+    return {"last_inbound_at": row[0].isoformat() if row and row[0] else None}
 
 
 class CreateLeadRequest(BaseModel):

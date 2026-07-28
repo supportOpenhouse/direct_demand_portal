@@ -6,8 +6,9 @@
 
    Admin-only for now — the API refuses non-admins too, this just avoids showing a
    dead page. */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { markWaSeen } from "../lib/whatsapp";
 import {
   useWaMessages, useCreateWaLead, useSocietiesByCity, useGupshupRecent, formatDateTime,
 } from "../lib/queries";
@@ -53,6 +54,9 @@ export default function Chat() {
   const [active, setActive] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  // keep marking seen while the page is open, so the dot doesn't reappear behind you
+  useEffect(() => { if (data) markWaSeen(); }, [data]);
 
   const threads = useMemo(() => toThreads(data?.items ?? []), [data]);
   const thread = threads.find((t) => t.phone === active) ?? threads[0] ?? null;

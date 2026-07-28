@@ -7,6 +7,39 @@ import { useSendWa, formatDateTime } from "../lib/queries";
 
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 
+/* Gupshup hosts inbound media behind a link that expires (urlExpiry). Past that the
+   file is gone — we store the link, not the bytes — so say so rather than render a
+   broken player. */
+function Media({ m }: { m: WaMessage }) {
+  if (!m.media_url) return null;
+  const expired = !!m.media_expiry && +new Date(m.media_expiry) < Date.now();
+  if (expired) {
+    return (
+      <div style={{ fontSize: 12, color: "var(--muted)", fontStyle: "italic" }}>
+        {m.msg_type} — link expired
+      </div>
+    );
+  }
+  if (m.msg_type === "audio" || m.msg_type === "voice") {
+    return <audio controls src={m.media_url} style={{ maxWidth: 260, display: "block" }} />;
+  }
+  if (m.msg_type === "image" || m.msg_type === "sticker") {
+    return (
+      <a href={m.media_url} target="_blank" rel="noopener noreferrer">
+        <img src={m.media_url} alt={m.body || "image"} style={{ maxWidth: 240, borderRadius: 8, display: "block" }} />
+      </a>
+    );
+  }
+  if (m.msg_type === "video") {
+    return <video controls src={m.media_url} style={{ maxWidth: 260, borderRadius: 8, display: "block" }} />;
+  }
+  return (
+    <a href={m.media_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
+      📎 {m.media_name || m.msg_type}
+    </a>
+  );
+}
+
 export function Bubble({ m }: { m: WaMessage }) {
   const out = m.direction === "out";
   return (
@@ -19,7 +52,8 @@ export function Bubble({ m }: { m: WaMessage }) {
           wordBreak: "break-word",
         }}
       >
-        {m.body || <i style={{ color: "var(--muted)" }}>[{m.msg_type}]</i>}
+        <Media m={m} />
+        {m.body || (!m.media_url && <i style={{ color: "var(--muted)" }}>[{m.msg_type}]</i>)}
         <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, textAlign: "right" }}>
           {formatDateTime(m.created_at)}
           {out && m.status ? ` · ${m.status}` : ""}

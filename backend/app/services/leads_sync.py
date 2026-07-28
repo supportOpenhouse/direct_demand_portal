@@ -304,14 +304,18 @@ TEST_LISTING = {
 # Postgres' wire protocol allows at most 32767 bind parameters in one statement, and
 # a multi-row INSERT spends one per column per row. Exceed it and asyncpg raises
 # InterfaceError before the query is even sent — which is what a full sheet of leads
-# (19 columns × 2000+ rows) did.
-PARAM_LIMIT = 32767
+# (2000+ rows) did. Leave headroom below the hard cap so an off-by-a-column never bites.
+PARAM_LIMIT = 30000
 
 
-def _chunk_size(rows: list[dict]) -> int:
-    """How many of these rows fit in one INSERT without blowing the parameter cap."""
-    per_row = max((len(r) for r in rows), default=1) or 1
-    return max(1, PARAM_LIMIT // per_row)
+def _cols_per_row(model, rows: list[dict]) -> int:
+    """Bind-params SQLAlchemy emits per row = the row's own keys PLUS every column with a
+    client-side default (e.g. `id = uuid.uuid4`) that the row omits — SQLAlchemy fills and
+    BINDS those. Counting only dict keys undercounts by exactly those columns, which is how
+    a 'chunked' insert still blew the cap (18 dict keys but 19 bound columns per lead)."""
+    keys = set().union(*(r.keys() for r in rows)) if rows else set()
+    auto = sum(1 for c in model.__table__.columns if c.name not in keys and c.default is not None)
+    return max(1, len(keys) + auto)
 
 
 async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
@@ -320,7 +324,7 @@ async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
     chunk, so a failure part-way still rolls the whole sync back."""
     if not rows:
         return 0
-    size = _chunk_size(rows)
+    size = max(1, PARAM_LIMIT // _cols_per_row(model, rows))
     total = 0
     for i in range(0, len(rows), size):
         stmt = (pg_insert(model).values(rows[i:i + size])

@@ -127,6 +127,7 @@ body{
   font:inherit;font-weight:600;font-size:13px;cursor:pointer;transition:.14s;white-space:nowrap;
 }
 .btn svg{width:15px;height:15px}
+a.btn{text-decoration:none} /* .btn on a react-router <Link> */
 .btn.primary{background:var(--ink);color:#fff}
 .btn.primary:hover{background:#000;transform:translateY(-1px)}
 .btn.green{background:var(--emerald);color:#fff}

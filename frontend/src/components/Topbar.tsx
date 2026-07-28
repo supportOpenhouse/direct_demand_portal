@@ -1,6 +1,6 @@
 /* 1:1 port of the prototype's .topbar. Reminders / Add New Lead are later-phase. */
-import { useLocation } from "react-router-dom";
-import { IconBell, IconPlusBold } from "./icons";
+import { Link, useLocation } from "react-router-dom";
+import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
 import GlobalSearch from "./GlobalSearch";
 
@@ -20,6 +20,7 @@ const TITLES: Record<string, string> = {
   "/goldmine": "Gold Mine — Re-engagement",
   "/settings": "Settings & Access",
   "/logs": "Activity Logs",
+  "/chat": "WhatsApp",
 };
 
 export default function Topbar() {
@@ -39,6 +40,9 @@ export default function Topbar() {
       <button className="btn green" onClick={() => toast("Lead capture arrives in a later phase", "blue", "＋")}>
         <IconPlusBold /> Add New Lead
       </button>
+      <Link className="btn wa" to="/chat">
+        <WhatsAppIcon /> WhatsApp
+      </Link>
     </div>
   );
 }

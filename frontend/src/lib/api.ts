@@ -256,8 +256,17 @@ export interface LeadCountsResponse {
   total_nontest: number; // same, excluding is_test leads (matches Analytics)
 }
 
+/* Raw Gupshup callback as stored by the webhook. `body` is deliberately untyped —
+   the whole point of this phase is to see the real shapes before modelling them. */
+export interface GupshupEvent {
+  received_at: string;
+  type: string | null; // message | message-event | user-event | system-event | billing-event
+  body: Record<string, any>;
+}
+
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
+  gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
   syncInventory: () =>
     request<{ status: string; rows: number; synced_at: string }>("/v1/inventory/sync", { method: "POST" }),
   supply: () => request<SupplyResponse>("/v1/supply"),

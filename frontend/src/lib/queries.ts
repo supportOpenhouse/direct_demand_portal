@@ -6,6 +6,12 @@ export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
 }
 
+/* Polls — the webhook has no push channel to the browser yet, and the server keeps
+   only an in-memory ring, so a short interval is the whole sync mechanism. */
+export function useGupshupRecent() {
+  return useQuery({ queryKey: ["gupshup-recent"], queryFn: api.gupshupRecent, refetchInterval: 10_000 });
+}
+
 export function useSupply() {
   return useQuery({ queryKey: ["supply"], queryFn: api.supply, staleTime: 60_000 });
 }

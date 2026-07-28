@@ -13,6 +13,7 @@ import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
+import Chat from "./pages/Chat";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -40,6 +41,7 @@ const router = createBrowserRouter([
       { path: "goldmine", element: <Stub title="Gold Mine" /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
+      { path: "chat", element: <Chat /> },
     ],
   },
 ]);

@@ -19,6 +19,9 @@ import { WhatsAppIcon } from "../components/icons";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const CITIES = ["Ghaziabad", "Noida", "Gurgaon"];
+// fixed panel height — both columns scroll inside this rather than running to the
+// bottom of the viewport, so the page keeps a normal, predictable shape
+const PANEL_H = 560;
 
 interface Thread {
   phone: string;
@@ -85,10 +88,8 @@ export default function Chat() {
   }
 
   return (
-    // fills .view (a bounded flex child of .main) so the thread list and conversation
-    // scroll inside themselves rather than growing the page
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100%" }}>
-      <div className="section-head" style={{ marginBottom: 10, flex: "none" }}>
+    <div>
+      <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{threads.length}</b> conversation{threads.length === 1 ? "" : "s"}
         </p>
@@ -111,12 +112,16 @@ export default function Chat() {
       ) : (
         <div style={{
           display: "grid", gridTemplateColumns: "minmax(200px, 280px) 1fr", gap: 12,
-          flex: 1, minHeight: 0,  // minHeight:0 or the grid refuses to shrink below content
+          // fixed, not flex:1 — the two panels scroll independently rather than
+          // stretching to the bottom of the viewport
+          height: PANEL_H,
         }}>
           {/* thread list */}
           <div className="card" style={{ padding: 0, overflowY: "auto" }}>
             {threads.map((t, i) => {
               const last = t.messages[t.messages.length - 1];
+              const selected = t.phone === thread?.phone;
+              const hasLead = !!data?.leads?.[t.phone.slice(-10)];
               return (
                 <button
                   key={t.phone}
@@ -125,7 +130,10 @@ export default function Chat() {
                     display: "flex", gap: 10, width: "100%", textAlign: "left", padding: "11px 13px",
                     border: 0, borderTop: i ? "1px solid var(--line)" : undefined, cursor: "pointer",
                     font: "inherit", alignItems: "center",
-                    background: t.phone === thread?.phone ? "var(--panel-2)" : "transparent",
+                    // amber = a lead already exists for this number. The left bar keeps
+                    // that readable even when the row is also the selected one.
+                    background: selected ? "var(--panel-2)" : hasLead ? "var(--amber-soft)" : "transparent",
+                    borderLeft: hasLead ? "3px solid var(--amber)" : "3px solid transparent",
                   }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
@@ -143,7 +151,7 @@ export default function Chat() {
 
           {/* conversation */}
           {/* .card carries no padding of its own — every page adds its own inset */}
-          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0, padding: 14 }}>
+          <div className="card" style={{ display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden", padding: 14 }}>
             {thread && (
               <>
                 <div style={{

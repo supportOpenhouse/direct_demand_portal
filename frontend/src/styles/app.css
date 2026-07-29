@@ -222,12 +222,9 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .stage.new{background:var(--blue-soft);color:var(--blue)}.stage.new::before{background:var(--blue)}
 .stage.contacted{background:var(--cyan-soft);color:var(--cyan)}.stage.contacted::before{background:var(--cyan)}
 .stage.visit{background:var(--amber-soft);color:var(--amber)}.stage.visit::before{background:var(--amber)}
-.stage.feedback{background:var(--violet-soft);color:var(--violet)}.stage.feedback::before{background:var(--violet)}
 .stage.nego{background:var(--indigo-soft);color:var(--indigo)}.stage.nego::before{background:var(--indigo)}
 .stage.won{background:var(--emerald-soft);color:var(--emerald)}.stage.won::before{background:var(--emerald)}
 .stage.lost{background:var(--coral-soft);color:var(--coral)}.stage.lost::before{background:var(--coral)}
-.stage.future{background:var(--gold-soft);color:var(--gold)}.stage.future::before{background:var(--gold)}
-.stage.timepass{background:var(--slate-soft);color:var(--slate)}.stage.timepass::before{background:var(--slate)}
 
 /* TAT — traffic light */
 .tat{display:inline-flex;align-items:center;gap:6px;font-family:"Spline Sans Mono";font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:7px}

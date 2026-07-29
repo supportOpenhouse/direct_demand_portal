@@ -1,6 +1,10 @@
-/* Follow-up — the callback worklist. Any non-terminal lead with an open follow-up
-   lands here (not-connected + saved-not-qualified live ONLY here; qualified leads
-   also appear as a due reminder). Rows are gated: Yes logs a connected call and opens
+/* The callback worklist, used by two pages:
+
+     Follow Up          (stage='follow_up')        — we've spoken to them, callback due
+     Call Not Received  (stage='call_not_received') — called, never yet reached
+
+   Same columns and same actions, so it's one component with a segment prop rather
+   than two near-identical files. Rows are gated: Yes logs a connected call and opens
    the lead, No asks why and reschedules accordingly (10 misses on a never-reached
    lead → RNR; an invalid number → Rejected). */
 import { useState } from "react";
@@ -35,8 +39,8 @@ const isToday = (iso: string | null): boolean => {
   return d.getFullYear() === n.getFullYear() && d.getMonth() === n.getMonth() && d.getDate() === n.getDate();
 };
 
-export default function Followup() {
-  const { data, isLoading } = useLeads("followup");
+export default function Followup({ segment = "followup" }: { segment?: string } = {}) {
+  const { data, isLoading } = useLeads(segment);
   const { query } = useSearch();
   const [source, setSource] = useState("");
   const [city, setCity] = useState("");

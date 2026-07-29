@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import Inventory from "./pages/Inventory";
@@ -8,7 +8,6 @@ import Supply from "./pages/Supply";
 import Dashboard from "./pages/Dashboard";
 import NewLeads from "./pages/NewLeads";
 import Followup from "./pages/Followup";
-import Rnr from "./pages/Rnr";
 import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
@@ -27,11 +26,13 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <Dashboard /> },
       { path: "leads/new", element: <NewLeads /> },
+      { path: "leads/call-not-received", element: <Followup segment="call_not_received" /> },
       { path: "leads/followup", element: <Followup /> },
       { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
       { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },
       { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
-      { path: "leads/rnr", element: <Rnr /> },
+      // RNR leads live on the Rejected page now — keep old links working
+      { path: "leads/rnr", element: <Navigate to="/leads/rejected" replace /> },
       { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
       { path: "leads/:id", element: <LeadDetail /> },
       { path: "reminders", element: <Stub title="Reminders" /> },

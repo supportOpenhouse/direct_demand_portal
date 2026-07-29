@@ -43,6 +43,19 @@ function HotStar({ lead }: { lead: Lead }) {
   );
 }
 
+/* Callback due on a lead that isn't in the callback worklist. Only overdue/today are
+   worth flagging — a callback next week is noise on this page. */
+function DueBadge({ at }: { at: string | null }) {
+  if (!at) return null;
+  const mins = Math.round((new Date(at).getTime() - Date.now()) / 60000);
+  if (mins > 1440) return null;
+  return (
+    <span className={"fu-chip" + (mins < 0 ? " overdue" : " soon")} style={{ marginLeft: 6 }}>
+      ⏰ {mins < 0 ? "callback overdue" : "callback due"}
+    </span>
+  );
+}
+
 export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "converted" | "rejected" }) {
   const rejected = segment === "rejected";
   const pipeline = segment === "pipeline";
@@ -161,7 +174,17 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     <div className="who">
                       <div className="av">{initials(l.name)}</div>
                       <div>
-                        <div className="nm">{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
+                        <div className="nm">
+                          {l.name}
+                          {l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}
+                          {/* RNR keeps its own stage but shares the Rejected page */}
+                          {rejected && l.stage === "rnr" && (
+                            <span className="bucket-tag" style={{ marginLeft: 6 }}>RNR</span>
+                          )}
+                          {/* qualified leads no longer also sit in Follow-up, so the
+                              due callback has to be visible here or it's invisible */}
+                          {segment === "qualified" && <DueBadge at={l.follow_up_at} />}
+                        </div>
                         <div className="ph">{l.phone}</div>
                       </div>
                     </div>

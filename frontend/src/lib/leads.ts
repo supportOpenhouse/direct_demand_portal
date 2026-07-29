@@ -41,15 +41,27 @@ export const initials = (n: string | null) =>
     .join("")
     .toUpperCase();
 
-// our backend stage keys → prototype label + .stage.<class>
+/* The eight stages. `stage` is authoritative — each maps to exactly one page, so a
+   lead is never in two lists or none. */
 const STAGE_LABEL: Record<string, string> = {
-  new: "New", contacted: "Contacted", visit_planned: "Trip Planned", visit_scheduled: "Visit Scheduled",
-  visit_feedback: "Visit Feedback", negotiation: "Negotiation", won: "Won",
-  lost: "Lost", rejected: "Rejected", future_prospect: "Future Prospect", timepass: "Timepass",
+  new: "New",
+  call_not_received: "Call Not Received",
+  follow_up: "Follow Up",
+  qualified: "Qualified",
+  visit_scheduled: "Visit Scheduled",
+  won: "Won",
+  rejected: "Rejected",
+  rnr: "RNR",
 };
 const STAGE_CLASS: Record<string, string> = {
-  new: "new", contacted: "contacted", visit_planned: "planned", visit_scheduled: "visit", visit_feedback: "feedback",
-  negotiation: "nego", won: "won", lost: "lost", rejected: "lost", future_prospect: "future", timepass: "timepass",
+  new: "new",
+  call_not_received: "contacted",
+  follow_up: "planned",
+  qualified: "nego",
+  visit_scheduled: "visit",
+  won: "won",
+  rejected: "lost",
+  rnr: "lost",
 };
 export const stageLabel = (s: string) => STAGE_LABEL[s] || s;
 export const stageClass = (s: string) => STAGE_CLASS[s] || "new";
@@ -59,11 +71,12 @@ export const stageClass = (s: string) => STAGE_CLASS[s] || "new";
    which tab a matched lead is in and to navigate there. */
 export const LEAD_SEGMENTS: { seg: string; route: string; label: string }[] = [
   { seg: "new", route: "/leads/new", label: "New Leads" },
-  { seg: "followup", route: "/leads/followup", label: "Follow-up" },
+  { seg: "call_not_received", route: "/leads/call-not-received", label: "Call Not Received" },
+  { seg: "followup", route: "/leads/followup", label: "Follow Up" },
   { seg: "qualified", route: "/leads/qualified", label: "Qualified" },
   { seg: "pipeline", route: "/leads/pipeline", label: "Pipeline" },
   { seg: "converted", route: "/leads/converted", label: "Converted" },
-  { seg: "rnr", route: "/leads/rnr", label: "RNR" },
+  // RNR leads keep stage='rnr' but live on the Rejected page, badged
   { seg: "rejected", route: "/leads/rejected", label: "Rejected" },
 ];
 

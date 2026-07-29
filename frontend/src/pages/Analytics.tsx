@@ -101,26 +101,19 @@ export default function Analytics() {
     const bySeg = (s: string) => rows.filter((r) => r.seg === s);
     const count = (s: string) => bySeg(s).length;
 
-    // Segments OVERLAP: a qualified/pipeline lead with an open follow-up is returned
-    // in BOTH its stage segment AND "followup" (by design — it shows in the Follow-up
-    // tab as a due-callback reminder). So for any per-lead metric, dedupe to one row
-    // per lead, keeping the stage segment over the follow-up overlay (priority below).
-    // Without this, those leads are counted twice in totals, Unassigned, conversion, etc.
-    const SEG_PRIORITY = ["converted", "rejected", "rnr", "pipeline", "qualified", "new", "followup"];
-    const best = new Map<string, Row>();
-    for (const r of rows) {
-      const prev = best.get(r.lead.id);
-      if (!prev || SEG_PRIORITY.indexOf(r.seg) < SEG_PRIORITY.indexOf(prev.seg)) best.set(r.lead.id, r);
-    }
-    const uniq = [...best.values()];
+    // Segments are disjoint — `stage` decides the page, so each lead is returned by
+    // exactly one segment. (This used to need a dedupe pass: a qualified lead with an
+    // open follow-up appeared in both its stage segment and "followup".)
+    const uniq = rows;
 
     const total = uniq.length;
     const nNew = count("new");
     const nQualified = count("qualified");
     const nPipeline = count("pipeline");
     const nConverted = count("converted");
-    const nRnr = count("rnr");
-    const nRejected = count("rejected");
+    // RNR has no segment of its own — those leads come back under "rejected"
+    const nRnr = rows.filter((r) => r.lead.stage === "rnr").length;
+    const nRejected = count("rejected") - nRnr;
     const qualifiedPlus = nQualified + nPipeline + nConverted; // reached qualified or beyond
 
     // TAT — first-contact SLA on leads still awaiting the first call (New)
@@ -137,7 +130,7 @@ export default function Analytics() {
     const attempted = uniq.filter((r) => r.lead.ever_connected || r.lead.miss_count > 0);
     const connected = uniq.filter((r) => r.lead.ever_connected).length;
     // "need an owner" = unassigned AND still active — exclude every terminal bucket (won/rejected/RNR)
-    const unassigned = uniq.filter((r) => !r.lead.assigned_to && r.seg !== "converted" && r.seg !== "rejected" && r.seg !== "rnr").length;
+    const unassigned = uniq.filter((r) => !r.lead.assigned_to && r.seg !== "converted" && r.seg !== "rejected").length;
     const immediate = uniq.filter((r) => r.lead.plan_to_buy === HOT_PLAN).length;
 
     // group helper → conversion by a dimension (unique leads)

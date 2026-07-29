@@ -10,11 +10,11 @@ import GlobalSearch from "./GlobalSearch";
 const TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/leads/new": "New Leads",
-  "/leads/followup": "Follow-up",
+  "/leads/call-not-received": "Call Not Received",
+  "/leads/followup": "Follow Up",
   "/leads/qualified": "Qualified Leads",
   "/leads/pipeline": "Pipeline Leads",
   "/leads/converted": "Converted Leads",
-  "/leads/rnr": "RNR — Ring No Response",
   "/leads/rejected": "Rejected Leads",
   "/reminders": "Reminders",
   "/inventory": "Live Inventory",

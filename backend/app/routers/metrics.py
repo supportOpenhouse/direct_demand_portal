@@ -7,8 +7,10 @@ from ..db import neon_engine
 
 router = APIRouter(tags=["metrics"], dependencies=[Depends(current_user)])
 
-TERMINAL = "('won','lost','future_prospect','timepass')"
-ACTIVE_Q = f"confirmed AND stage NOT IN {TERMINAL} AND qualified_at IS NOT NULL"
+TERMINAL = "('won','rejected','rnr')"
+# "Qualified" is now a stage, not a derived condition. Kept split by age so the
+# dashboard can still show fresh-vs-ageing qualified leads.
+ACTIVE_Q = "stage = 'qualified'"
 
 
 @router.get("/metrics/dashboard")
@@ -34,8 +36,8 @@ async def dashboard(user: dict = Depends(current_user)):
         totals = (await conn.execute(text(f"""
             SELECT
               count(*) FILTER (WHERE stage='new')                                              AS new,
-              count(*) FILTER (WHERE {ACTIVE_Q} AND now()-qualified_at <  interval '7 days')     AS qualified,
-              count(*) FILTER (WHERE {ACTIVE_Q} AND now()-qualified_at >= interval '7 days')     AS pipeline,
+              count(*) FILTER (WHERE {ACTIVE_Q})                                                AS qualified,
+              count(*) FILTER (WHERE stage='visit_scheduled')                                   AS pipeline,
               count(*) FILTER (WHERE stage='won')                                               AS converted,
               count(*) FILTER (WHERE plan_to_buy='Within 30 days' AND stage NOT IN {TERMINAL})   AS immediate,
               count(*) FILTER (WHERE assigned_to IS NULL)                                        AS unassigned,

@@ -86,8 +86,11 @@ export default function Sidebar() {
         <NavLink to="/leads/new" className={navClass}>
           <IconPlus /> New Leads <NewCount />
         </NavLink>
+        <NavLink to="/leads/call-not-received" className={navClass}>
+          <IconRnr /> Call Not Received <Pct seg="call_not_received" />
+        </NavLink>
         <NavLink to="/leads/followup" className={navClass}>
-          <IconFollowup /> Follow-up <Pct seg="followup" />
+          <IconFollowup /> Follow Up <Pct seg="followup" />
         </NavLink>
         <NavLink to="/leads/qualified" className={navClass}>
           <IconQualified /> Qualified Leads <Pct seg="qualified" />
@@ -98,9 +101,7 @@ export default function Sidebar() {
         <NavLink to="/leads/converted" className={navClass}>
           <IconCheckCircle /> Converted Leads <Pct seg="converted" />
         </NavLink>
-        <NavLink to="/leads/rnr" className={navClass}>
-          <IconRnr /> RNR <Pct seg="rnr" />
-        </NavLink>
+        {/* RNR has no page of its own — those leads sit in Rejected, badged */}
         <NavLink to="/leads/rejected" className={navClass}>
           <IconReject /> Rejected Leads <Pct seg="rejected" />
         </NavLink>

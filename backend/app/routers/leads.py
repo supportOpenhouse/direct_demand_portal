@@ -22,35 +22,26 @@ from ..services.societies import (
 
 router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 
-# stages that take a lead out of the active funnel (rnr = Ring No Response, terminal)
-_TERMINAL = "('won','lost','rejected','future_prospect','timepass','rnr')"
+# The eight stages a lead can hold. `stage` is authoritative: every page is a plain
+# equality on it, so a lead lives on exactly one page and can never fall between them.
+# (The previous model derived pages from confirmed/follow_up_at/qualified_at/crm_visits
+# and needed a catch-all clause to stop worked leads vanishing entirely.)
+STAGES = ("new", "call_not_received", "follow_up", "qualified",
+          "visit_scheduled", "won", "rejected", "rnr")
 
-# a lead is "in Pipeline" once a visit has been booked for it on the Openhouse app
-_HAS_VISIT = "SELECT 1 FROM crm_visits v WHERE v.lead_id = leads.id"
+# stages a lead never moves back out of on its own
+_TERMINAL = "('won','rejected','rnr')"
 
-# segment → SQL predicate on the leads spine.
-#   new       — untouched: no call logged yet (no open follow-up)
-#   followup  — any non-terminal lead with an open follow-up. Pre-qualification leads
-#               (not-connected + saved-not-qualified) live ONLY here; qualified+ leads
-#               also appear in their stage tab, here as a due-callback reminder.
-#   rnr       — never-connected leads escalated after 10 consecutive missed calls
+# segment → SQL predicate. One page per stage, except Rejected which also holds RNR
+# (10 missed calls, never reached) — those keep stage='rnr' and show an RNR badge.
 SEGMENTS = {
-    "new": "stage = 'new' AND follow_up_at IS NULL",
-    "followup": f"stage NOT IN {_TERMINAL} AND follow_up_at IS NOT NULL",
-    # Qualified = confirmed on call, or a trip planned locally (preparation) — but no visit
-    # booked yet. Booking a real visit moves the lead to Pipeline.
-    "qualified": f"stage NOT IN {_TERMINAL} AND stage <> 'visit_scheduled' "
-                 f"AND NOT EXISTS ({_HAS_VISIT}) "
-                 "AND (confirmed = true OR stage = 'visit_planned')",
-    # Pipeline = a visit is actually booked on the Openhouse app. PLUS a safety net: a lead
-    # worked past New that matches no other tab would vanish entirely — catch it here.
-    "pipeline": f"stage NOT IN {_TERMINAL} AND ("
-                f"EXISTS ({_HAS_VISIT}) OR stage = 'visit_scheduled' "
-                "OR (stage NOT IN ('new','visit_planned') AND confirmed = false "
-                "AND qualified_at IS NULL AND follow_up_at IS NULL))",
+    "new": "stage = 'new'",
+    "call_not_received": "stage = 'call_not_received'",
+    "followup": "stage = 'follow_up'",
+    "qualified": "stage = 'qualified'",
+    "pipeline": "stage = 'visit_scheduled'",
     "converted": "stage = 'won'",
-    "rnr": "stage = 'rnr'",
-    "rejected": "stage = 'rejected'",
+    "rejected": "stage IN ('rejected','rnr')",
 }
 
 
@@ -283,8 +274,8 @@ class ConfirmPayload(BaseModel):
 @router.post("/leads/{lead_id}/confirm")
 async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
     """Save the confirmed-on-call form + a mandatory follow-up. `qualify=true` moves the
-    lead to Qualified (new → contacted); `qualify=false` just saves the details and keeps
-    the lead in Follow-up (not qualified)."""
+    lead to stage 'qualified'; `qualify=false` saves the details and moves it to
+    'follow_up' instead."""
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
@@ -331,11 +322,12 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         await conn.execute(stmt)
         # reaching this form means the call connected → never RNR.
         if payload.qualify:
-            # qualify: new → contacted, start the 7-day clock (only on first confirm)
+            # → Qualified. follow_up_at is kept so the Qualified page can badge a due
+            # callback; the lead no longer also appears in the Follow-up list.
             await conn.execute(
                 text(
                     "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
-                    "stage = CASE WHEN stage = 'new' THEN 'contacted' ELSE stage END, "
+                    f"stage = CASE WHEN stage IN {_TERMINAL} THEN stage ELSE 'qualified' END, "
                     "tat_deadline = NULL, follow_up_at = :t, "
                     "follow_up_since = COALESCE(follow_up_since, now()), "
                     "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
@@ -343,16 +335,23 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                 {"id": lead_id, "t": follow_up},
             )
         elif follow_up is not None:
-            # save details + set a follow-up — stays in Follow-up, not qualified
+            # details saved but not qualified → Follow-up
             await conn.execute(
                 text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t, "
-                     "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
+                     "follow_up_since = COALESCE(follow_up_since, now()), "
+                     f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN "
+                     "('qualified','visit_scheduled') THEN stage ELSE 'follow_up' END "
+                     "WHERE id = :id"),
                 {"id": lead_id, "t": follow_up},
             )
         else:
-            # save details only (Pipeline) — no callback, don't touch stage/follow-up
+            # details only, no callback. The call still connected, so a lead sitting in
+            # New / Call Not Received has to move — leaving it would contradict
+            # ever_connected. Forward-only: qualified and beyond are untouched.
             await conn.execute(
-                text("UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"),
+                text("UPDATE leads SET ever_connected = true, miss_count = 0, "
+                     "stage = CASE WHEN stage IN ('new','call_not_received') "
+                     "THEN 'follow_up' ELSE stage END WHERE id = :id"),
                 {"id": lead_id},
             )
     return {"status": "ok"}
@@ -412,8 +411,13 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
 
     async with engine.begin() as conn:
         if payload.connected:
+            # We reached them, so New / Call Not Received no longer describes the lead —
+            # move it to Follow-up. The caller usually opens the lead and confirms next,
+            # which overwrites this; the move matters when they don't. Forward-only.
             res = await conn.execute(text(
-                "UPDATE leads SET ever_connected = true, miss_count = 0 WHERE id = :id"), {"id": lead_id})
+                "UPDATE leads SET ever_connected = true, miss_count = 0, "
+                "stage = CASE WHEN stage IN ('new','call_not_received') "
+                "THEN 'follow_up' ELSE stage END WHERE id = :id"), {"id": lead_id})
             if res.rowcount == 0:
                 raise HTTPException(status_code=404, detail="lead not found")
             return {"status": "ok", "connected": True, "moved_to_rnr": False, "rejected": False}
@@ -435,9 +439,14 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
             )
             UPDATE leads SET
                 miss_count = CASE WHEN CAST(:reject AS boolean) THEN miss_count ELSE miss_count + 1 END,
+                -- never reached → Call Not Received; already reached → Follow-up.
+                -- Qualified and beyond keep their stage: a missed callback on a
+                -- qualified lead must not drag it back down the funnel.
                 stage = CASE WHEN CAST(:reject AS boolean) THEN 'rejected'
                              WHEN NOT ever_connected AND miss_count + 1 >= 10 THEN 'rnr'
-                             ELSE stage END,
+                             WHEN stage IN ('qualified','visit_scheduled','won') THEN stage
+                             WHEN NOT ever_connected THEN 'call_not_received'
+                             ELSE 'follow_up' END,
                 follow_up_at = CASE
                              WHEN CAST(:reject AS boolean) OR (NOT ever_connected AND miss_count + 1 >= 10) THEN NULL
                              ELSE CAST(:due AS timestamptz) END,
@@ -475,7 +484,12 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
     async with engine.begin() as conn:
         res = await conn.execute(
             text("UPDATE leads SET follow_up_at = :t, ever_connected = true, miss_count = 0, "
-                 "follow_up_since = COALESCE(follow_up_since, now()) WHERE id = :id"),
+                 "follow_up_since = COALESCE(follow_up_since, now()), "
+                 # a qualified lead keeps its stage — the callback shows as a due badge
+                 # on the Qualified page rather than demoting it
+                 f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN "
+                 "('qualified','visit_scheduled') THEN stage ELSE 'follow_up' END "
+                 "WHERE id = :id"),
             {"t": follow_up, "id": lead_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="lead not found")
@@ -686,14 +700,10 @@ async def save_visit(lead_id: UUID, payload: VisitPlan):
             total_km=payload.total_km, total_min=payload.total_min, route_source=payload.route_source,
             stops=[s.model_dump() for s in payload.stops],
         ))
-        # This is an internal trip plan, NOT an appointment with the buyer — mark it
-        # 'visit_planned' (Trip Planned). Only a real Openhouse booking sets
-        # 'visit_scheduled' (see POST /v1/visits/book), which is what drives Pipeline.
-        # Never downgrade a lead that already has a booked visit or is terminal.
-        await conn.execute(text(
-            "UPDATE leads SET stage = CASE WHEN stage IN "
-            "('won','lost','future_prospect','timepass','rejected','rnr','visit_scheduled') "
-            "THEN stage ELSE 'visit_planned' END WHERE id = :id"), {"id": lead_id})
+        # Saving a trip plan deliberately does NOT move the lead. A plan is internal
+        # preparation, not an appointment — only a real Openhouse booking
+        # (POST /v1/visits/book) sets 'visit_scheduled'. Until then the saved-plan card
+        # reads "Visit not scheduled yet".
     return {"status": "ok"}
 
 

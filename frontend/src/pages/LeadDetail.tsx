@@ -371,14 +371,23 @@ function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; 
   );
 }
 
-function SavedVisitCard({ id, onEdit }: { id: string; onEdit: () => void }) {
+function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void; booked: boolean }) {
   const { data, isLoading } = useLatestVisit(id);
   const plan = data?.plan;
   if (isLoading || !plan) return null;
   return (
     <div className="card panel-pad">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>📅 Planned site visits</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          📅 Planned site visits
+          {/* a saved plan is internal prep, not an appointment — it no longer moves
+              the lead, so say plainly that nothing is booked yet */}
+          {!booked && (
+            <span className="fu-chip" style={{ background: "var(--amber-soft)", color: "#9a5e07" }}>
+              Visit not scheduled yet
+            </span>
+          )}
+        </span>
         <span style={{ display: "flex", gap: 6 }}>
           <button className="btn ghost sm" onClick={() => openInMaps(plan.start_lat != null && plan.start_lng != null ? { lat: plan.start_lat, lng: plan.start_lng } : null, plan.stops)}>↗ Maps</button>
           <button className="btn ghost sm" onClick={onEdit}>Edit plan</button>
@@ -764,7 +773,7 @@ export default function LeadDetail() {
 
         {/* RIGHT column — saved visit plan + live matched inventory + supply */}
         <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <SavedVisitCard id={id} onEdit={() => setPlanner(true)} />
+          <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />
           <WaLeadCard phone={lead.phone} />
           <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
           <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />

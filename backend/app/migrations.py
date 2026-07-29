@@ -99,6 +99,27 @@ async def run_migrations(engine) -> None:
                   AND raw->'payload'->'payload'->>'url' IS NOT NULL
             """))
 
+            # --- stage model: `stage` is now authoritative for which page a lead is on
+            # (see docs/superpowers/specs/2026-07-29-lead-stage-model-design.md).
+            # Idempotent: after one run nothing matches, so re-running is a no-op.
+            #   contacted + visit_planned  → qualified   (these ARE the qualified leads)
+            #   new with an open callback  → call_not_received / follow_up, split on
+            #                                whether we ever reached them. Without this
+            #                                they'd land back on New — they're in
+            #                                Follow-up today.
+            #   lost/future_prospect/timepass → rejected (declared in code, zero rows)
+            await conn.execute(text(
+                "UPDATE leads SET stage = 'qualified' WHERE stage IN ('contacted','visit_planned')"))
+            await conn.execute(text(
+                "UPDATE leads SET stage = 'call_not_received' "
+                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND NOT ever_connected"))
+            await conn.execute(text(
+                "UPDATE leads SET stage = 'follow_up' "
+                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND ever_connected"))
+            await conn.execute(text(
+                "UPDATE leads SET stage = 'rejected' "
+                "WHERE stage IN ('lost','future_prospect','timepass')"))
+
             # seed Openhouse SalesManager ids (smid) for the booking team by name —
             # only fills blanks, so admin edits via Settings are never clobbered. Runs
             # every boot, so a seed user added later still gets mapped on next deploy.

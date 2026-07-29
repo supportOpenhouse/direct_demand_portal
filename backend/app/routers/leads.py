@@ -88,6 +88,10 @@ def _lead_row(r) -> dict:
         "follow_up_since": r["follow_up_since"].isoformat() if r["follow_up_since"] else None,
         "follow_up_at": r["follow_up_at"].isoformat() if r["follow_up_at"] else None,
         "miss_count": r["miss_count"] or 0,
+        # lets the worklist refuse a spammed "No" before opening the reason form —
+        # the server still enforces the cooldown, this only saves wasted typing
+        "last_no_timestamp": (r["last_no_timestamp"].isoformat()
+                              if r.get("last_no_timestamp") else None),
         "ever_connected": r["ever_connected"],
         "is_hot": bool(r["is_hot"]),
         # latest booked visit (Pipeline status chip) — only present on the list query

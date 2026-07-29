@@ -202,7 +202,7 @@ export default function NewLeads() {
                       </div>
                     </div>
                   </td>
-                  <td onClick={(e) => e.stopPropagation()}><CallConnected leadId={l.id} /></td>
+                  <td onClick={(e) => e.stopPropagation()}><CallConnected leadId={l.id} lastNoAt={l.last_no_timestamp} /></td>
                   <td style={{ fontSize: 12.5 }}>{l.city || "—"}</td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td style={{ fontSize: 12.5 }}>{l.budget_band || "—"}</td>

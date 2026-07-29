@@ -116,9 +116,15 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
   );
 }
 
-export function CallConnected({ leadId }: { leadId: string }) {
+/* Must match NO_COOLDOWN_HOURS in backend/app/routers/leads.py. The server is the real
+   enforcer — this only decides whether opening the reason form is worth the caller's
+   time, since a blocked "No" would be thrown away after they'd typed it. */
+const NO_COOLDOWN_MS = 2 * 60 * 60 * 1000;
+
+export function CallConnected({ leadId, lastNoAt }: { leadId: string; lastNoAt?: string | null }) {
   const nav = useNavigate();
   const m = useCallResult();
+  const toast = useToast();
   const [asking, setAsking] = useState(false);
 
   const yes = (e: React.MouseEvent) => {
@@ -126,11 +132,22 @@ export function CallConnected({ leadId }: { leadId: string }) {
     m.mutate({ id: leadId, connected: true }, { onSuccess: () => nav(`/leads/${leadId}`) });
   };
 
+  const no = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const since = lastNoAt ? Date.now() - new Date(lastNoAt).getTime() : Infinity;
+    if (since < NO_COOLDOWN_MS) {
+      const mins = Math.max(1, Math.ceil((NO_COOLDOWN_MS - since) / 60000));
+      toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${mins} MINUTES`, "gold", "⛔");
+      return;
+    }
+    setAsking(true);
+  };
+
   return (
     <div className="cc" onClick={(e) => e.stopPropagation()}>
       <span className="cc-q">Connected?</span>
       <button className="cc-btn yes" disabled={m.isPending} onClick={yes}>Yes</button>
-      <button className="cc-btn no" onClick={(e) => { e.stopPropagation(); setAsking(true); }}>No</button>
+      <button className="cc-btn no" onClick={no}>No</button>
       {asking && <MissReasonModal leadId={leadId} onClose={() => setAsking(false)} />}
     </div>
   );

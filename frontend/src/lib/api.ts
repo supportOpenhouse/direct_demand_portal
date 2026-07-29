@@ -148,6 +148,7 @@ export interface Lead {
   follow_up_at: string | null;  // next callback due (UTC); set → lead is in the Follow-up tab
   follow_up_since: string | null; // when it first entered Follow-up (for "moved here today")
   miss_count: number;           // consecutive not-connected calls (resets on connect)
+  last_no_timestamp: string | null;  // last "No" — drives the 2h spam cooldown
   ever_connected: boolean;      // have we ever connected? gates RNR escalation
   is_hot: boolean;              // starred as a hot lead
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit

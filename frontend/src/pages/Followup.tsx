@@ -164,7 +164,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                       </div>
                     </div>
                   </td>
-                  <td><CallConnected leadId={l.id} /></td>
+                  <td><CallConnected leadId={l.id} lastNoAt={l.last_no_timestamp} /></td>
                   <td><DueChip at={l.follow_up_at} /></td>
                   <td>
                     {l.miss_count > 0

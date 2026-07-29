@@ -41,6 +41,8 @@ _ADD_COLUMNS = [
     ("wa_messages", "media_url", "TEXT"),
     ("wa_messages", "media_expiry", "TIMESTAMPTZ"),
     ("wa_messages", "media_name", "TEXT"),
+    # spam guard on the call worklist's "No"
+    ("leads", "last_no_timestamp", "TIMESTAMPTZ"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

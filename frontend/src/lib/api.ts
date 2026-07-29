@@ -314,6 +314,9 @@ export const api = {
     request<{ status: string }>(`/v1/leads/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }),
   callResult: (id: string, connected: boolean, reason?: string, notes?: string) =>
     request<{ status: string; connected: boolean; moved_to_rnr: boolean; rejected: boolean;
+              // a second "No" inside the 2h cooldown is refused: nothing is recorded,
+              // miss_count is untouched, and retry_in_minutes says when it reopens
+              blocked?: boolean; retry_in_minutes?: number;
               miss_count?: number; follow_up_at?: string | null }>(
       `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected, reason, notes }) }),
   setFollowup: (id: string, followUpAt: string) =>

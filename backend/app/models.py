@@ -165,6 +165,9 @@ class Lead(Base):
     # never-connected leads hitting 10 misses move to the terminal 'rnr' stage.
     follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     miss_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # when "No" was last logged on this lead. Rapid repeats are rejected for 2 hours
+    # so a caller can't inflate miss_count (and drive a lead to RNR) by clicking.
+    last_no_timestamp: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     ever_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")  # starred
     # rejection

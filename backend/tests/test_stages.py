@@ -90,3 +90,40 @@ def test_retired_stages_are_gone():
         assert retired not in STAGES
         for seg, pred in SEGMENTS.items():
             assert retired not in pred, f"segment '{seg}' still references '{retired}'"
+
+
+# --- "No" spam guard ----------------------------------------------------------
+
+def test_blocked_no_writes_nothing():
+    """Every column the miss-UPDATE sets must have a `cur.blocked` branch that writes
+    the value back unchanged. Miss one — miss_count especially — and a spammed "No"
+    still counts toward the 10 that force a lead to RNR, which is the whole point of
+    the guard."""
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parents[1] / "app/routers/leads.py").read_text()
+    # anchor on the CTE — several handlers contain "UPDATE leads SET", and the first
+    # one in the file is the confirm handler, not this one
+    assert "WITH cur AS" in src, "spam-guard CTE not found — did the SQL move?"
+    body = src.split("WITH cur AS", 1)[1].split("UPDATE leads SET", 1)[1].split("FROM cur", 1)[0]
+
+    # split into assignments: each starts at "<column> = " at the head of a line
+    assignments: dict[str, list[str]] = {}
+    current = None
+    for line in body.splitlines():
+        m = re.match(r"\s*(\w+) = ", line)
+        if m:
+            current = m.group(1)
+            assignments[current] = []
+        if current:
+            assignments[current].append(line)
+
+    assert "miss_count" in assignments, "miss-UPDATE not found — did the SQL move?"
+    unguarded = [col for col, lines in assignments.items()
+                 if "cur.blocked" not in "\n".join(lines)]
+    assert not unguarded, f"columns written even when blocked: {unguarded}"
+
+
+def test_cooldown_is_two_hours():
+    from app.routers.leads import NO_COOLDOWN_HOURS
+    assert NO_COOLDOWN_HOURS == 2

@@ -58,7 +58,9 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
       { id: leadId, connected: false, reason, notes: notes.trim() },
       {
         onSuccess: (d) => {
-          if (d.rejected) toast("Invalid number — moved to Rejected", "blue", "✕");
+          // refused by the cooldown — nothing was recorded, so don't report an outcome
+          if (d.blocked) toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${d.retry_in_minutes} MINUTES`, "gold", "⛔");
+          else if (d.rejected) toast("Invalid number — moved to Rejected", "blue", "✕");
           else if (d.moved_to_rnr) toast("10 missed calls — moved to RNR", "gold", "✕");
           else {
             const at = d.follow_up_at ? istLabel(new Date(d.follow_up_at)) : null;

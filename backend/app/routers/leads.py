@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta, timezone
+from math import ceil
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -364,6 +365,10 @@ WORK_START_HOUR, WORK_END_HOUR = 10, 19  # calling hours, IST
 
 # "No" on the worklist → why, and what it costs the lead. Value = auto follow-up
 # delay in hours; None = the number is unusable, so the lead is rejected outright.
+# Spam guard: a second "No" on the same lead inside this window is rejected outright.
+# Without it, repeated clicks inflate miss_count and can push a lead to RNR in seconds.
+NO_COOLDOWN_HOURS = 2
+
 MISS_REASONS: dict[str, int | None] = {
     "Did Not Pick / Not Reachable": 3,
     "Switched Off": 6,
@@ -429,44 +434,73 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         reject = MISS_REASONS[payload.reason] is None
         due = None if reject else _within_calling_hours(
             datetime.now(timezone.utc) + timedelta(hours=MISS_REASONS[payload.reason]))
-        res = await conn.execute(text("""
-            WITH n AS (
-                -- guarded by EXISTS so a stale lead id fails the UPDATE's RETURNING
-                -- (→ clean 404) instead of blowing up on the note's foreign key
+        # `cur` snapshots the row BEFORE the update (a CTE sees the statement's
+        # snapshot), which is what lets one statement both test the spam window and
+        # apply the outcome. When blocked, every SET below writes the column back to
+        # its own value and the note is never inserted — so a spammed "No" leaves no
+        # trace at all, and in particular can't inflate miss_count toward RNR.
+        res = await conn.execute(text(f"""
+            WITH cur AS (
+                SELECT id, last_no_timestamp AS prev,
+                       (last_no_timestamp IS NOT NULL
+                        AND last_no_timestamp > now() - interval '{NO_COOLDOWN_HOURS} hours') AS blocked
+                FROM leads WHERE id = :id
+            ),
+            n AS (
+                -- FROM cur doubles as the existence guard: a stale lead id yields no
+                -- row, so the note is skipped and the UPDATE returns nothing (→ 404)
+                -- rather than blowing up on the note's foreign key
                 INSERT INTO lead_notes (id, lead_id, body, author, source, created_at)
-                SELECT :nid, :id, :note, :author, 'call', now()
-                WHERE EXISTS (SELECT 1 FROM leads WHERE id = :id)
+                SELECT :nid, :id, :note, :author, 'call', now() FROM cur WHERE NOT cur.blocked
             )
             UPDATE leads SET
-                miss_count = CASE WHEN CAST(:reject AS boolean) THEN miss_count ELSE miss_count + 1 END,
+                miss_count = CASE WHEN cur.blocked THEN leads.miss_count
+                             WHEN CAST(:reject AS boolean) THEN leads.miss_count
+                             ELSE leads.miss_count + 1 END,
                 -- never reached → Call Not Received; already reached → Follow-up.
                 -- Qualified and beyond keep their stage: a missed callback on a
                 -- qualified lead must not drag it back down the funnel.
-                stage = CASE WHEN CAST(:reject AS boolean) THEN 'rejected'
-                             WHEN NOT ever_connected AND miss_count + 1 >= 10 THEN 'rnr'
-                             WHEN stage IN ('qualified','visit_scheduled','won') THEN stage
-                             WHEN NOT ever_connected THEN 'call_not_received'
+                stage = CASE WHEN cur.blocked THEN leads.stage
+                             WHEN CAST(:reject AS boolean) THEN 'rejected'
+                             WHEN NOT leads.ever_connected AND leads.miss_count + 1 >= 10 THEN 'rnr'
+                             WHEN leads.stage IN ('qualified','visit_scheduled','won') THEN leads.stage
+                             WHEN NOT leads.ever_connected THEN 'call_not_received'
                              ELSE 'follow_up' END,
-                follow_up_at = CASE
-                             WHEN CAST(:reject AS boolean) OR (NOT ever_connected AND miss_count + 1 >= 10) THEN NULL
+                follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
+                             WHEN CAST(:reject AS boolean)
+                                  OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
                              ELSE CAST(:due AS timestamptz) END,
-                follow_up_since = CASE
-                             WHEN CAST(:reject AS boolean) OR (NOT ever_connected AND miss_count + 1 >= 10) THEN NULL
-                             ELSE COALESCE(follow_up_since, now()) END,
-                reject_reason = CASE WHEN CAST(:reject AS boolean) THEN CAST(:reason AS text) ELSE reject_reason END,
-                reject_notes  = CASE WHEN CAST(:reject AS boolean) THEN CAST(:note AS text) ELSE reject_notes END,
-                rejected_at   = CASE WHEN CAST(:reject AS boolean) THEN now() ELSE rejected_at END
-            WHERE id = :id
-            RETURNING miss_count, stage
+                follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since
+                             WHEN CAST(:reject AS boolean)
+                                  OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
+                             ELSE COALESCE(leads.follow_up_since, now()) END,
+                reject_reason = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                             THEN CAST(:reason AS text) ELSE leads.reject_reason END,
+                reject_notes  = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                             THEN CAST(:note AS text) ELSE leads.reject_notes END,
+                rejected_at   = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                             THEN now() ELSE leads.rejected_at END,
+                last_no_timestamp = CASE WHEN cur.blocked THEN leads.last_no_timestamp
+                             ELSE now() END
+            FROM cur
+            WHERE leads.id = cur.id
+            RETURNING leads.miss_count, leads.stage, cur.blocked,
+                      cur.prev + interval '{NO_COOLDOWN_HOURS} hours' AS retry_at
         """), {"nid": uuid4(), "id": lead_id, "note": note, "author": author,
                "reject": reject, "reason": payload.reason, "due": due})
         out = res.mappings().first()
         if out is None:
             raise HTTPException(status_code=404, detail="lead not found")
 
+    if out["blocked"]:
+        remaining = (out["retry_at"] - datetime.now(timezone.utc)).total_seconds() / 60
+        return {"status": "blocked", "connected": False, "blocked": True,
+                "retry_in_minutes": max(1, ceil(remaining)),
+                "moved_to_rnr": False, "rejected": False, "miss_count": out["miss_count"]}
+
     to_rnr = out["stage"] == "rnr"
-    return {"status": "ok", "connected": False, "moved_to_rnr": to_rnr, "rejected": reject,
-            "miss_count": out["miss_count"],
+    return {"status": "ok", "connected": False, "blocked": False, "moved_to_rnr": to_rnr,
+            "rejected": reject, "miss_count": out["miss_count"],
             "follow_up_at": None if (reject or to_rnr) else due.isoformat()}
 
 

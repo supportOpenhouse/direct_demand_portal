@@ -108,6 +108,8 @@ export default function Analytics() {
 
     const total = uniq.length;
     const nNew = count("new");
+    const nCnr = count("call_not_received");
+    const nFollowup = count("followup");
     const nQualified = count("qualified");
     const nPipeline = count("pipeline");
     const nConverted = count("converted");
@@ -121,10 +123,20 @@ export default function Analytics() {
     const tatBreached = newWithTat.filter((r) => new Date(r.lead.tat_deadline!).getTime() < now).length;
     const tatWithin = newWithTat.length - tatBreached;
 
-    // Follow-ups — the Follow-up worklist itself (each lead once; incl. qualified reminders)
-    const fu = bySeg("followup");
-    const fuOverdue = fu.filter((r) => new Date(r.lead.follow_up_at!).getTime() < startToday).length;
-    const fuToday = fu.filter((r) => { const t = new Date(r.lead.follow_up_at!).getTime(); return t >= startToday && t < endToday; }).length;
+    // Callbacks — kept per queue as well as combined. Call Not Received holds the
+    // never-reached leads and carries a due follow_up_at exactly like Follow Up does,
+    // so the combined figure is the real workload; but a tile that links to one page
+    // must count only that page, or its number won't match what you land on.
+    const due = (list: Row[]) => ({
+      today: list.filter((r) => { const t = new Date(r.lead.follow_up_at!).getTime(); return t >= startToday && t < endToday; }).length,
+      overdue: list.filter((r) => new Date(r.lead.follow_up_at!).getTime() < startToday).length,
+    });
+    const fuRows = rows.filter((r) => r.seg === "followup" && r.lead.follow_up_at);
+    const cnrRows = rows.filter((r) => r.seg === "call_not_received" && r.lead.follow_up_at);
+    const fu = [...fuRows, ...cnrRows];
+    const fuDue = due(fuRows), cnrDue = due(cnrRows), allDue = due(fu);
+    const fuOverdue = allDue.overdue;
+    const fuToday = allDue.today;
 
     // Contact effectiveness (unique leads)
     const attempted = uniq.filter((r) => r.lead.ever_connected || r.lead.miss_count > 0);
@@ -174,9 +186,9 @@ export default function Analytics() {
     }
 
     return {
-      total, nNew, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
+      total, nNew, nCnr, nFollowup, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
       tatBreached, tatWithin, tatTotal: newWithTat.length,
-      fuOverdue, fuToday, withFu: fu.length,
+      fuOverdue, fuToday, withFu: fu.length, fuDue, cnrDue,
       attempted: attempted.length, connected, unassigned, immediate,
       bySource, byCity, reps, inflow,
     };
@@ -213,9 +225,12 @@ export default function Analytics() {
       </div>
 
       {/* KPI row */}
-      <div className="grid" style={{ gridTemplateColumns: "repeat(6, 1fr)", gap: 14 }}>
+      {/* auto-fit rather than a fixed 6 — the row gains a tile and shouldn't cram */}
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 14 }}>
         <Tile label="New Leads" value={m.nNew.toLocaleString("en-IN")} sub="awaiting first call" accent="var(--blue)" onClick={() => nav("/leads/new")} />
-        <Tile label="Follow-ups Today" value={m.fuToday} sub={`${m.fuOverdue} overdue`} accent="var(--amber)" onClick={() => nav("/leads/followup")} />
+        {/* each tile counts only the page it opens, so the number always matches */}
+        <Tile label="Call Not Received" value={m.nCnr.toLocaleString("en-IN")} sub={`${m.cnrDue.today} due today · ${m.cnrDue.overdue} overdue`} accent="var(--gold)" onClick={() => nav("/leads/call-not-received")} />
+        <Tile label="Follow-ups Today" value={m.fuDue.today} sub={`${m.fuDue.overdue} overdue`} accent="var(--amber)" onClick={() => nav("/leads/followup")} />
         <Tile label="TAT Breached" value={m.tatBreached} sub={`of ${m.tatTotal} new · SLA`} accent="var(--coral)" onClick={() => nav("/leads/new")} />
         <Tile label="Qualified+" value={m.qualifiedPlus.toLocaleString("en-IN")} sub={`${pct(m.qualifiedPlus, m.total)}% of leads`} accent="var(--cyan)" onClick={() => nav("/leads/qualified")} />
         <Tile label="Converted" value={m.nConverted.toLocaleString("en-IN")} sub={`${convRate}% lead→token`} accent="var(--emerald)" onClick={() => nav("/leads/converted")} />
@@ -227,17 +242,19 @@ export default function Analytics() {
         <div style={card} className="panel-pad">
           <div className="panel-title">🪜 Funnel & conversion</div>
           <Meter label="New" value={m.nNew} total={Math.max(m.total, 1)} color="var(--blue)" />
+          <Meter label="In contact (CNR + follow-up)" value={m.nCnr + m.nFollowup} total={Math.max(m.total, 1)} color="var(--gold)" />
           <Meter label="Qualified (incl. pipeline)" value={m.qualifiedPlus} total={Math.max(m.total, 1)} color="var(--cyan)" />
           <Meter label="Converted (token)" value={m.nConverted} total={Math.max(m.total, 1)} color="var(--emerald)" />
           <div className="note" style={{ marginTop: 6 }}>
             {pct(m.nConverted, m.qualifiedPlus)}% of qualified leads convert · {m.nRejected + m.nRnr} lost (rejected + RNR).
+            {" "}Every lead sits in exactly one stage, so these bars add up to {m.total}.
           </div>
         </div>
 
         <div style={card} className="panel-pad">
           <div className="panel-title">⏱ SLA & contact</div>
           <Meter label="New leads within TAT window" value={m.tatWithin} total={Math.max(m.tatTotal, 1)} color="var(--emerald)" />
-          <Meter label="Follow-ups due today" value={m.fuToday} total={Math.max(m.withFu, 1)} color="var(--amber)" />
+          <Meter label="Callbacks due today" value={m.fuToday} total={Math.max(m.withFu, 1)} color="var(--amber)" />
           <Meter label="Call connect rate" value={m.connected} total={Math.max(m.attempted, 1)} color="var(--cyan)" />
           <Meter label="RNR (never reached)" value={m.nRnr} total={Math.max(m.total, 1)} color="var(--coral)" />
           <div className="note" style={{ marginTop: 6 }}>Connect rate = ever-connected / leads with a call attempt.</div>

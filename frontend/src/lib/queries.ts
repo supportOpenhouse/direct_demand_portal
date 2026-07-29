@@ -91,10 +91,6 @@ export function useAllLeads(enabled: boolean) {
   return { leads, isLoading: enabled && results.some((r) => r.isLoading) };
 }
 
-export function useDashboard() {
-  return useQuery({ queryKey: ["dashboard"], queryFn: api.dashboard, staleTime: 60_000 });
-}
-
 export function useLead(id: string) {
   return useQuery({ queryKey: ["lead", id], queryFn: () => api.lead(id), staleTime: 30_000 });
 }
@@ -205,7 +201,6 @@ export function useBulkAssign() {
     mutationFn: ({ ids, assigned_to }: { ids: string[]; assigned_to: string | null }) => api.bulkAssign(ids, assigned_to),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -213,7 +208,7 @@ export function useUserMutations() {
   const qc = useQueryClient();
   const inv = () => qc.invalidateQueries({ queryKey: ["users"] });
   // reassigning changes lead ownership too, so refresh leads + dashboard as well
-  const invAll = () => { inv(); qc.invalidateQueries({ queryKey: ["leads"] }); qc.invalidateQueries({ queryKey: ["dashboard"] }); };
+  const invAll = () => { inv(); qc.invalidateQueries({ queryKey: ["leads"] }); };
   return {
     create: useMutation({ mutationFn: api.createUser, onSuccess: inv }),
     update: useMutation({ mutationFn: ({ id, patch }: { id: string; patch: any }) => api.updateUser(id, patch), onSuccess: inv }),
@@ -240,7 +235,6 @@ export function useRejectLead(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["leads"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -256,7 +250,6 @@ export function useCallResult() {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["lead-notes", id] });  // a "No" writes a note
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }
@@ -311,7 +304,6 @@ export function useSyncLeads() {
     mutationFn: api.syncLeads,
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

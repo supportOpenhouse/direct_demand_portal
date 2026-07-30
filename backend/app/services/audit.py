@@ -44,6 +44,8 @@ _LABELS = {
     ("DELETE", "/v1/users/{id}"): "Removed a user",
     ("POST", "/v1/inventory/sync"): "Triggered inventory sync",
     ("GET", "/v1/leads/{id}"): "Viewed a lead",
+    ("POST", "/v1/gupshup/send"): "Sent a WhatsApp message",
+    ("POST", "/v1/gupshup/leads"): "Created a lead from WhatsApp",
 }
 
 
@@ -62,8 +64,10 @@ def should_log(method: str, path: str) -> bool:
     page itself, OPTIONS preflight, and high-frequency list/poll GET refetches."""
     if method == "OPTIONS":
         return False
-    # /v1/gupshup: an inbound-webhook POST per WhatsApp message would flood audit_logs
-    if path.startswith(("/v1/health", "/v1/logs", "/v1/gupshup")):
+    # the Gupshup callback POSTs once per inbound WhatsApp message and per delivery
+    # receipt — logging it would bury everything else. Only the webhook is excluded;
+    # /gupshup/send and /gupshup/leads are real user actions and ARE logged.
+    if path.startswith(("/v1/health", "/v1/logs", "/v1/gupshup/webhook")):
         return False
     if method == "GET":  # only the meaningful detail view, not list refetches
         return path.startswith("/v1/leads/") and path.count("/") == 3

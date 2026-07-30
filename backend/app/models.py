@@ -303,6 +303,23 @@ class LeadNote(Base):
     )
 
 
+class WaContact(Base):
+    """What a WhatsApp number turned out to be, marked by hand from the chat.
+
+    Keyed by the last 10 digits of the phone — the same key leads dedupe on — so the
+    mark survives whether the number arrives as 919871578484 or +91 98715 78484.
+    One row per contact; re-marking overwrites."""
+
+    __tablename__ = "wa_contacts"
+
+    phone10: Mapped[str] = mapped_column(Text, primary_key=True)
+    tag: Mapped[str] = mapped_column(Text, nullable=False)  # broker|buyer|seller|rejected
+    marked_by: Mapped[str | None] = mapped_column(Text)
+    marked_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class WaMessage(Base):
     """WhatsApp conversation, both directions. Inbound rows are written by the Gupshup
     webhook, outbound by the send endpoint. `phone` is always the CUSTOMER's number

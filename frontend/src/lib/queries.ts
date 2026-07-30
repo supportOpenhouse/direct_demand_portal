@@ -45,6 +45,15 @@ export function useSocietiesByCity(city: string) {
   });
 }
 
+export function useMarkWaContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ phone, tag }: { phone: string; tag: import("./api").WaTag }) =>
+      api.waMark(phone, tag),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-messages"] }),
+  });
+}
+
 export function useCreateWaLead() {
   const qc = useQueryClient();
   return useMutation({

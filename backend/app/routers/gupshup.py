@@ -18,6 +18,7 @@ import re
 import secrets
 from collections import deque
 from datetime import datetime, timedelta, timezone
+from typing import Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -31,7 +32,7 @@ from ..config import get_settings
 # are both wider than an RM's remit. Widen deliberately, not by default.
 from ..core.auth import require_admin
 from ..db import neon_engine
-from ..models import Lead, WaMessage
+from ..models import Lead, WaContact, WaMessage
 
 log = logging.getLogger("gupshup")
 router = APIRouter(tags=["gupshup"])
@@ -210,12 +211,51 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(requir
             )).mappings().all()
             leads = {f["p10"]: {"id": str(f["id"]), "name": f["name"]} for f in found}
 
+        # hand-applied marks (broker / buyer / seller / rejected), same phone10 key
+        tags = {}
+        if phones10:
+            trows = (await conn.execute(
+                select(WaContact.phone10, WaContact.tag).where(WaContact.phone10.in_(phones10))
+            )).mappings().all()
+            tags = {t["phone10"]: t["tag"] for t in trows}
+
     return {
         "status": "ok",
         "send_enabled": settings.gupshup_send_configured,
         "leads": leads,  # last-10-digits → the lead that already exists for it
+        "tags": tags,    # last-10-digits → broker | buyer | seller | rejected
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
+
+
+WA_TAGS = ("broker", "buyer", "seller", "rejected")
+
+
+class MarkRequest(BaseModel):
+    phone: str
+    tag: Literal["broker", "buyer", "seller", "rejected"]
+
+
+@router.post("/gupshup/mark")
+async def gupshup_mark(req: MarkRequest, user: dict = Depends(require_admin)):
+    """Mark what a number turned out to be. Re-marking overwrites the previous value."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    phone10 = normalize_phone(req.phone)[-10:]
+    if len(phone10) != 10:
+        raise HTTPException(status_code=400, detail="invalid phone number")
+    marked_by = user.get("name") or user.get("email")
+    stmt = pg_insert(WaContact).values(
+        phone10=phone10, tag=req.tag, marked_by=marked_by, marked_at=datetime.now(timezone.utc),
+    ).on_conflict_do_update(
+        index_elements=[WaContact.phone10],
+        set_={"tag": req.tag, "marked_by": marked_by, "marked_at": datetime.now(timezone.utc)},
+    )
+    async with engine.begin() as conn:
+        await conn.execute(stmt)
+    log.info("gupshup mark %s%s as %s by %s", "•" * 6, phone10[-4:], req.tag, marked_by)
+    return {"status": "ok", "phone10": phone10, "tag": req.tag}
 
 
 @router.get("/gupshup/latest")
@@ -319,11 +359,18 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(require_admin)):
     except Exception:  # noqa: BLE001 — a 2xx without parseable JSON still means sent
         gupshup_id = None
 
+    # display name, falling back to email — this is what the chat shows under the
+    # bubble. The audit log separately records the actor's email.
+    author = user.get("name") or user.get("email")
+    # masked so an outbound log line never carries a full customer number
+    log.info("gupshup send by=%s to=%s%s id=%s",
+             author, "•" * max(0, len(destination) - 4), destination[-4:], gupshup_id)
+
     engine = neon_engine()
     if engine is not None:
         async with engine.begin() as conn:
             await conn.execute(WaMessage.__table__.insert().values(
                 direction="out", phone=destination, body=req.text, msg_type="text",
-                gupshup_id=gupshup_id, status="submitted", author=user.get("email"),
+                gupshup_id=gupshup_id, status="submitted", author=author,
             ))
-    return {"status": "sent", "gupshup_id": gupshup_id}
+    return {"status": "sent", "gupshup_id": gupshup_id, "author": author}

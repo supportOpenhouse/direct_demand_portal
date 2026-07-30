@@ -253,6 +253,10 @@ export interface GupshupEvent {
   body: Record<string, any>;
 }
 
+/* What a WhatsApp number turned out to be, marked by hand from the chat. */
+export type WaTag = "broker" | "buyer" | "seller" | "rejected";
+export const WA_TAGS: WaTag[] = ["broker", "buyer", "seller", "rejected"];
+
 export interface WaMessage {
   id: string;
   direction: "in" | "out";
@@ -275,8 +279,13 @@ export const api = {
     request<{
       status: string; send_enabled: boolean;
       leads: Record<string, { id: string; name: string | null }>;  // last-10-digits → lead
+      tags: Record<string, WaTag>;                                 // last-10-digits → mark
       items: WaMessage[];
     }>("/v1/gupshup/messages" + (phone ? `?phone=${encodeURIComponent(phone)}` : "")),
+  waMark: (phone: string, tag: WaTag) =>
+    request<{ status: string; phone10: string; tag: WaTag }>("/v1/gupshup/mark", {
+      method: "POST", body: JSON.stringify({ phone, tag }),
+    }),
   waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
   waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
     request<{ status: string; lead_id: string | null }>("/v1/gupshup/leads", {

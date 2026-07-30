@@ -10,10 +10,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
 import {
-  useWaMessages, useCreateWaLead, useSocietiesByCity, useGupshupRecent, formatDateTime,
+  useWaMessages, useCreateWaLead, useMarkWaContact, useSocietiesByCity, useGupshupRecent, formatDateTime,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
-import { WaMessage } from "../lib/api";
+import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { WhatsAppIcon } from "../components/icons";
 
@@ -32,6 +32,23 @@ interface Thread {
 }
 
 /* One flat list from the server → per-phone threads, most recently active first. */
+/* Red for rejected, blue for everything else — matching the row background. */
+function TagChip({ tag }: { tag: WaTag }) {
+  const rejected = tag === "rejected";
+  return (
+    <span
+      className="bucket-tag"
+      style={{
+        marginLeft: 6,
+        background: rejected ? "var(--coral-soft)" : "var(--blue-soft)",
+        color: rejected ? "var(--coral)" : "var(--blue)",
+      }}
+    >
+      {tag}
+    </span>
+  );
+}
+
 function toThreads(items: WaMessage[]): Thread[] {
   const by = new Map<string, Thread>();
   for (const m of items) {
@@ -57,6 +74,7 @@ export default function Chat() {
   const [active, setActive] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [marking, setMarking] = useState(false);
 
   // keep marking seen while the page is open, so the dot doesn't reappear behind you
   useEffect(() => { if (data) markWaSeen(); }, [data]);
@@ -65,6 +83,7 @@ export default function Chat() {
   const thread = threads.find((t) => t.phone === active) ?? threads[0] ?? null;
   // leads are keyed by the last 10 digits — leads store "+91 98715 78484", WhatsApp "919871578484"
   const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
+  const tag = thread ? data?.tags?.[thread.phone.slice(-10)] : undefined;
 
   const sendEnabled = data?.send_enabled ?? false;
 
@@ -122,6 +141,7 @@ export default function Chat() {
               const last = t.messages[t.messages.length - 1];
               const selected = t.phone === thread?.phone;
               const hasLead = !!data?.leads?.[t.phone.slice(-10)];
+              const rowTag = data?.tags?.[t.phone.slice(-10)];
               return (
                 <button
                   key={t.phone}
@@ -130,15 +150,22 @@ export default function Chat() {
                     display: "flex", gap: 10, width: "100%", textAlign: "left", padding: "11px 13px",
                     border: 0, borderTop: i ? "1px solid var(--line)" : undefined, cursor: "pointer",
                     font: "inherit", alignItems: "center",
-                    // amber = a lead already exists for this number. The left bar keeps
-                    // that readable even when the row is also the selected one.
-                    background: selected ? "var(--panel-2)" : hasLead ? "var(--amber-soft)" : "transparent",
+                    // Two independent signals, so they use two channels:
+                    //   background = the mark (red rejected, blue everything else)
+                    //   left bar    = a lead exists (amber), which must stay visible
+                    // With no mark, the background falls back to amber so lead-created
+                    // still reads on its own.
+                    background: selected ? "var(--panel-2)"
+                      : rowTag === "rejected" ? "var(--coral-soft)"
+                      : rowTag ? "var(--blue-soft)"
+                      : hasLead ? "var(--amber-soft)" : "transparent",
                     borderLeft: hasLead ? "3px solid var(--amber)" : "3px solid transparent",
                   }}
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {t.name || t.phone}
+                      {rowTag && <TagChip tag={rowTag} />}
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {last?.direction === "out" ? "You: " : ""}{last?.body || `[${last?.msg_type}]`}
@@ -162,6 +189,10 @@ export default function Chat() {
                   <span style={{ fontSize: 11.5, color: "var(--muted)", marginLeft: 16, fontVariantNumeric: "tabular-nums" }}>
                     +{thread.phone}
                   </span>
+                  {/* sits with the number it describes, not with the lead actions */}
+                  <button className="btn ghost sm" style={{ marginLeft: 10 }} onClick={() => setMarking(true)}>
+                    {tag ? `Marked: ${tag}` : "Mark read"}
+                  </button>
                   <div style={{ marginLeft: "auto" }}>
                     {lead ? (
                       <Link to={`/leads/${lead.id}`} className="btn ghost sm">View lead</Link>
@@ -185,6 +216,10 @@ export default function Chat() {
 
       {showRaw && <RawFeed />}
 
+      {marking && thread && (
+        <MarkModal phone={thread.phone} current={tag} onClose={() => setMarking(false)} />
+      )}
+
       {creating && thread && (
         <CreateLeadModal
           phone={thread.phone}
@@ -192,6 +227,65 @@ export default function Chat() {
           onClose={() => setCreating(false)}
         />
       )}
+    </div>
+  );
+}
+
+/* Mark what this number turned out to be. Re-marking overwrites, so the current mark
+   is preselected rather than hidden. */
+function MarkModal(
+  { phone, current, onClose }: { phone: string; current?: WaTag; onClose: () => void },
+) {
+  const mark = useMarkWaContact();
+  const [tag, setTag] = useState<WaTag>(current ?? "buyer");
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 100%)" }}>
+        <div className="mh">
+          <h3>Mark this contact</h3>
+          <div className="icon-btn" onClick={onClose}>✕</div>
+        </div>
+        <div className="mb">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {WA_TAGS.map((t) => (
+              <label
+                key={t}
+                style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                  borderRadius: 9, cursor: "pointer", fontSize: 13.5, textTransform: "capitalize",
+                  border: "1px solid " + (tag === t ? "var(--emerald)" : "var(--line)"),
+                  background: tag === t ? "var(--emerald-soft)" : "var(--panel)",
+                }}
+              >
+                <input type="radio" name="wa-tag" checked={tag === t} onChange={() => setTag(t)}
+                  style={{ accentColor: "var(--emerald)" }} />
+                {t}
+                {t === "rejected" && (
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--coral)" }}>
+                    highlights red
+                  </span>
+                )}
+              </label>
+            ))}
+          </div>
+          {mark.isError && (
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--coral)" }}>
+              {(mark.error as Error).message}
+            </div>
+          )}
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button
+            className="btn green"
+            disabled={mark.isPending}
+            onClick={() => mark.mutate({ phone, tag }, { onSuccess: onClose })}
+          >
+            {mark.isPending ? "Saving…" : "Mark"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

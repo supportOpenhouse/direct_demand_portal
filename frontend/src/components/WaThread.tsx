@@ -54,9 +54,16 @@ export function Bubble({ m }: { m: WaMessage }) {
       >
         <Media m={m} />
         {m.body || (!m.media_url && <i style={{ color: "var(--muted)" }}>[{m.msg_type}]</i>)}
-        <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, textAlign: "right" }}>
-          {formatDateTime(m.created_at)}
-          {out && m.status ? ` · ${m.status}` : ""}
+        {/* who sent it — the portal user outbound, the customer inbound. Outbound
+            accountability is the point: several admins share one business number. */}
+        <div style={{
+          fontSize: 10.5, color: "var(--muted)", marginTop: 4, textAlign: "right",
+          display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap",
+        }}>
+          <b style={{ fontWeight: 600, color: "var(--ink-2)" }}>
+            {out ? (m.author || "Unknown sender") : (m.name || "Customer")}
+          </b>
+          <span>{formatDateTime(m.created_at)}{out && m.status ? ` · ${m.status}` : ""}</span>
         </div>
       </div>
     </div>

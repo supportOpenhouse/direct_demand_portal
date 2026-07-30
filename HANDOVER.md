@@ -2,7 +2,7 @@
 
 **Goal:** rebuild the working prototype as a production app — **React.js** frontend, **Python + FastAPI** backend, **existing Postgres** database — **keeping the interface exactly as it is today**.
 
-- **UI source of truth:** `index.html` (the prototype). Its look, flows, copy, and interactions are the spec. Do **not** redesign.
+- **UI source of truth:** the React app under `frontend/src/` (the original `index.html` prototype has been removed; its styles are `frontend/src/styles/app.css`). Its look, flows, copy, and interactions are the spec. Do **not** redesign.
 - **Product/rules source of truth:** this doc + `Openhouse-Direct-CRM-PRD.md`. Where the prototype's UI has evolved past the PRD (noted below), **the prototype wins**.
 
 ---
@@ -81,7 +81,7 @@ users(id, name, phone, email, role['admin'|'cm'|'rm'], team_id→teams, active, 
 teams(id, name, cm_user_id→users)
 
 leads(id uuid, name, phone, source['meta'|'gads'|'99acres'|'magicbricks'|'youtube'|'whatsapp'|'api'|'webhook'|'sheets'],
-      assigned_to→users, stage['new'|'contacted'|'visit_scheduled'|'visit_feedback'|'negotiation'|'won'|'lost'|'future_prospect'|'timepass'],
+      assigned_to→users, stage['new'|'call_not_received'|'follow_up'|'qualified'|'visit_scheduled'|'won'|'rejected'|'rnr'],
       tat_deadline, confirmed bool, qualified_at timestamptz, created_at, updated_at)
 
 lead_source_data(lead_id→leads PK, budget_band, budget_min_lacs, budget_max_lacs, city, society, configuration, plan_to_buy)  -- ADMIN-write only
@@ -125,7 +125,9 @@ api_keys(id, label, hash, revoked, created_by)
 
 **6.3 Qualify → 7-day auto-move (current behaviour).**
 - On **confirm** (`POST /leads/:id/confirm`): set `confirmed=true`, `qualified_at=now()`, advance `new→contacted`, push activity.
-- **Qualified segment** = `confirmed AND stage NOT IN (won,lost,future_prospect,timepass) AND now()-qualified_at < 7 days`.
+- **Qualified segment** = `stage = 'qualified'`. `stage` is authoritative: every page is a
+  plain equality on it, so a lead sits on exactly one page. See
+  `docs/superpowers/specs/2026-07-29-lead-stage-model-design.md`.
 - **Pipeline segment** = same but `≥ 7 days`. This is **purely date-driven** — a nightly job isn't required (compute in the query / a view), but a cron can also flip a flag if you prefer materialized state.
 
 **6.4 Matching engine** (used by lead-detail matches **and** Gold Mine). City is a **hard filter**. A unit is a real match if **society matches OR (budget-range overlaps AND configuration matches)**. Score = city(40) + society(45) + budget(25) + config(20); rank desc; lead detail shows **top 5** inventory + **top 5** supply.
@@ -134,7 +136,9 @@ api_keys(id, label, hash, revoked, created_by)
 
 **6.6 Mandatory fields.** Confirm requires Q1 purpose, Q2 budget, Q3 config, Q6 office-willing → 422 with field errors otherwise. Stage changes require a remark (when stage UI is restored).
 
-**6.7 Visit planner.** Multi-stop itinerary from inventory; distance/time = estimate (haversine × road factor) with optional Google **Directions** upgrade; "optimize route" = nearest-neighbour + 2-opt; saving → stage `visit_scheduled` + auto `visit_feedback` reminder +2 hr.
+**6.7 Visit planner.** Multi-stop itinerary from inventory; distance/time = estimate (haversine × road factor) with optional Google **Directions** upgrade; "optimize route" = nearest-neighbour + 2-opt. Saving a plan does **not** change the stage — a
+plan is internal preparation, not an appointment. Only a real Openhouse booking sets
+`visit_scheduled`; until then the saved-plan card reads "Visit not scheduled yet".
 
 **6.8 Plan to Buy** (source field): within_30_days / 1–3 months / 3–6 months / just_exploring — colour-coded chip.
 
@@ -236,4 +240,4 @@ src/
 
 ---
 
-*UI = `index.html` (verbatim). Rules = this doc + PRD. Stack = React + FastAPI + existing Postgres.*
+*UI = the React app under `frontend/src/`. Rules = this doc + PRD. Stack = React + FastAPI + existing Postgres.*

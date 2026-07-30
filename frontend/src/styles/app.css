@@ -22,14 +22,14 @@
 
   /* semantic accents — each with a soft tint */
   --emerald:#059669;  --emerald-soft:#d6f3e5;   /* won / success      */
-  --blue:#2563eb;     --blue-soft:#dde8fe;       /* new                */
-  --cyan:#0e8fa8;     --cyan-soft:#cdeef4;       /* contacted          */
-  --amber:#d68309;    --amber-soft:#fdeccb;      /* visit scheduled    */
-  --violet:#7c3aed;   --violet-soft:#ebe5fd;     /* visit feedback     */
-  --indigo:#4f46e5;   --indigo-soft:#e2e2fc;     /* negotiation        */
-  --gold:#b8860b;     --gold-soft:#fbf0cc;       /* gold mine / future */
-  --coral:#e11d48;    --coral-soft:#ffe1e6;      /* lost / breach      */
-  --slate:#64748b;    --slate-soft:#eceff4;      /* timepass           */
+  --blue:#2563eb;     --blue-soft:#dde8fe;       /* new                    */
+  --cyan:#0e8fa8;     --cyan-soft:#cdeef4;       /* call not received      */
+  --amber:#d68309;    --amber-soft:#fdeccb;      /* visit scheduled        */
+  --violet:#7c3aed;   --violet-soft:#ebe5fd;     /* AI summary, supply AMA */
+  --indigo:#4f46e5;   --indigo-soft:#e2e2fc;     /* qualified              */
+  --gold:#b8860b;     --gold-soft:#fbf0cc;       /* gold mine, supply hold */
+  --coral:#e11d48;    --coral-soft:#ffe1e6;      /* rejected + RNR, breach */
+  --slate:#64748b;    --slate-soft:#eceff4;      /* follow up              */
 
   --radius:14px;
   --shadow:0 1px 2px rgba(15,23,42,.04), 0 10px 30px -14px rgba(15,23,42,.16);

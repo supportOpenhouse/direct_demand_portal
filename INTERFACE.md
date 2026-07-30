@@ -41,9 +41,9 @@ Base: `body` = Hanken Grotesk, **14px**, color `--ink`, background `--bg`, antia
 | `--amber` | `#d68309` | `#fdeccb` | visit scheduled |
 | `--violet` | `#7c3aed` | `#ebe5fd` | visit feedback |
 | `--indigo` | `#4f46e5` | `#e2e2fc` | negotiation / pipeline |
-| `--gold` | `#b8860b` | `#fbf0cc` | gold mine / future prospect |
-| `--coral` | `#e11d48` | `#ffe1e6` | lost / TAT breach |
-| `--slate` | `#64748b` | `#eceff4` | timepass |
+| `--gold` | `#b8860b` | `#fbf0cc` | gold mine / supply hold |
+| `--coral` | `#e11d48` | `#ffe1e6` | rejected + RNR / TAT breach |
+| `--slate` | `#64748b` | `#eceff4` | follow up |
 
 **Geometry:**
 - `--radius: 14px` (cards). Chips ~6px, pills ~20px, buttons 9px.
@@ -87,8 +87,8 @@ Nav order: **Dashboard · New Leads · Qualified Leads · Pipeline Leads · Conv
 ### Stage chips `.stage.<key>` — pill, dot + label, soft bg / accent text
 | Stage | Colour |
 |---|---|
-| new | blue · contacted | cyan · visit | amber · feedback | violet · negotiation | indigo |
-| won | emerald · lost | coral · future_prospect | gold · timepass | slate |
+| new | blue · call_not_received | cyan · follow_up | slate · qualified | indigo |
+| visit_scheduled | amber · won | emerald · rejected + rnr | coral |
 
 ### Source badges `.src.<key>` — small square-dot chip, brand colours
 | meta | blue (#1877f2) | gads | green (#34a853) | 99acres | orange (#ed5a0a) |
@@ -193,4 +193,4 @@ White, `--line` border, `--radius`, `--shadow`. `.panel-pad` adds 18px padding. 
 
 ---
 
-*Pair this with `HANDOVER.md` (architecture/schema/API) and `Openhouse-Direct-CRM-PRD.md` (product rules). The live `index.html` remains the exact reference if any value here is ambiguous.*
+*Pair this with `HANDOVER.md` (architecture/schema/API) and `Openhouse-Direct-CRM-PRD.md` (product rules). The React app under `frontend/src/` is the exact reference if any value here is ambiguous.*

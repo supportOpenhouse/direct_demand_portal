@@ -134,11 +134,13 @@ The 📅 Visits button (on the lead lists and lead detail) opens a multi-stop ro
 JavaScript API** + **Directions API**). Add the Vercel domain + `http://localhost:5173` to the
 frontend key's HTTP-referrer restrictions.
 
-## The prototype (UI reference)
+## The prototype (removed)
 
-`index.html` is the single-file design prototype — the pixel spec for every screen. The React
-app lifts its `<style>` block verbatim (`frontend/src/styles/app.css`) and ports its markup
-1:1. To view it, just `open index.html` in a browser.
+The original single-file design prototype (`index.html`) has been deleted. Its `<style>` block
+lives on verbatim as `frontend/src/styles/app.css`, and its markup was ported 1:1 into the
+React pages — so the React app is now the reference. The prototype's lead-stage model had been
+superseded (it still described Timepass and Future Prospect), which made it actively
+misleading. Recover it from git history if you need the original: `git log -- index.html`.
 
 ## What changed vs. the source prototype
 
@@ -159,8 +161,8 @@ semantic colours read clearly and consistently:
 - Stat cards now carry a coloured left accent matching the metric's meaning, and the pipeline
   funnel uses the same stage hues.
 
-All colours are CSS custom properties under `:root` in `index.html`, so re-theming is a
-single block to edit.
+All colours are CSS custom properties under `:root` in `frontend/src/styles/app.css`, so
+re-theming is a single block to edit.
 
 ## Features in the prototype
 
@@ -234,10 +236,10 @@ Available against **any lead** — the "📅 Schedule visit" button on the lead 
 
 ### Enabling the map
 
-Open `index.html` and paste your key into the constant near the top:
+Set the key in the root `.env` (read by Vite at build time):
 
 ```js
-const MAPS_API_KEY = ""; // ← your Google Maps JavaScript API key (billing enabled)
+VITE_MAPS_API_KEY=   # Google Maps JavaScript API key (billing enabled)
 ```
 
 - **Without a key:** the planner still works — itinerary, distance and drive-time are shown as
@@ -250,9 +252,8 @@ Inventory units carry approximate `lat`/`lng` per society (Delhi-NCR) for the pi
 
 ## Status
 
-`v0.3` — prototype / front-end reference only. Mock data lives inline in `index.html` (seeded
-lost leads for the loss analytics; approximate inventory coordinates for the map). No backend
-yet. See `Openhouse-Direct-CRM-PRD.md` for the data model, REST API, integration contracts,
+`v0.3` — React front end + FastAPI backend on live data. The original single-file prototype
+and its inline mock data have been removed. See `Openhouse-Direct-CRM-PRD.md` for the data model, REST API, integration contracts,
 business rules and acceptance criteria when the backend build begins.
 
 ---

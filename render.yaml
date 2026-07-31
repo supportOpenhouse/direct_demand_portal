@@ -60,6 +60,17 @@ services:
         sync: false               # WABA number, country code included, digits only
       - key: GUPSHUP_APP_NAME
         sync: false               # Gupshup app bound to that number (sent as src.name)
+      # --- Bonvoice PBX (click-to-call) ---
+      - key: BONVOICE_USERNAME
+        sync: false
+      - key: BONVOICE_PASSWORD
+        sync: false               # or set BONVOICE_TOKEN instead
+      - key: BONVOICE_DID
+        sync: false               # outgoing caller ID, e.g. 7946350641
+      - key: BONVOICE_CHANNEL_ID
+        sync: false               # channel id issued with the account, e.g. 12
+      - key: BONVOICE_WEBHOOK_SECRET
+        sync: false               # ?token= on the call-log callback URL
       - key: LEADS_SHEET_ID
         sync: false               # leads source sheet (or rely on the in-code default)
       # RUN_SCHEDULER defaults true. If you scale this web service to >1 instance,

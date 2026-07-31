@@ -93,6 +93,24 @@ class Settings(BaseSettings):
     # the Gupshup app name bound to that number — sent as src.name
     GUPSHUP_APP_NAME: str = ""
 
+    # --- Bonvoice PBX (click-to-call) ---
+    # Login is exchanged for a token at /usermanagement/external-auth/; set
+    # BONVOICE_TOKEN directly to skip that if ops issue a long-lived one.
+    BONVOICE_BASE_URL: str = "https://backend.pbx.bonvoice.com"
+    BONVOICE_USERNAME: str = ""
+    BONVOICE_PASSWORD: str = ""
+    BONVOICE_TOKEN: str = ""
+    BONVOICE_DID: str = ""             # caller ID the lead sees, e.g. 7946350641
+    BONVOICE_CHANNEL_ID: str = "1"     # legA/legB channel id issued with the account
+    BONVOICE_WEBHOOK_SECRET: str = ""  # ?token= on the call-log callback URL
+
+    @property
+    def bonvoice_configured(self) -> bool:
+        """Placing a call needs a DID plus some way to authenticate."""
+        return bool(self.BONVOICE_DID) and bool(
+            self.BONVOICE_TOKEN or (self.BONVOICE_USERNAME and self.BONVOICE_PASSWORD)
+        )
+
     # --- Google OAuth (optional; app stays open until both sides are configured) ---
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     JWT_SECRET: str = "dev-insecure-change-me"

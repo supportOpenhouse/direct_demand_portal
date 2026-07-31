@@ -275,6 +275,8 @@ class User(Base):
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)
+    # mobile number — click-to-call rings this handset first, then dials the lead
+    phone: Mapped[str | None] = mapped_column(Text)
     # Openhouse Core SalesManager.id — used as sales_manager_id when booking visits.
     # No smid → the user can't book (clear "not set up" message).
     smid: Mapped[int | None] = mapped_column(Integer)
@@ -298,6 +300,43 @@ class LeadNote(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(Text, nullable=False, server_default="note")  # 'remarks' | 'note'
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class CallLog(Base):
+    """One row per call leg, built up by the Bonvoice callback.
+
+    Bonvoice fires three lifecycle events (0 initiated, 1 answered, 2 hangup) for each
+    of two legs, so up to six callbacks describe one conversation. They upsert onto
+    (call_id, leg) and apply progressively, so duplicate and out-of-order deliveries
+    converge on the same row.
+
+    lead_id comes from callBackParams — we send it when placing the call and Bonvoice
+    echoes it back — so logs attach by explicit id, not by matching phone numbers."""
+
+    __tablename__ = "call_logs"
+
+    call_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    leg: Mapped[str] = mapped_column(Text, primary_key=True)  # 'A' caller | 'B' callee
+    event_id: Mapped[str | None] = mapped_column(Text, index=True)
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="SET NULL"), index=True
+    )
+    direction: Mapped[str | None] = mapped_column(Text)
+    source_number: Mapped[str | None] = mapped_column(Text)
+    destination_number: Mapped[str | None] = mapped_column(Text)
+    display_number: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str | None] = mapped_column(Text)        # callee status
+    agent_status: Mapped[str | None] = mapped_column(Text)  # caller status (outbound)
+    answered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    start_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    end_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    # stored if Bonvoice sends it; nothing downloads or renders it yet
+    recording_url: Mapped[str | None] = mapped_column(Text)
+    placed_by: Mapped[str | None] = mapped_column(Text)     # portal user who dialled
+    raw: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

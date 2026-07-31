@@ -10,6 +10,7 @@ import { useToast } from "../components/Toast";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
+import { CallButton } from "../components/CallButton";
 import { AssignControl } from "../components/AssignControl";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
@@ -182,6 +183,9 @@ export default function NewLeads() {
                   </td>
                   <td>
                     <div className="who">
+                      {/* this table had no avatar to replace, but it's the primary
+                          calling worklist — the button belongs here most of all */}
+                      <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">
                           {l.name}{" "}

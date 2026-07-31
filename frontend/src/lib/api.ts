@@ -362,9 +362,13 @@ export const api = {
   logActors: () => request<{ items: string[] }>("/v1/logs/actors"),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
-  createUser: (u: { email: string; name: string; role: string; smid?: number | null }) =>
+  placeCall: (lead_id: string) =>
+    request<{ status: string; event_id: string; rm_phone_masked: string }>("/v1/bonvoice/call", {
+      method: "POST", body: JSON.stringify({ lead_id }),
+    }),
+  createUser: (u: { email: string; name: string; role: string; smid?: number | null; phone?: string | null }) =>
     request<{ id: string; status: string }>("/v1/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null }>) =>
+  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null; phone: string | null }>) =>
     request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
   reassignUserLeads: (id: string, toUserId: string) =>
@@ -428,6 +432,7 @@ export interface ManagedUser {
   role: string;
   maps_to: string | null; // first name we match against the sheet's "Assigned to"
   smid: number | null; // Openhouse SalesManager id (required to book visits)
+  phone: string | null; // mobile that click-to-call rings first
   active: boolean;
   last_login_at: string | null;
   matched_leads: number;

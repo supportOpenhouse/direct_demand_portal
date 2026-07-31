@@ -175,6 +175,11 @@ export function usePatchSourceData(id: string) {
   });
 }
 
+/* Click-to-call: rings the caller's own phone, then bridges to the lead. */
+export function usePlaceCall() {
+  return useMutation({ mutationFn: (leadId: string) => api.placeCall(leadId) });
+}
+
 export function useUsers() {
   return useQuery({ queryKey: ["users"], queryFn: api.users });
 }

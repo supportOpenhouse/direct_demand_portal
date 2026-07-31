@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useLeads, formatDate, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcClass, srcLabel, stageClass, stageLabel, initials, leadMatchesQuery } from "../lib/leads";
+import { srcClass, srcLabel, stageClass, stageLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
@@ -15,6 +15,7 @@ import { BulkAssignBar } from "../components/BulkAssignBar";
 import { NotesCell } from "../components/NotesCell";
 import { VisitsCell } from "../components/VisitsCell";
 import { AssignControl } from "../components/AssignControl";
+import { CallButton } from "../components/CallButton";
 import { VisitPlanner } from "../features/VisitPlanner";
 
 const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
@@ -172,7 +173,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   {pipeline && <td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
                   <td>
                     <div className="who">
-                      <div className="av">{initials(l.name)}</div>
+                      <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">
                           {l.name}

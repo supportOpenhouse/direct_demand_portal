@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { srcClass, srcLabel, initials, leadMatchesQuery } from "../lib/leads";
+import { srcClass, srcLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
@@ -20,6 +20,7 @@ import { BulkAssignBar } from "../components/BulkAssignBar";
 import { CallConnected } from "../components/CallConnected";
 import { NotesCell } from "../components/NotesCell";
 import { AssignControl } from "../components/AssignControl";
+import { CallButton } from "../components/CallButton";
 
 // follow-up due → friendly label + overdue/soon class
 function DueChip({ at }: { at: string | null }) {
@@ -157,7 +158,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                   </td>
                   <td>
                     <div className="who">
-                      <div className="av">{initials(l.name)}</div>
+                      <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
                         <div className="ph">{l.phone}</div>

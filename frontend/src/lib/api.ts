@@ -280,8 +280,15 @@ export const api = {
       status: string; send_enabled: boolean;
       leads: Record<string, { id: string; name: string | null }>;  // last-10-digits → lead
       tags: Record<string, WaTag>;                                 // last-10-digits → mark
+      owners: Record<string, string>;                              // last-10-digits → owning RM
       items: WaMessage[];
     }>("/v1/gupshup/messages" + (phone ? `?phone=${encodeURIComponent(phone)}` : "")),
+  waAssign: (phone: string, assigned_to: string | null) =>
+    request<{ status: string; assigned_to: string | null }>("/v1/gupshup/assign", {
+      method: "POST", body: JSON.stringify({ phone, assigned_to }),
+    }),
+  waBackfillAssign: () =>
+    request<{ status: string; assigned: number }>("/v1/gupshup/assign/backfill", { method: "POST" }),
   waMark: (phone: string, tag: WaTag) =>
     request<{ status: string; phone10: string; tag: WaTag }>("/v1/gupshup/mark", {
       method: "POST", body: JSON.stringify({ phone, tag }),

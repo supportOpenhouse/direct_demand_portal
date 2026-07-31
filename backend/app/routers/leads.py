@@ -107,11 +107,9 @@ def _lead_row(r) -> dict:
 
 def _role_scope(user: dict) -> tuple[str, dict]:
     """Row visibility by role, as a standalone boolean clause: admins see everything,
-    CM sees all assigned leads (no unassigned), RM sees only their own. Shared by the
-    list and the counts endpoints so both scope identically."""
+    RMs see only their own. Shared by the list and the counts endpoints so both scope
+    identically."""
     role = user.get("role")
-    if role == "cm":
-        return "assigned_to IS NOT NULL", {}
     if role == "rm":
         aliases = assignment_aliases(user)
         return ("lower(assigned_to) = ANY(:aliases)", {"aliases": aliases}) if aliases else ("false", {})

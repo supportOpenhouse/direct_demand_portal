@@ -4,13 +4,14 @@
    outside that window only pre-approved templates go through. The composer reflects
    that state rather than letting you type into a message that will be rejected.
 
-   Admin-only for now — the API refuses non-admins too, this just avoids showing a
-   dead page. */
+   RMs see only the conversations assigned to them; admins see everything and can
+   reassign. Scoping is enforced server-side — this page just reflects it. */
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
 import {
-  useWaMessages, useCreateWaLead, useMarkWaContact, useSocietiesByCity, useGupshupRecent, formatDateTime,
+  useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
+  useBackfillWaAssign, useSocietiesByCity, useGupshupRecent, formatDateTime,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
 import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
@@ -84,16 +85,10 @@ export default function Chat() {
   // leads are keyed by the last 10 digits — leads store "+91 98715 78484", WhatsApp "919871578484"
   const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
   const tag = thread ? data?.tags?.[thread.phone.slice(-10)] : undefined;
+  const owner = thread ? data?.owners?.[thread.phone.slice(-10)] : undefined;
 
   const sendEnabled = data?.send_enabled ?? false;
 
-  if (!isAdmin) {
-    return (
-      <div className="card">
-        <div className="empty" style={{ padding: 48 }}>WhatsApp is admin-only for now.</div>
-      </div>
-    );
-  }
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 48 }}>Loading…</div></div>;
   if (error) {
     return (
@@ -112,9 +107,12 @@ export default function Chat() {
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{threads.length}</b> conversation{threads.length === 1 ? "" : "s"}
         </p>
-        <button className="btn ghost sm" onClick={() => setShowRaw((v) => !v)}>
-          {showRaw ? "Hide" : "Show"} raw callbacks
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          {isAdmin && <BackfillButton />}
+          <button className="btn ghost sm" onClick={() => setShowRaw((v) => !v)}>
+            {showRaw ? "Hide" : "Show"} raw callbacks
+          </button>
+        </div>
       </div>
 
       {threads.length === 0 ? (
@@ -142,6 +140,7 @@ export default function Chat() {
               const selected = t.phone === thread?.phone;
               const hasLead = !!data?.leads?.[t.phone.slice(-10)];
               const rowTag = data?.tags?.[t.phone.slice(-10)];
+              const rowOwner = data?.owners?.[t.phone.slice(-10)];
               return (
                 <button
                   key={t.phone}
@@ -166,6 +165,11 @@ export default function Chat() {
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {t.name || t.phone}
                       {rowTag && <TagChip tag={rowTag} />}
+                      {isAdmin && rowOwner && (
+                        <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 500, color: "var(--muted)" }}>
+                          {rowOwner.split(" ")[0]}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {last?.direction === "out" ? "You: " : ""}{last?.body || `[${last?.msg_type}]`}
@@ -193,6 +197,11 @@ export default function Chat() {
                   <button className="btn ghost sm" style={{ marginLeft: 10 }} onClick={() => setMarking(true)}>
                     {tag ? `Marked: ${tag}` : "Mark read"}
                   </button>
+                  {isAdmin ? (
+                    <OwnerPicker phone={thread.phone} owner={owner} />
+                  ) : owner ? (
+                    <span style={{ marginLeft: 10, fontSize: 11.5, color: "var(--muted)" }}>· {owner}</span>
+                  ) : null}
                   <div style={{ marginLeft: "auto" }}>
                     {lead ? (
                       <Link to={`/leads/${lead.id}`} className="btn ghost sm">View lead</Link>
@@ -228,6 +237,42 @@ export default function Chat() {
         />
       )}
     </div>
+  );
+}
+
+/* One-shot distribution of conversations that predate assignment. */
+function BackfillButton() {
+  const fill = useBackfillWaAssign();
+  return (
+    <button className="btn ghost sm" disabled={fill.isPending}
+      title="Give every unassigned conversation an owner"
+      onClick={() => fill.mutate()}>
+      {fill.isPending ? "Assigning…"
+        : fill.data ? `Assigned ${fill.data.assigned}` : "Assign unowned"}
+    </button>
+  );
+}
+
+/* Reassign a conversation. Admin-only — an RM moving their own threads away would
+   defeat the point of distributing them, so the API refuses it too. */
+function OwnerPicker({ phone, owner }: { phone: string; owner?: string }) {
+  const { data } = useAssignees();
+  const assign = useAssignWaContact();
+  return (
+    <select
+      value={owner ?? ""}
+      disabled={assign.isPending}
+      onChange={(e) => assign.mutate({ phone, assigned_to: e.target.value || null })}
+      title="Who owns this conversation"
+      style={{
+        marginLeft: 8, fontSize: 11.5, padding: "4px 8px", borderRadius: 8,
+        border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink-2)",
+        maxWidth: 150,
+      }}
+    >
+      <option value="">Unassigned</option>
+      {(data?.items ?? []).map((a) => <option key={a.email} value={a.name}>{a.name}</option>)}
+    </select>
   );
 }
 

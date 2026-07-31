@@ -45,6 +45,23 @@ export function useSocietiesByCity(city: string) {
   });
 }
 
+export function useAssignWaContact() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ phone, assigned_to }: { phone: string; assigned_to: string | null }) =>
+      api.waAssign(phone, assigned_to),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-messages"] }),
+  });
+}
+
+export function useBackfillWaAssign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.waBackfillAssign,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-messages"] }),
+  });
+}
+
 export function useMarkWaContact() {
   const qc = useQueryClient();
   return useMutation({

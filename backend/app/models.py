@@ -271,7 +271,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(Text)
     picture: Mapped[str | None] = mapped_column(Text)
-    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")  # admin | cm | rm
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")  # admin | rm
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)
@@ -352,7 +352,11 @@ class WaContact(Base):
     __tablename__ = "wa_contacts"
 
     phone10: Mapped[str] = mapped_column(Text, primary_key=True)
-    tag: Mapped[str] = mapped_column(Text, nullable=False)  # broker|buyer|seller|rejected
+    # nullable: a contact can be assigned to an RM before anyone classifies it
+    tag: Mapped[str | None] = mapped_column(Text)  # broker|buyer|seller|rejected
+    # owning RM, by canonical full name — same convention as leads.assigned_to
+    assigned_to: Mapped[str | None] = mapped_column(Text, index=True)
+    assigned_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     marked_by: Mapped[str | None] = mapped_column(Text)
     marked_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

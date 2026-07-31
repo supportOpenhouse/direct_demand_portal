@@ -28,9 +28,9 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from urllib.parse import parse_qsl
 
 from ..config import get_settings
-# admin-only for now: reading a whole customer thread and messaging as the business
-# are both wider than an RM's remit. Widen deliberately, not by default.
-from ..core.auth import require_admin
+# RMs may work the conversations assigned to them; admins see everything. The raw
+# callback feed stays admin-only — it's a debugging surface, not a worklist.
+from ..core.auth import assignment_aliases, current_user, require_admin
 from ..db import neon_engine
 from ..models import Lead, WaContact, WaMessage
 
@@ -126,6 +126,10 @@ async def _persist(entry: dict) -> None:
                     raw=body,
                     **_media_of(inner),
                 ))
+                # first message from this number → give the conversation an owner
+                from ..services.wa_assign import assign_if_unassigned
+                await assign_if_unassigned(conn, normalize_phone(
+                    payload.get("sender", {}).get("phone") or payload.get("source"))[-10:])
         elif entry["type"] == "message-event" and payload.get("id"):
             # delivery receipts arrive minutes later, keyed by the id /send stored
             async with engine.begin() as conn:
@@ -173,26 +177,59 @@ async def gupshup_recent():
     return {"count": len(_RECENT), "items": list(_RECENT)}
 
 
+async def _assert_owns(conn, user: dict, phone10: str) -> None:
+    """An RM may only act on conversations assigned to them. Admins are unrestricted.
+    Without this, opening the page to RMs would let any of them message any customer."""
+    if user.get("role") != "rm":
+        return
+    aliases = assignment_aliases(user)
+    owner = (await conn.execute(
+        text("SELECT lower(assigned_to) FROM wa_contacts WHERE phone10 = :p"), {"p": phone10}
+    )).first()
+    if not aliases or not owner or not owner[0] or owner[0] not in aliases:
+        raise HTTPException(status_code=403, detail="this conversation is assigned to someone else")
+
+
+def _thread_scope(user: dict):
+    """Which conversations this user may see, as a WaMessage predicate.
+
+    RMs get the ones assigned to them; admins get everything. Matching goes through
+    the same first-name/full-name aliases used for leads, so an RM's WhatsApp threads
+    and their leads resolve identically."""
+    if user.get("role") != "rm":
+        return None
+    aliases = assignment_aliases(user)
+    if not aliases:
+        return text("false")
+    return func.right(WaMessage.phone, 10).in_(
+        select(WaContact.phone10).where(func.lower(WaContact.assigned_to).in_(aliases))
+    )
+
+
 @router.get("/gupshup/messages")
-async def gupshup_messages(phone: str | None = None, user: dict = Depends(require_admin)):
+async def gupshup_messages(phone: str | None = None, user: dict = Depends(current_user)):
     """Stored messages, newest first. The client groups by phone into threads — at this
     volume that's cheaper than a per-thread endpoint. Pass `phone` to narrow to one
     conversation (the lead-detail card); numbers are matched on their last 10 digits."""
     settings = get_settings()
     engine = neon_engine()
     if engine is None:
-        return {"status": "not_configured", "send_enabled": False, "leads": {}, "items": []}
+        return {"status": "not_configured", "send_enabled": False,
+                "leads": {}, "tags": {}, "owners": {}, "items": []}
     q = select(
         WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
         WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
         WaMessage.media_url, WaMessage.media_expiry, WaMessage.media_name,
         WaMessage.created_at,
     )
+    scope = _thread_scope(user)
+    if scope is not None:
+        q = q.where(scope)
     if phone is not None:
         want = normalize_phone(phone)[-10:]
         if not want:
             return {"status": "ok", "send_enabled": settings.gupshup_send_configured,
-                    "leads": {}, "items": []}
+                    "leads": {}, "tags": {}, "owners": {}, "items": []}
         q = q.where(func.right(WaMessage.phone, 10) == want)
     async with engine.connect() as conn:
         rows = (await conn.execute(
@@ -215,20 +252,64 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(requir
         tags = {}
         if phones10:
             trows = (await conn.execute(
-                select(WaContact.phone10, WaContact.tag).where(WaContact.phone10.in_(phones10))
+                select(WaContact.phone10, WaContact.tag, WaContact.assigned_to)
+                .where(WaContact.phone10.in_(phones10))
             )).mappings().all()
-            tags = {t["phone10"]: t["tag"] for t in trows}
+            tags = {t["phone10"]: t["tag"] for t in trows if t["tag"]}
+            owners = {t["phone10"]: t["assigned_to"] for t in trows if t["assigned_to"]}
 
     return {
         "status": "ok",
         "send_enabled": settings.gupshup_send_configured,
         "leads": leads,  # last-10-digits → the lead that already exists for it
         "tags": tags,    # last-10-digits → broker | buyer | seller | rejected
+        "owners": owners,  # last-10-digits → the RM who owns the conversation
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
 
 
 WA_TAGS = ("broker", "buyer", "seller", "rejected")
+
+
+class AssignRequest(BaseModel):
+    phone: str
+    assigned_to: str | None = None  # null unassigns; auto-assignment won't reclaim it
+
+
+@router.post("/gupshup/assign", dependencies=[Depends(require_admin)])
+async def gupshup_assign(req: AssignRequest):
+    """Hand a conversation to a specific RM. Admin-only — an RM reassigning their own
+    threads away would defeat the point of distributing them."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    phone10 = normalize_phone(req.phone)[-10:]
+    if len(phone10) != 10:
+        raise HTTPException(status_code=400, detail="invalid phone number")
+    now = datetime.now(timezone.utc)
+    stmt = pg_insert(WaContact).values(
+        phone10=phone10, assigned_to=req.assigned_to, assigned_at=now,
+    ).on_conflict_do_update(
+        index_elements=[WaContact.phone10],
+        set_={"assigned_to": req.assigned_to, "assigned_at": now},
+    )
+    async with engine.begin() as conn:
+        await conn.execute(stmt)
+    return {"status": "ok", "phone10": phone10, "assigned_to": req.assigned_to}
+
+
+@router.post("/gupshup/assign/backfill", dependencies=[Depends(require_admin)])
+async def gupshup_backfill():
+    """Distribute every conversation that has no owner yet — for the threads that
+    predate assignment. Safe to re-run; it only touches unowned, non-rejected ones."""
+    from ..services.wa_assign import backfill
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    async with engine.begin() as conn:
+        assigned = await backfill(conn)
+    return {"status": "ok", "assigned": assigned}
 
 
 class MarkRequest(BaseModel):
@@ -246,20 +327,26 @@ async def gupshup_mark(req: MarkRequest, user: dict = Depends(require_admin)):
     if len(phone10) != 10:
         raise HTTPException(status_code=400, detail="invalid phone number")
     marked_by = user.get("name") or user.get("email")
-    stmt = pg_insert(WaContact).values(
-        phone10=phone10, tag=req.tag, marked_by=marked_by, marked_at=datetime.now(timezone.utc),
-    ).on_conflict_do_update(
-        index_elements=[WaContact.phone10],
-        set_={"tag": req.tag, "marked_by": marked_by, "marked_at": datetime.now(timezone.utc)},
+    now = datetime.now(timezone.utc)
+    # a rejected number stops consuming an RM's share, so its owner is cleared
+    rejected = req.tag == "rejected"
+    values = {"tag": req.tag, "marked_by": marked_by, "marked_at": now}
+    if rejected:
+        values |= {"assigned_to": None, "assigned_at": None}
+    stmt = pg_insert(WaContact).values(phone10=phone10, **values).on_conflict_do_update(
+        index_elements=[WaContact.phone10], set_=values,
     )
     async with engine.begin() as conn:
         await conn.execute(stmt)
+        if not rejected:  # un-rejecting puts it back into the rotation
+            from ..services.wa_assign import assign_if_unassigned
+            await assign_if_unassigned(conn, phone10)
     log.info("gupshup mark %s%s as %s by %s", "•" * 6, phone10[-4:], req.tag, marked_by)
     return {"status": "ok", "phone10": phone10, "tag": req.tag}
 
 
 @router.get("/gupshup/latest")
-async def gupshup_latest(user: dict = Depends(require_admin)):
+async def gupshup_latest(user: dict = Depends(current_user)):
     """Timestamp of the newest inbound message — one indexed MAX(), cheap enough for
     the topbar to poll from every page. The client compares it against the last time
     this browser opened the WhatsApp page to decide whether to show the dot."""
@@ -267,9 +354,11 @@ async def gupshup_latest(user: dict = Depends(require_admin)):
     if engine is None:
         return {"last_inbound_at": None}
     async with engine.connect() as conn:
-        row = (await conn.execute(
-            select(func.max(WaMessage.created_at)).where(WaMessage.direction == "in")
-        )).first()
+        q = select(func.max(WaMessage.created_at)).where(WaMessage.direction == "in")
+        scope = _thread_scope(user)
+        if scope is not None:
+            q = q.where(scope)
+        row = (await conn.execute(q)).first()
     return {"last_inbound_at": row[0].isoformat() if row and row[0] else None}
 
 
@@ -281,7 +370,7 @@ class CreateLeadRequest(BaseModel):
 
 
 @router.post("/gupshup/leads")
-async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(require_admin)):
+async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(current_user)):
     """Create a spine lead from a WhatsApp conversation. Idempotent on origin_key, so
     a double-click returns the existing lead rather than a duplicate."""
     from ..services.leads_sync import TAT_HOURS, display_phone, norm_phone
@@ -303,6 +392,7 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(requi
         "source_meta": {"created_from": "whatsapp_chat", "created_by": user.get("email")},
     }
     async with engine.begin() as conn:
+        await _assert_owns(conn, user, phone10)
         await conn.execute(
             pg_insert(Lead).values(values).on_conflict_do_nothing(index_elements=["origin_key"])
         )
@@ -318,7 +408,7 @@ class SendRequest(BaseModel):
 
 
 @router.post("/gupshup/send")
-async def gupshup_send(req: SendRequest, user: dict = Depends(require_admin)):
+async def gupshup_send(req: SendRequest, user: dict = Depends(current_user)):
     settings = get_settings()
     if not settings.gupshup_send_configured:
         raise HTTPException(
@@ -329,6 +419,10 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(require_admin)):
     destination = normalize_phone(req.phone)
     if len(destination) < 10:
         raise HTTPException(status_code=400, detail="invalid phone number")
+    engine = neon_engine()
+    if engine is not None:
+        async with engine.connect() as conn:
+            await _assert_owns(conn, user, destination[-10:])
 
     form = {
         "channel": "whatsapp",

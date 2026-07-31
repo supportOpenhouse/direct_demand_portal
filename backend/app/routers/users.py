@@ -13,7 +13,7 @@ from ..models import User
 
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
 
-ROLES = {"admin", "cm", "rm"}
+ROLES = {"admin", "rm"}
 
 
 def _first_name(name: str | None) -> str | None:

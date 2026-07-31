@@ -2,7 +2,6 @@
 import { Link, useLocation } from "react-router-dom";
 import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
-import { useAuth } from "./AuthContext";
 import { useWaLatest } from "../lib/queries";
 import { readWaSeenAt } from "../lib/whatsapp";
 import GlobalSearch from "./GlobalSearch";
@@ -29,13 +28,11 @@ const TITLES: Record<string, string> = {
 export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
-  const { enabled, user } = useAuth();
-  const isAdmin = !enabled || user?.role === "admin";
 
   // "Unseen" = an inbound message newer than the last time this browser opened the
   // WhatsApp page. Per-browser via localStorage rather than a read-receipt table —
   // one person watching the inbox is the actual use case here.
-  const { data: latest } = useWaLatest(isAdmin);
+  const { data: latest } = useWaLatest(true);
   const seenAt = readWaSeenAt();
   const unseen = !!latest?.last_inbound_at && +new Date(latest.last_inbound_at) > seenAt
     && pathname !== "/chat";
@@ -53,20 +50,19 @@ export default function Topbar() {
       <button className="btn green" onClick={() => toast("Lead capture arrives in a later phase", "blue", "＋")}>
         <IconPlusBold /> Add New Lead
       </button>
-      {isAdmin && (
-        <Link className="btn wa" to="/chat" style={{ position: "relative" }}>
-          <WhatsAppIcon /> WhatsApp
-          {unseen && (
-            <span
-              title="New messages"
-              style={{
-                position: "absolute", top: -3, right: -3, width: 10, height: 10,
-                borderRadius: "50%", background: "#f97316", border: "2px solid var(--panel)",
-              }}
-            />
-          )}
-        </Link>
-      )}
+      {/* RMs see their assigned conversations; the API scopes what comes back */}
+      <Link className="btn wa" to="/chat" style={{ position: "relative" }}>
+        <WhatsAppIcon /> WhatsApp
+        {unseen && (
+          <span
+            title="New messages"
+            style={{
+              position: "absolute", top: -3, right: -3, width: 10, height: 10,
+              borderRadius: "50%", background: "#f97316", border: "2px solid var(--panel)",
+            }}
+          />
+        )}
+      </Link>
     </div>
   );
 }

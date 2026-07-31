@@ -8,7 +8,6 @@ import { useAuth } from "../components/AuthContext";
 
 const ROLES = [
   { v: "admin", label: "Admin", desc: "All leads · manage users & source data" },
-  { v: "cm", label: "Closing Manager", desc: "All team leads" },
   { v: "rm", label: "Relationship Manager", desc: "Own assigned leads only" },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.label || r;

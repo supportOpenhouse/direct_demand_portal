@@ -45,6 +45,9 @@ _ADD_COLUMNS = [
     ("leads", "last_no_timestamp", "TIMESTAMPTZ"),
     # click-to-call rings the RM's own handset first
     ("users", "phone", "TEXT"),
+    # WhatsApp conversation ownership (round-robin across active RMs)
+    ("wa_contacts", "assigned_to", "TEXT"),
+    ("wa_contacts", "assigned_at", "TIMESTAMPTZ"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -123,6 +126,10 @@ async def run_migrations(engine) -> None:
             await conn.execute(text(
                 "UPDATE leads SET stage = 'rejected' "
                 "WHERE stage IN ('lost','future_prospect','timepass')"))
+
+            # tag became nullable when assignment arrived — a contact can have an
+            # owner before anyone classifies it
+            await conn.execute(text("ALTER TABLE wa_contacts ALTER COLUMN tag DROP NOT NULL"))
 
             # seed Openhouse SalesManager ids (smid) for the booking team by name —
             # only fills blanks, so admin edits via Settings are never clobbered. Runs

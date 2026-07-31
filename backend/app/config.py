@@ -105,6 +105,21 @@ class Settings(BaseSettings):
     BONVOICE_WEBHOOK_SECRET: str = ""  # ?token= on the call-log callback URL
 
     @property
+    def bonvoice_base(self) -> str:
+        """Usable base URL, whatever was configured.
+
+        Two ways this bites: an env var set to an empty string overrides the default
+        (httpx then rejects a path with no scheme), and the value ops hand out is a
+        bare host — "pbx.bonvoice.com" — which is equally unusable. Normalise both
+        rather than 500 on a config typo."""
+        base = (self.BONVOICE_BASE_URL or "").strip().rstrip("/")
+        if not base:
+            return "https://backend.pbx.bonvoice.com"
+        if not base.startswith(("http://", "https://")):
+            base = "https://" + base
+        return base
+
+    @property
     def bonvoice_configured(self) -> bool:
         """Placing a call needs a DID plus some way to authenticate."""
         return bool(self.BONVOICE_DID) and bool(

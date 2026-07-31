@@ -82,3 +82,20 @@ def test_call_refuses_when_unconfigured():
                     json={"lead_id": "3f1a9c62-1f4e-4c8e-9f2a-6b5d7c8e9a01"})
     assert r.status_code == 503
     assert "BONVOICE_DID" in r.json()["detail"]
+
+
+def test_base_url_survives_blank_and_scheme_less_config(monkeypatch):
+    """An env var set to "" overrides the default, and ops handed out a bare host
+    ("pbx.bonvoice.com"). Both produced httpx's "missing an 'http://' protocol"."""
+    s = config.get_settings()
+    for raw, expected in [
+        ("", "https://backend.pbx.bonvoice.com"),
+        ("   ", "https://backend.pbx.bonvoice.com"),
+        ("pbx.bonvoice.com", "https://pbx.bonvoice.com"),
+        ("pbx.bonvoice.com/", "https://pbx.bonvoice.com"),
+        ("https://backend.pbx.bonvoice.com/", "https://backend.pbx.bonvoice.com"),
+        ("http://localhost:9000", "http://localhost:9000"),
+    ]:
+        monkeypatch.setattr(s, "BONVOICE_BASE_URL", raw)
+        assert s.bonvoice_base == expected, f"{raw!r} -> {s.bonvoice_base}"
+        assert s.bonvoice_base.startswith(("http://", "https://"))

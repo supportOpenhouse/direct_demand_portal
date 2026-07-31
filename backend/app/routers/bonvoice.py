@@ -64,7 +64,7 @@ async def _auth_token(force: bool = False) -> str:
         return _token["value"]
     async with httpx.AsyncClient(timeout=20.0) as client:
         r = await client.post(
-            f"{s.BONVOICE_BASE_URL.rstrip('/')}/usermanagement/external-auth/",
+            f"{s.bonvoice_base}/usermanagement/external-auth/",
             json={"username": s.BONVOICE_USERNAME, "password": s.BONVOICE_PASSWORD},
         )
     if r.status_code >= 300:
@@ -140,7 +140,7 @@ async def bonvoice_call(req: CallRequest, user: dict = Depends(current_user)):
     async def _post(tok: str) -> httpx.Response:
         async with httpx.AsyncClient(timeout=25.0) as client:
             return await client.post(
-                f"{s.BONVOICE_BASE_URL.rstrip('/')}/autoDialManagement/autoCallBridging/",
+                f"{s.bonvoice_base}/autoDialManagement/autoCallBridging/",
                 json=payload, headers={"Authorization": f"Token {tok}"},
             )
 

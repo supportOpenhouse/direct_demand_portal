@@ -99,3 +99,32 @@ def test_base_url_survives_blank_and_scheme_less_config(monkeypatch):
         monkeypatch.setattr(s, "BONVOICE_BASE_URL", raw)
         assert s.bonvoice_base == expected, f"{raw!r} -> {s.bonvoice_base}"
         assert s.bonvoice_base.startswith(("http://", "https://"))
+
+
+class _FakeResp:
+    """Minimal httpx.Response stand-in — only .json() is read."""
+    def __init__(self, body): self._b = body
+    def json(self):
+        import json as _j
+        if isinstance(self._b, str):
+            return _j.loads(self._b)  # raises ValueError on non-JSON, like httpx
+        return self._b
+
+
+def test_rejection_is_detected_despite_http_200():
+    """Bonvoice answers 200 for BOTH outcomes. Reading only the status code reported
+    every rejection as "ringing" — the caller waited for a call that never came."""
+    from app.routers.bonvoice import _rejection_reason
+
+    # real observed rejection body
+    assert _rejection_reason(_FakeResp({"error": "DID is not configured"})) == "DID is not configured"
+    # documented success body
+    assert _rejection_reason(_FakeResp(
+        {"responseCode": 200, "responseDescription": "Success", "responseType": "Success"})) is None
+    # an error surfaced through responseType instead
+    assert _rejection_reason(_FakeResp(
+        {"responseType": "Error", "responseDescription": "Invalid DID or route"})) == "Invalid DID or route"
+    # unparseable → assume accepted; the call may have gone out, and a false failure
+    # is worse than silence
+    assert _rejection_reason(_FakeResp("<html>502</html>")) is None
+    assert _rejection_reason(_FakeResp([1, 2, 3])) is None

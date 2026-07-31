@@ -54,6 +54,28 @@ def _mask(phone: str) -> str:
     return ("•" * max(0, len(phone) - 4)) + phone[-4:] if phone else "—"
 
 
+def _rejection_reason(r: httpx.Response) -> str | None:
+    """Why Bonvoice refused, or None if it accepted.
+
+    Their API answers 200 for both outcomes, so the body is the only signal. A
+    rejection carries {"error": "..."}; an acceptance carries responseType "Success".
+    Anything unparseable is treated as accepted — the call may well have been placed,
+    and claiming failure would be worse than staying quiet.
+    """
+    try:
+        body = r.json()
+    except ValueError:
+        return None
+    if not isinstance(body, dict):
+        return None
+    if body.get("error"):
+        return str(body["error"])
+    rtype = str(body.get("responseType", "")).lower()
+    if rtype and rtype != "success":
+        return str(body.get("responseDescription") or body.get("responseType"))
+    return None
+
+
 async def _auth_token(force: bool = False) -> str:
     """Exchange username/password for a token, cached. A pre-issued BONVOICE_TOKEN
     short-circuits this entirely."""
@@ -155,6 +177,14 @@ async def bonvoice_call(req: CallRequest, user: dict = Depends(current_user)):
     if r.status_code >= 300:
         log.warning("bonvoice rejected the call (%s): %s", r.status_code, r.text[:300])
         raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {r.text[:200]}")
+
+    # A rejection comes back as HTTP 200 with an error body — e.g.
+    # {"error": "DID is not configured"} — so the status code alone means nothing.
+    # Success looks like {"responseCode": 200, "responseType": "Success", ...}.
+    problem = _rejection_reason(r)
+    if problem:
+        log.warning("bonvoice rejected the call: %s", problem)
+        raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {problem}")
 
     log.info("bonvoice call placed by=%s rm=%s lead=%s event=%s",
              user.get("email"), _mask(rm_phone), _mask(lead_phone), event_id)

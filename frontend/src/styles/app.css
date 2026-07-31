@@ -44,7 +44,31 @@ body{
   -webkit-font-smoothing:antialiased;
   font-size:14px;
 }
-.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden}
+.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden;transition:grid-template-columns .18s ease}
+/* Collapsed: an icon-only rail. Labels are hidden rather than unmounted, so the
+   nav keeps its DOM and the transition has something to animate. */
+.app.collapsed{grid-template-columns:72px 1fr}
+.app.collapsed .sidebar{padding:18px 10px}
+.app.collapsed .nav-t,
+.app.collapsed .nav-label,
+.app.collapsed .brand .nm,
+.app.collapsed .brand .sub,
+.app.collapsed .user .un,
+.app.collapsed .user .ur,
+.app.collapsed .user .role-chip,
+.app.collapsed .nav-item > span:not(.nav-t){display:none}
+.app.collapsed .nav-item{justify-content:center;padding:11px 0}
+.app.collapsed .brand{justify-content:center;padding:6px 0 12px}
+.app.collapsed .user{justify-content:center;padding:8px 0}
+.app.collapsed .nav-collapse{width:100%}
+
+.nav-collapse{
+  display:grid;place-items:center;width:100%;height:34px;margin-bottom:6px;
+  background:transparent;border:1px solid #26314a;border-radius:9px;color:#8f9ab0;
+  cursor:pointer;transition:.14s;
+}
+.nav-collapse:hover{border-color:#3a4a6b;color:#e8ebf1;background:var(--ink-sidebar-2)}
+.nav-collapse svg{width:16px;height:16px}
 
 /* ---------------- Sidebar ---------------- */
 .sidebar{

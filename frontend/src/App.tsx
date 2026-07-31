@@ -1,10 +1,18 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 
+const COLLAPSE_KEY = "dd_sidebar_collapsed";
+
 export default function App() {
   const navigate = useNavigate();
+  // remembered per browser — collapsing is a workspace preference, not session state
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(COLLAPSE_KEY) === "1");
+  const toggleSidebar = () => setCollapsed((v) => {
+    localStorage.setItem(COLLAPSE_KEY, v ? "0" : "1");
+    return !v;
+  });
 
   // On a browser refresh (F5 / reload), land on the Dashboard rather than staying
   // on the current tab. Uses the Navigation Timing type so normal in-app navigation
@@ -17,8 +25,8 @@ export default function App() {
   }, [navigate]);
 
   return (
-    <div className="app">
-      <Sidebar />
+    <div className={"app" + (collapsed ? " collapsed" : "")}>
+      <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
       <main className="main">
         <Topbar />
         <div className="view">

@@ -64,7 +64,7 @@ const IconRnr = () => (
   </svg>
 );
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
   return (
@@ -78,53 +78,64 @@ export default function Sidebar() {
           <div className="sub">Direct&nbsp;Demand</div>
         </div>
       </div>
+      <button
+        className="nav-collapse"
+        onClick={onToggle}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+             strokeLinecap="round" strokeLinejoin="round">
+          <path d={collapsed ? "M9 18l6-6-6-6" : "M15 18l-6-6 6-6"} />
+        </svg>
+      </button>
       <nav id="nav">
         <div className="nav-label">Workspace</div>
-        <NavLink to="/" end className={navClass}>
-          <IconDashboard /> Dashboard
+        <NavLink to="/" end className={navClass} title="Dashboard">
+          <IconDashboard /> <span className="nav-t">Dashboard</span>
         </NavLink>
-        <NavLink to="/leads/new" className={navClass}>
-          <IconPlus /> New Leads <NewCount />
+        <NavLink to="/leads/new" className={navClass} title="New Leads">
+          <IconPlus /> <span className="nav-t">New Leads</span> <NewCount />
         </NavLink>
-        <NavLink to="/leads/call-not-received" className={navClass}>
-          <IconRnr /> Call Not Received <Pct seg="call_not_received" />
+        <NavLink to="/leads/call-not-received" className={navClass} title="Call Not Received">
+          <IconRnr /> <span className="nav-t">Call Not Received</span> <Pct seg="call_not_received" />
         </NavLink>
-        <NavLink to="/leads/followup" className={navClass}>
-          <IconFollowup /> Follow Up <Pct seg="followup" />
+        <NavLink to="/leads/followup" className={navClass} title="Follow Up">
+          <IconFollowup /> <span className="nav-t">Follow Up</span> <Pct seg="followup" />
         </NavLink>
-        <NavLink to="/leads/qualified" className={navClass}>
-          <IconQualified /> Qualified Leads <Pct seg="qualified" />
+        <NavLink to="/leads/qualified" className={navClass} title="Qualified Leads">
+          <IconQualified /> <span className="nav-t">Qualified Leads</span> <Pct seg="qualified" />
         </NavLink>
-        <NavLink to="/leads/pipeline" className={navClass}>
-          <IconFunnel /> Pipeline Leads <Pct seg="pipeline" />
+        <NavLink to="/leads/pipeline" className={navClass} title="Pipeline Leads">
+          <IconFunnel /> <span className="nav-t">Pipeline Leads</span> <Pct seg="pipeline" />
         </NavLink>
-        <NavLink to="/leads/converted" className={navClass}>
-          <IconCheckCircle /> Converted Leads <Pct seg="converted" />
+        <NavLink to="/leads/converted" className={navClass} title="Converted Leads">
+          <IconCheckCircle /> <span className="nav-t">Converted Leads</span> <Pct seg="converted" />
         </NavLink>
         {/* RNR has no page of its own — those leads sit in Rejected, badged */}
-        <NavLink to="/leads/rejected" className={navClass}>
-          <IconReject /> Rejected Leads <Pct seg="rejected" />
+        <NavLink to="/leads/rejected" className={navClass} title="Rejected Leads">
+          <IconReject /> <span className="nav-t">Rejected Leads</span> <Pct seg="rejected" />
         </NavLink>
         <div className="nav-label">Discovery</div>
-        <NavLink to="/inventory" className={navClass}>
-          <IconHome /> Live Inventory
+        <NavLink to="/inventory" className={navClass} title="Live Inventory">
+          <IconHome /> <span className="nav-t">Live Inventory</span>
         </NavLink>
-        <NavLink to="/supply" className={navClass}>
-          <IconBox /> Supply Pipeline
+        <NavLink to="/supply" className={navClass} title="Supply Pipeline">
+          <IconBox /> <span className="nav-t">Supply Pipeline</span>
         </NavLink>
-        <NavLink to="/societies" className={navClass}>
-          <IconBars /> Society Insights
+        <NavLink to="/societies" className={navClass} title="Society Insights">
+          <IconBars /> <span className="nav-t">Society Insights</span>
         </NavLink>
-        <NavLink to="/goldmine" className={navClass}>
-          <IconStar /> Gold Mine
+        <NavLink to="/goldmine" className={navClass} title="Gold Mine">
+          <IconStar /> <span className="nav-t">Gold Mine</span>
         </NavLink>
         <div className="nav-label">Admin</div>
-        <NavLink to="/settings" className={navClass}>
-          <IconSettings /> Settings &amp; Access
+        <NavLink to="/settings" className={navClass} title="Settings & Access">
+          <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
         </NavLink>
         {isAdmin && (
-          <NavLink to="/logs" className={navClass}>
-            <IconLogs /> Activity Logs
+          <NavLink to="/logs" className={navClass} title="Activity Logs">
+            <IconLogs /> <span className="nav-t">Activity Logs</span>
           </NavLink>
         )}
       </nav>

@@ -160,10 +160,17 @@ const outcomeColor = (r: CampaignFeedRow) =>
     : r.status === "failed" ? "var(--coral)"
     : r.answered ? "var(--emerald)" : "var(--muted)";
 
-const outcomeText = (r: CampaignFeedRow) =>
-  r.status === "dialing" ? "Ringing…"
-    : r.status === "failed" ? (r.detail || "Not placed")
-    : r.answered ? "Connected" : (r.outcome || "No answer");
+/* A row only leaves "dialing" when Bonvoice posts the hangup callback. If that never
+   arrives the call looks stuck ringing until the server reaps it minutes later — so
+   say what's actually happening instead of showing a stale state. */
+const RINGING_GRACE_MS = 90_000;
+
+const outcomeText = (r: CampaignFeedRow) => {
+  if (r.status === "failed") return r.detail || "Not placed";
+  if (r.status !== "dialing") return r.answered ? "Connected" : (r.outcome || "No answer");
+  const ringingFor = r.dialed_at ? Date.now() - new Date(r.dialed_at).getTime() : 0;
+  return ringingFor > RINGING_GRACE_MS ? "Ringing… (no hangup callback yet)" : "Ringing…";
+};
 
 const hhmm = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "";

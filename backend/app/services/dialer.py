@@ -338,6 +338,13 @@ async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
     `owned` restricts the claim to leads already stamped with this RM — that's the
     whole of the 'assigned' strategy.
     """
+    from ..routers.bonvoice import _digits, new_event_id, place_bridge  # circular at import time
+
+    # Reserved before the call is placed and stored with the claim: Bonvoice can fire
+    # the hangup callback before its own HTTP response reaches us, and a slot whose
+    # event_id lands late would never be released — the RM would sit on "Ringing…"
+    # until the stale reaper cleared it minutes later.
+    event_id = new_event_id()
     mine = "AND rm_email = :rm" if owned else ""
     async with engine.begin() as conn:
         rm = (await conn.execute(
@@ -348,21 +355,19 @@ async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
         # same lead, so nobody gets dialled twice
         item = (await conn.execute(
             text(f"""UPDATE dial_queue
-                       SET status = 'dialing', rm_email = :rm,
+                       SET status = 'dialing', rm_email = :rm, event_id = :ev,
                            attempts = attempts + 1, dialed_at = now(), ended_at = NULL
                      WHERE id = (SELECT id FROM dial_queue
                                   WHERE campaign_id = :cid AND status = 'pending' {mine}
                                   ORDER BY position, id LIMIT 1 FOR UPDATE SKIP LOCKED)
                  RETURNING id, lead_id, attempts"""),
-            {"cid": c["id"], "rm": rm_email},
+            {"cid": c["id"], "rm": rm_email, "ev": event_id},
         )).mappings().first()
         if item is None:
             return False
         lead = (await conn.execute(
             text("SELECT phone FROM leads WHERE id = :id"), {"id": item["lead_id"]}
         )).mappings().first()
-
-    from ..routers.bonvoice import _digits, place_bridge  # circular at import time
 
     rm_phone = _digits(rm["phone"] if rm else None)
     lead_phone = _digits(lead["phone"] if lead else None)
@@ -374,21 +379,16 @@ async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
         return True
 
     try:
-        event_id = await place_bridge(rm_phone, lead_phone, {
+        await place_bridge(rm_phone, lead_phone, {
             "lead_id": str(item["lead_id"]),
             "actor": rm_email,
             "campaign_id": str(c["id"]),
-        })
+        }, event_id=event_id)
     except HTTPException as e:
         retry = item["attempts"] < (c["max_attempts"] or 1)
         await _release(engine, item["id"], str(e.detail)[:300], retry=retry)
         return True
 
-    async with engine.begin() as conn:
-        await conn.execute(
-            text("UPDATE dial_queue SET event_id = :ev WHERE id = :id"),
-            {"ev": event_id, "id": item["id"]},
-        )
     log.info("dialer: campaign=%s rm=%s lead=%s event=%s", c["id"], rm_email,
              item["lead_id"], event_id)
     return True

@@ -78,6 +78,55 @@ def test_assigned_strategy_matches_every_way_a_name_is_written():
     assert aliases_for("  ", "") == []
 
 
+class _FakeConn:
+    def __init__(self, calls):
+        self.calls = calls
+
+    async def execute(self, stmt, params=None):
+        self.calls.append((str(stmt), params))
+
+
+class _FakeEngine:
+    """Records what the release would run, without a database."""
+
+    def __init__(self):
+        self.calls = []
+
+    def begin(self):
+        calls = self.calls
+
+        class _Ctx:
+            async def __aenter__(self_):
+                return _FakeConn(calls)
+
+            async def __aexit__(self_, *exc):
+                return False
+
+        return _Ctx()
+
+
+async def _release(body):
+    from app.routers.bonvoice import _release_dial_slot
+    engine = _FakeEngine()
+    await _release_dial_slot(engine, body)
+    return engine.calls
+
+
+async def test_hangup_frees_the_slot_even_with_no_call_id():
+    """The regression: a stuck 'dialing' row shows "Ringing…" forever AND costs that RM
+    the rest of the campaign, so releasing must not depend on the log row's callID."""
+    calls = await _release({"callType": "2", "eventID": "ev123", "Status": "ANSWER"})
+    assert len(calls) == 1
+    assert calls[0][1] == {"eid": "ev123", "outcome": "ANSWER"}
+    assert "dial_queue" in calls[0][0]
+
+
+async def test_only_hangup_releases_the_slot():
+    assert await _release({"callType": "0", "eventID": "ev123"}) == []  # initiated
+    assert await _release({"callType": "1", "eventID": "ev123"}) == []  # answered
+    assert await _release({"callType": "2"}) == []                      # nothing to match on
+
+
 def test_calling_window():
     assert _in_window("00:00", "23:59") is True
     assert _in_window("", "") is True          # unset window never blocks dialling

@@ -101,18 +101,27 @@ async def _auth_token(force: bool = False) -> str:
 
 # --- outbound: click-to-call --------------------------------------------------
 
-async def place_bridge(rm_phone: str, lead_phone: str, callback_params: dict) -> str:
+def new_event_id() -> str:
+    """docs: unique alphanumeric, 8–16 chars."""
+    return uuid4().hex[:16]
+
+
+async def place_bridge(rm_phone: str, lead_phone: str, callback_params: dict,
+                       event_id: str | None = None) -> str:
     """Place one Click2Call bridge and return its eventID.
 
     Leg A is the RM's handset, leg B the lead; Bonvoice only dials the lead once the
     RM picks up. `callback_params` is echoed verbatim on every lifecycle callback, so
     whatever we need to reconcile the call later goes in there.
 
+    Pass `event_id` to reserve it beforehand — callbacks can land before this function
+    returns, and a caller that stores the id afterwards would miss them.
+
     Raises HTTPException on anything that isn't an accepted call — including the
     HTTP-200-with-an-error-body case, which is how Bonvoice reports most rejections.
     """
     s = get_settings()
-    event_id = uuid4().hex[:16]  # docs: unique alphanumeric, 8–16 chars
+    event_id = event_id or new_event_id()
     payload = {
         "autocallType": AUTOCALL_BRIDGE,
         "destination": rm_phone,          # leg A — rings the RM
@@ -257,6 +266,36 @@ def lead_id_from(params) -> UUID | None:
         return None
 
 
+async def _release_dial_slot(engine, body: dict) -> None:
+    """Hangup frees the auto-dialer slot — that's what lets the next lead ring on this
+    RM's phone.
+
+    Deliberately separate from the call-log upsert, and run first: a callback with no
+    callID, or one whose log row fails to write, must still end the call as far as the
+    dialer is concerned. Leaving a slot stuck reads as "Ringing…" forever and silently
+    costs that RM the rest of the campaign.
+
+    Both legs report a hangup; the WHERE on status='dialing' makes the second a no-op.
+    """
+    if str(body.get("callType", "")) != CALL_HANGUP:
+        return
+    event_id = body.get("eventID")
+    if not event_id:
+        return
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("""UPDATE dial_queue
+                           SET status = 'done', ended_at = now(),
+                               outcome = COALESCE(:outcome, outcome)
+                         WHERE event_id = :eid AND status = 'dialing'"""),
+                {"eid": str(event_id),
+                 "outcome": body.get("Status") or body.get("AgentStatus") or None},
+            )
+    except Exception:  # noqa: BLE001 — the callback was already acked
+        log.exception("bonvoice: failed to release dial slot for event %s", event_id)
+
+
 async def _persist(body: dict) -> None:
     """Upsert the leg with only what this lifecycle event knows.
 
@@ -264,8 +303,14 @@ async def _persist(body: dict) -> None:
     hangup's EndTime, and `answered` is OR-ed so it never flips back to false.
     """
     engine = neon_engine()
+    if engine is None:
+        return
+    await _release_dial_slot(engine, body)
+
     call_id, leg = body.get("callID"), (body.get("Leg") or "A")
-    if engine is None or not call_id:
+    if not call_id:
+        log.warning("bonvoice: callback with no callID — logged nothing (type=%s event=%s)",
+                    body.get("callType"), body.get("eventID"))
         return
     values = {
         "call_id": str(call_id), "leg": str(leg),
@@ -291,18 +336,6 @@ async def _persist(body: dict) -> None:
         async with engine.begin() as conn:
             await conn.execute(stmt.on_conflict_do_update(
                 index_elements=[CallLog.call_id, CallLog.leg], set_=updates))
-            # Hangup releases the auto-dialer slot, which is what lets the next lead
-            # ring on that RM's phone. Both legs report a hangup; the WHERE on
-            # status='dialing' makes the second one a no-op.
-            if str(body.get("callType", "")) == CALL_HANGUP and values["event_id"]:
-                await conn.execute(
-                    text("""UPDATE dial_queue
-                               SET status = 'done', ended_at = now(),
-                                   outcome = COALESCE(:outcome, outcome)
-                             WHERE event_id = :eid AND status = 'dialing'"""),
-                    {"eid": values["event_id"],
-                     "outcome": values["status"] or values["agent_status"]},
-                )
     except Exception:  # noqa: BLE001 — the callback was already acked
         log.exception("bonvoice: failed to persist call log")
 

@@ -135,15 +135,24 @@ def _condition(n, params: dict, ctr) -> str:
     return f"{col} IS {'TRUE' if bool(value) else 'NOT TRUE'}"
 
 
-async def count_matching(rules: dict) -> int:
-    """How many leads the rule tree selects right now."""
+async def count_matching(rules: dict, owner_aliases: list[str] | None = None) -> int:
+    """How many leads the rule tree selects right now.
+
+    `owner_aliases` narrows that to leads owned by a specific pool — under the
+    'assigned' strategy the rest are never dialled, so counting them would overstate
+    the campaign.
+    """
     engine = neon_engine()
     if engine is None:
         return 0
     where, params = compile_rules(rules)
+    owned = ""
+    if owner_aliases:
+        owned = " AND lower(btrim(l.assigned_to)) = ANY(:owner_aliases)"
+        params = {**params, "owner_aliases": owner_aliases}
     async with engine.connect() as conn:
         return int((await conn.execute(
-            text(f"SELECT count(*) FROM leads l WHERE {BASE_PREDICATE} AND {where}"), params
+            text(f"SELECT count(*) FROM leads l WHERE {BASE_PREDICATE} AND {where}{owned}"), params
         )).scalar() or 0)
 
 

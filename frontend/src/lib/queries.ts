@@ -345,11 +345,12 @@ export function useDialerFields() {
   return useQuery({ queryKey: ["dialer-fields"], queryFn: api.dialerFields, staleTime: 300_000 });
 }
 
-/** Live match count. Debounced by the caller — this fires on every rule edit. */
-export function useRulePreview(rules: import("./api").RuleNode) {
+/** Live match count. Debounced by the caller — this fires on every rule edit.
+    Strategy and pool are part of it: under 'assigned' the count is what those RMs own. */
+export function useRulePreview(rules: import("./api").RuleNode, strategy: string, rms: string[]) {
   return useQuery({
-    queryKey: ["dialer-preview", rules],
-    queryFn: () => api.dialerPreview(rules),
+    queryKey: ["dialer-preview", rules, strategy, rms],
+    queryFn: () => api.dialerPreview(rules, strategy, rms),
     placeholderData: keepPreviousData,
   });
 }

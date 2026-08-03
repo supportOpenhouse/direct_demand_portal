@@ -189,7 +189,7 @@ export default function Dialer() {
   const fields = meta.data?.fields || [];
   const pool = meta.data?.rms || [];
   const debouncedTree = useDebounce(tree, 350);
-  const preview = useRulePreview(debouncedTree);
+  const preview = useRulePreview(debouncedTree, strategy, rms);
   const detail = useCampaign(activeId);
 
   const update = (id: string, patch: Partial<RuleNode>) =>
@@ -200,6 +200,8 @@ export default function Dialer() {
       n.id === pid && n.type === "group" ? { ...n, children: [...n.children, child] } : n) as RuleGroup);
 
   const matched = preview.data?.count ?? 0;
+  // 'assigned' + a chosen pool: the count is what those RMs own, not every match
+  const scoped = !!preview.data?.scoped;
   const live = detail.data;
   const running = live?.campaign.status === "running";
   const perRM = live?.per_rm || {};
@@ -246,7 +248,10 @@ export default function Dialer() {
       <div className="dl-head">
         <input className="dl-nameinput" value={name} onChange={(e) => setName(e.target.value)}
           disabled={!!activeId} />
-        <span className="dl-matchchip">{preview.isFetching ? "counting…" : `${matched} leads matched`}</span>
+        <span className="dl-matchchip">
+          {preview.isFetching ? "counting…"
+            : scoped ? `${matched} leads to call` : `${matched} leads matched`}
+        </span>
         <div className="dl-spacer" />
         {!activeId ? (
           <button className="btn primary" onClick={launch} disabled={createCampaign.isPending}>
@@ -268,7 +273,9 @@ export default function Dialer() {
           <section className="card">
             <div className="dl-cardhead">
               <div><div className="dl-eyebrow">Step 1</div><h2 className="dl-cardtitle">Who gets called</h2></div>
-              <span className="dl-count"><b>{matched}</b> leads</span>
+              <span className="dl-count">
+                <b>{matched}</b> {scoped ? "assigned to this pool" : "leads"}
+              </span>
             </div>
             {meta.isLoading ? <div className="dl-empty">Loading fields…</div>
               : <Group node={tree} fields={fields} depth={0} update={update} remove={remove} addChild={addChild} />}

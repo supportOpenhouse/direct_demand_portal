@@ -34,6 +34,10 @@ def _engine():
 
 class Rules(BaseModel):
     rules: dict
+    # the pool matters to the count only under 'assigned', where a lead nobody in it
+    # owns is never dialled
+    strategy: str = "round_robin"
+    rms: list[str] = []
 
 
 class CampaignIn(BaseModel):
@@ -82,10 +86,26 @@ async def dialer_fields(_: dict = Depends(require_admin)):
 
 @router.post("/preview")
 async def dialer_preview(payload: Rules, _: dict = Depends(require_admin)):
-    """Live match count for the rule tree, as the user edits it."""
-    _engine()
+    """Live match count for the rule tree, as the user edits it.
+
+    Under 'assigned' it counts only what the chosen RMs actually own — that's the
+    number of calls the campaign will place. With no RMs chosen yet the pool is
+    undefined, so it falls back to the plain rule count.
+    """
+    engine = _engine()
+    aliases: list[str] = []
+    if payload.strategy == "assigned" and payload.rms:
+        wanted = {e.lower() for e in payload.rms}
+        async with engine.connect() as conn:
+            users = (await conn.execute(text(
+                "SELECT email, name, assignment_name FROM users WHERE active"))).mappings().all()
+        for u in users:
+            if u["email"].lower() in wanted:
+                aliases += aliases_for(u["name"], u["assignment_name"])
+        if not aliases:
+            return {"count": 0, "scoped": True}  # chosen RMs answer to no name in the data
     try:
-        return {"count": await count_matching(payload.rules)}
+        return {"count": await count_matching(payload.rules, aliases), "scoped": bool(aliases)}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

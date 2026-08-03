@@ -389,7 +389,8 @@ export const api = {
     request<{ count: number }>("/v1/dialer/preview", { method: "POST", body: JSON.stringify({ rules }) }),
   campaigns: () => request<{ items: CampaignRow[] }>("/v1/dialer/campaigns"),
   createCampaign: (c: CampaignIn) =>
-    request<{ id: string; queued: number }>("/v1/dialer/campaigns", { method: "POST", body: JSON.stringify(c) }),
+    request<{ id: string; queued: number; unowned: number }>("/v1/dialer/campaigns",
+      { method: "POST", body: JSON.stringify(c) }),
   campaign: (id: string) => request<CampaignDetail>(`/v1/dialer/campaigns/${id}`),
   campaignAction: (id: string, action: "start" | "pause" | "stop") =>
     request<{ status: string }>(`/v1/dialer/campaigns/${id}/${action}`, { method: "POST" }),

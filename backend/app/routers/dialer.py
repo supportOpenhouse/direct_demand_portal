@@ -13,7 +13,9 @@ from sqlalchemy import text
 
 from ..core.auth import require_admin
 from ..db import neon_engine
-from ..services.dialer import FIELDS, OPS, compile_rules, count_matching, materialize
+from ..services.dialer import (
+    FIELDS, OPS, aliases_for, assign_owners, compile_rules, count_matching, materialize,
+)
 
 log = logging.getLogger("dialer")
 router = APIRouter(prefix="/dialer", tags=["dialer"])
@@ -107,7 +109,7 @@ async def list_campaigns(_: dict = Depends(require_admin)):
 @router.post("/campaigns", status_code=201)
 async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admin)):
     engine = _engine()
-    if payload.strategy not in ("round_robin", "least_load"):
+    if payload.strategy not in ("assigned", "round_robin", "least_load"):
         raise HTTPException(status_code=400, detail=f"unknown strategy {payload.strategy!r}")
     try:
         compile_rules(payload.rules)  # fail before we write anything
@@ -117,8 +119,9 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
         raise HTTPException(status_code=400, detail="pick at least one RM to do the calling")
 
     async with engine.begin() as conn:
-        known = {r["email"].lower() for r in (await conn.execute(text(
-            "SELECT email FROM users WHERE active"))).mappings().all()}
+        users = (await conn.execute(text(
+            "SELECT email, name, assignment_name FROM users WHERE active"))).mappings().all()
+        known = {u["email"].lower(): u for u in users}
         unknown = [e for e in payload.rms if e.lower() not in known]
         if unknown:
             raise HTTPException(status_code=400, detail=f"not an active user: {unknown[0]}")
@@ -142,9 +145,18 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
             "by": user.get("email"),
         })).scalar()
         queued = await materialize(conn, cid, payload.rules)
+        unowned = 0
+        if payload.strategy == "assigned":
+            # each lead goes to the RM it already belongs to; the rest are dropped now
+            # rather than sitting in a queue nobody in this pool may claim
+            unowned = await assign_owners(conn, cid, [
+                (e, aliases_for(known[e.lower()]["name"], known[e.lower()]["assignment_name"]))
+                for e in payload.rms
+            ])
 
-    log.info("dialer: campaign %s created by %s — %d leads queued", cid, user.get("email"), queued)
-    return {"id": str(cid), "queued": queued}
+    log.info("dialer: campaign %s created by %s — %d queued, %d unowned",
+             cid, user.get("email"), queued - unowned, unowned)
+    return {"id": str(cid), "queued": queued - unowned, "unowned": unowned}
 
 
 @router.post("/campaigns/{campaign_id}/{action}")

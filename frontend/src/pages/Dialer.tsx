@@ -18,6 +18,7 @@ import { useToast } from "../components/Toast";
 const nid = () => "n" + Math.random().toString(36).slice(2, 8);
 
 const STRATEGIES: { key: string; label: string; hint: string }[] = [
+  { key: "assigned", label: "Assigned Leads", hint: "Each lead is called by the RM it's already assigned to" },
   { key: "round_robin", label: "Round-robin", hint: "Longest-idle RM takes the next lead" },
   { key: "least_load", label: "Least load", hint: "Whoever has made the fewest calls so far" },
 ];
@@ -178,7 +179,7 @@ export default function Dialer() {
   const [name, setName] = useState("Untitled campaign");
   const [tree, setTree] = useState<RuleGroup>(emptyTree);
   const [rms, setRms] = useState<string[]>([]);
-  const [strategy, setStrategy] = useState("round_robin");
+  const [strategy, setStrategy] = useState("assigned");
   const [gap, setGap] = useState(0);
   const [win, setWin] = useState({ start: "10:00", end: "19:00" });
   const [attempts, setAttempts] = useState(1);
@@ -219,7 +220,9 @@ export default function Dialer() {
     }, {
       onSuccess: (d) => {
         setActiveId(d.id);
-        toast(`Dialing ${d.queued} leads across ${rms.length} RM${rms.length > 1 ? "s" : ""}`, "blue", "📞");
+        const dropped = d.unowned ? ` · ${d.unowned} not assigned to this pool` : "";
+        toast(`Dialing ${d.queued} leads across ${rms.length} RM${rms.length > 1 ? "s" : ""}${dropped}`,
+          d.queued ? "blue" : "gold", "📞");
       },
       onError: (e: any) => toast(e.message, "gold", "⚠"),
     });
@@ -309,6 +312,10 @@ export default function Dialer() {
               {rms.length || "No"} RM{rms.length === 1 ? "" : "s"} selected — that's{" "}
               <b>{rms.length} call{rms.length === 1 ? "" : "s"} at a time</b>, one per handset.
               Their phone rings first; the lead is only dialled once they pick up.
+              {strategy === "assigned" && <>
+                {" "}Each RM only calls their own leads, so a matched lead assigned to
+                nobody here is dropped when the campaign starts.
+              </>}
             </p>
           </section>
 

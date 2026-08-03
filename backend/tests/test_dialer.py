@@ -2,7 +2,7 @@
 Nothing it contains may reach SQL except as a bound parameter."""
 import pytest
 
-from app.services.dialer import BASE_PREDICATE, _in_window, compile_rules
+from app.services.dialer import BASE_PREDICATE, _in_window, aliases_for, compile_rules
 
 
 def cond(field, op, value):
@@ -66,6 +66,16 @@ def test_depth_is_capped():
 
 def test_base_predicate_excludes_undialable_leads():
     assert "phone IS NOT NULL" in BASE_PREDICATE and "is_test = false" in BASE_PREDICATE
+
+
+def test_assigned_strategy_matches_every_way_a_name_is_written():
+    """`leads.assigned_to` is free text: the sheet writes 'Saumya', the Assign button
+    writes 'Saumya Behera'. Both must route to the same RM."""
+    a = aliases_for("Saumya Behera", "Saumya B")
+    assert "saumya behera" in a and "saumya" in a and "saumya b" in a
+    assert all(x == x.lower() for x in a)
+    assert aliases_for(None, None) == []          # no name = matches nothing, not everything
+    assert aliases_for("  ", "") == []
 
 
 def test_calling_window():

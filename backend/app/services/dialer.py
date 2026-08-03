@@ -147,6 +147,49 @@ async def count_matching(rules: dict) -> int:
         )).scalar() or 0)
 
 
+def aliases_for(name: str | None, assignment_name: str | None) -> list[str]:
+    """The names a user answers to in `leads.assigned_to`, lowercased.
+
+    That column is free text and diverges by source — the sheet writes first names
+    ('Saumya'), the in-app Assign button writes full names ('Saumya Behera') — so an
+    owner is matched on their full name, their first name, and their assignment_name.
+    """
+    out = set()
+    full = (name or "").strip()
+    if full:
+        out.update({full.lower(), full.split()[0].lower()})
+    an = (assignment_name or "").strip()
+    if an:
+        out.add(an.lower())
+    return sorted(out)
+
+
+async def assign_owners(conn, campaign_id, owners: list[tuple[str, list[str]]]) -> int:
+    """Strategy 'assigned': stamp each queued lead with the RM it already belongs to.
+
+    Leads owned by nobody in the pool are skipped outright rather than left pending —
+    a queue nobody is allowed to claim would never drain. Returns how many were skipped.
+    """
+    for email, aliases in owners:
+        if not aliases:
+            continue
+        await conn.execute(
+            text("""UPDATE dial_queue q SET rm_email = :rm
+                      FROM leads l
+                     WHERE l.id = q.lead_id AND q.campaign_id = :cid
+                       AND q.rm_email IS NULL
+                       AND lower(btrim(l.assigned_to)) = ANY(:aliases)"""),
+            {"cid": campaign_id, "rm": email, "aliases": aliases},
+        )
+    skipped = await conn.execute(
+        text("""UPDATE dial_queue
+                   SET status = 'skipped', detail = 'not assigned to anyone in this pool'
+                 WHERE campaign_id = :cid AND status = 'pending' AND rm_email IS NULL"""),
+        {"cid": campaign_id},
+    )
+    return skipped.rowcount or 0
+
+
 async def materialize(conn, campaign_id, rules: dict) -> int:
     """Freeze the rule tree into queue rows. Newest leads first; re-running can't
     duplicate a lead's slot."""
@@ -212,8 +255,10 @@ async def _tick_campaign(engine, c: dict) -> None:
         # the queue, once their cooldown has passed
         if (c["max_attempts"] or 1) > 1:
             await conn.execute(
+                # rm_email survives the requeue — under 'assigned' it's the only thing
+                # that lets the lead's own RM claim it again
                 text("""UPDATE dial_queue q
-                           SET status = 'pending', rm_email = NULL, event_id = NULL,
+                           SET status = 'pending', event_id = NULL,
                                position = position + 1000000
                          WHERE q.campaign_id = :cid AND q.status = 'done'
                            AND q.attempts < :max
@@ -265,19 +310,26 @@ async def _tick_campaign(engine, c: dict) -> None:
         free.append(email)
 
     # Only matters when free RMs outnumber remaining leads — it decides who gets them.
+    # Under 'assigned' it decides nothing: every lead already has an owner.
     epoch = datetime.fromtimestamp(0, timezone.utc)
     if c["strategy"] == "least_load":
         free.sort(key=lambda e: by_rm[e]["done"] if e in by_rm else 0)
     else:  # round-robin: longest idle goes first
         free.sort(key=lambda e: (by_rm[e]["last_end"] or epoch) if e in by_rm else epoch)
 
+    owned = c["strategy"] == "assigned"
     for email in free:
-        if not await _dial_next(engine, c, email):
-            break  # queue drained mid-pass
+        # No early exit: under 'assigned' one RM running dry says nothing about the rest
+        await _dial_next(engine, c, email, owned)
 
 
-async def _dial_next(engine, c: dict, rm_email: str) -> bool:
-    """Claim the next pending lead for this RM and ring them. False = nothing left."""
+async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
+    """Claim the next pending lead for this RM and ring them. False = nothing left.
+
+    `owned` restricts the claim to leads already stamped with this RM — that's the
+    whole of the 'assigned' strategy.
+    """
+    mine = "AND rm_email = :rm" if owned else ""
     async with engine.begin() as conn:
         rm = (await conn.execute(
             text("SELECT phone FROM users WHERE lower(email) = lower(:e) AND active"),
@@ -286,11 +338,11 @@ async def _dial_next(engine, c: dict, rm_email: str) -> bool:
         # FOR UPDATE SKIP LOCKED: two app instances ticking at once can't claim the
         # same lead, so nobody gets dialled twice
         item = (await conn.execute(
-            text("""UPDATE dial_queue
+            text(f"""UPDATE dial_queue
                        SET status = 'dialing', rm_email = :rm,
                            attempts = attempts + 1, dialed_at = now(), ended_at = NULL
                      WHERE id = (SELECT id FROM dial_queue
-                                  WHERE campaign_id = :cid AND status = 'pending'
+                                  WHERE campaign_id = :cid AND status = 'pending' {mine}
                                   ORDER BY position, id LIMIT 1 FOR UPDATE SKIP LOCKED)
                  RETURNING id, lead_id, attempts"""),
             {"cid": c["id"], "rm": rm_email},
@@ -339,7 +391,7 @@ async def _release(engine, item_id, detail: str, retry: bool) -> None:
         await conn.execute(
             text("""UPDATE dial_queue
                        SET status = CASE WHEN :retry THEN 'pending' ELSE 'failed' END,
-                           rm_email = NULL, detail = :detail,
+                           detail = :detail,
                            ended_at = CASE WHEN :retry THEN NULL ELSE now() END,
                            position = position + CASE WHEN :retry THEN 1000000 ELSE 0 END
                      WHERE id = :id"""),

@@ -369,6 +369,12 @@ export const api = {
     return request<LogsResponse>(`/v1/logs?${qs.toString()}`);
   },
   logActors: () => request<{ items: string[] }>("/v1/logs/actors"),
+  // Bonvoice call log (admin)
+  callLog: (p: CallLogParams) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+    return request<CallLogResponse>(`/v1/bonvoice/calls?${qs.toString()}`);
+  },
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   placeCall: (lead_id: string) =>
@@ -462,6 +468,10 @@ export interface CampaignFeedRow {
   status: string;
   outcome: string | null;
   detail: string | null;
+  /* Bonvoice's id for the call — the handle for `GET /get-autocall-log/{eventID}/`
+     when a call's state needs checking against Bonvoice directly. */
+  event_id: string | null;
+  attempts: number;
   rm_email: string | null;
   dialed_at: string | null;
   ended_at: string | null;
@@ -535,6 +545,31 @@ export interface AuditLogRow {
   ip: string | null;
 }
 export interface LogsResponse { items: AuditLogRow[]; total: number; }
+
+/* One call leg as Bonvoice reported it. A bridged call is two rows — leg A is the
+   RM's handset, leg B the lead — and the recording rides on whichever leg carried it. */
+export interface CallLogRow {
+  call_id: string;
+  leg: string;
+  event_id: string | null;
+  lead_id: string | null;
+  lead_name: string | null;
+  direction: string | null;
+  source_number: string | null;
+  destination_number: string | null;
+  display_number: string | null;
+  status: string | null;
+  agent_status: string | null;
+  answered: boolean;
+  start_at: string | null;
+  end_at: string | null;
+  recording_url: string | null;
+  placed_by: string | null;
+}
+export interface CallLogResponse { items: CallLogRow[]; total: number; }
+export interface CallLogParams {
+  q?: string; answered?: boolean; limit?: number; offset?: number;
+}
 export interface LogsParams {
   actor?: string; category?: string; method?: string; q?: string;
   status?: number; from?: string; to?: string; limit?: number; offset?: number;

@@ -22,6 +22,7 @@ const TITLES: Record<string, string> = {
   "/goldmine": "Gold Mine — Re-engagement",
   "/settings": "Settings & Access",
   "/logs": "Activity Logs",
+  "/call-log": "Bonvoice Call Log",
   "/chat": "WhatsApp",
 };
 

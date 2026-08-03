@@ -18,6 +18,7 @@ import asyncio
 import itertools
 import logging
 from datetime import datetime, time, timedelta, timezone
+from time import monotonic
 
 from fastapi import HTTPException
 from sqlalchemy import text
@@ -30,6 +31,14 @@ TICK_SECONDS = 3
 # a 'dialing' row with no hangup callback by now is assumed lost — otherwise one
 # dropped webhook would wedge that RM for the rest of the campaign
 STALE_AFTER_SECONDS = 420
+# after this long with no callback, stop waiting for one and ask Bonvoice directly.
+# Callbacks are the fast path; this is what makes the dialer work without them.
+POLL_AFTER_SECONDS = 20
+POLL_EVERY_SECONDS = 15  # per call — the tick runs far more often than that
+POLL_BATCH = 20
+# event_id → when it was last asked about. Process-local and self-pruning: a lost
+# entry only costs one extra request.
+_polled: dict[str, float] = {}
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # ── rule compiler ────────────────────────────────────────────────────────────
@@ -230,10 +239,62 @@ def _in_window(start: str, end: str) -> bool:
     return time(h1, m1) <= now <= time(h2, m2)
 
 
+async def poll_open_calls(engine) -> None:
+    """For calls that have been ringing a while with no callback, ask Bonvoice how they
+    went and close them out.
+
+    This is the fallback that makes the queue advance whether or not the callback URL
+    is reachable. It only looks at calls older than POLL_AFTER_SECONDS, so a working
+    webhook resolves almost everything before this ever runs.
+    """
+    from ..routers.bonvoice import fetch_call_state
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            text("""SELECT id, event_id FROM dial_queue
+                     WHERE status = 'dialing' AND event_id IS NOT NULL
+                       AND dialed_at < now() - make_interval(secs => :s)
+                     ORDER BY dialed_at LIMIT :lim"""),
+            {"s": POLL_AFTER_SECONDS, "lim": POLL_BATCH},
+        )).mappings().all()
+
+    now = monotonic()
+    for stale_key in [k for k, t in _polled.items() if now - t > 3600]:
+        _polled.pop(stale_key, None)
+
+    for row in rows:
+        if now - _polled.get(row["event_id"], 0.0) < POLL_EVERY_SECONDS:
+            continue  # a 20-minute call must not mean 400 requests
+        _polled[row["event_id"]] = now
+        state = await fetch_call_state(row["event_id"])
+        if state is None:
+            continue  # couldn't tell — leave it ringing; the reaper is the backstop
+        ended, answered, status = state
+        if not ended and not answered:
+            continue
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("""UPDATE dial_queue
+                           SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
+                               ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
+                               outcome  = COALESCE(:outcome, outcome),
+                               answered = answered OR :answered
+                         WHERE id = :id AND status = 'dialing'"""),
+                {"id": row["id"], "ends": ended, "answered": answered, "outcome": status},
+            )
+        if ended:
+            log.info("dialer: closed %s from the call log (answered=%s status=%s)",
+                     row["event_id"], answered, status)
+
+
 async def tick_all() -> None:
     engine = neon_engine()
     if engine is None:
         return
+    try:
+        await poll_open_calls(engine)
+    except Exception:  # noqa: BLE001 — polling is the fallback, never the blocker
+        log.exception("dialer: polling open calls failed")
     async with engine.begin() as conn:
         await conn.execute(
             text("""UPDATE dial_queue
@@ -270,10 +331,8 @@ async def _tick_campaign(engine, c: dict) -> None:
                            SET status = 'pending', event_id = NULL,
                                position = position + 1000000
                          WHERE q.campaign_id = :cid AND q.status = 'done'
-                           AND q.attempts < :max
-                           AND q.ended_at < now() - make_interval(mins => :cool)
-                           AND NOT EXISTS (SELECT 1 FROM call_logs cl
-                                            WHERE cl.event_id = q.event_id AND cl.answered)"""),
+                           AND q.attempts < :max AND NOT q.answered
+                           AND q.ended_at < now() - make_interval(mins => :cool)"""),
                 {"cid": c["id"], "max": c["max_attempts"], "cool": c["cooldown_minutes"] or 0},
             )
         load = (await conn.execute(
@@ -286,14 +345,23 @@ async def _tick_campaign(engine, c: dict) -> None:
                      GROUP BY rm_email"""),
             {"cid": c["id"]},
         )).mappings().all()
-        pending = int((await conn.execute(
-            text("SELECT count(*) FROM dial_queue WHERE campaign_id = :cid AND status = 'pending'"),
-            {"cid": c["id"]},
-        )).scalar() or 0)
+        # 'retryable' are done-but-never-connected rows still inside their cooldown —
+        # they become pending again shortly, so the campaign is NOT finished. Without
+        # this a multi-attempt campaign declares itself done during the cooldown gap
+        # and its retries never fire.
+        counts = (await conn.execute(
+            text("""SELECT count(*) FILTER (WHERE status = 'pending') AS pending,
+                           count(*) FILTER (WHERE status = 'done'
+                                            AND attempts < :max AND NOT answered) AS retryable
+                      FROM dial_queue q WHERE campaign_id = :cid"""),
+            {"cid": c["id"], "max": c["max_attempts"] or 1},
+        )).mappings().first()
+        pending = int(counts["pending"] or 0)
+        retryable = int(counts["retryable"] or 0)
 
     by_rm = {r["rm_email"]: r for r in load}
     if pending == 0:
-        if not any(r["live"] for r in load):
+        if not retryable and not any(r["live"] for r in load):
             async with engine.begin() as conn:
                 await conn.execute(
                     text("UPDATE dial_campaigns SET status = 'done' WHERE id = :cid"),
@@ -354,8 +422,11 @@ async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
         # FOR UPDATE SKIP LOCKED: two app instances ticking at once can't claim the
         # same lead, so nobody gets dialled twice
         item = (await conn.execute(
+            # outcome/detail are cleared too: a redial that inherited the previous
+            # attempt's "no callback" would report a result it hasn't got yet
             text(f"""UPDATE dial_queue
                        SET status = 'dialing', rm_email = :rm, event_id = :ev,
+                           outcome = NULL, detail = NULL,
                            attempts = attempts + 1, dialed_at = now(), ended_at = NULL
                      WHERE id = (SELECT id FROM dial_queue
                                   WHERE campaign_id = :cid AND status = 'pending' {mine}

@@ -209,6 +209,14 @@ export function useLogs(params: import("./api").LogsParams) {
     staleTime: 10_000,
   });
 }
+export function useCallLog(params: import("./api").CallLogParams) {
+  return useQuery({
+    queryKey: ["call-log", params],
+    queryFn: () => api.callLog(params),
+    placeholderData: keepPreviousData,
+    staleTime: 10_000,
+  });
+}
 export function useLogActors() {
   return useQuery({ queryKey: ["log-actors"], queryFn: api.logActors, staleTime: 60_000 });
 }

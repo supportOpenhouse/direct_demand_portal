@@ -12,6 +12,7 @@ import LeadsSegment from "./pages/LeadsSegment";
 import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
+import CallLog from "./pages/CallLog";
 import Chat from "./pages/Chat";
 import Dialer from "./pages/Dialer";
 import Stub from "./pages/Stub";
@@ -44,6 +45,7 @@ const router = createBrowserRouter([
       { path: "goldmine", element: <Stub title="Gold Mine" /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
+      { path: "call-log", element: <CallLog /> },
       { path: "chat", element: <Chat /> },
     ],
   },

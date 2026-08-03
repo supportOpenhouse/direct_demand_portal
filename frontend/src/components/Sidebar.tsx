@@ -146,6 +146,11 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
         </NavLink>
         {isAdmin && (
+          <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
+            <IconRnr /> <span className="nav-t">Bonvoice Call Log</span>
+          </NavLink>
+        )}
+        {isAdmin && (
           <NavLink to="/logs" className={navClass} title="Activity Logs">
             <IconLogs /> <span className="nav-t">Activity Logs</span>
           </NavLink>

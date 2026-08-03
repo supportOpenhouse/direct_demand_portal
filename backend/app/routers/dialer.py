@@ -231,12 +231,10 @@ async def campaign_detail(campaign_id: UUID, _: dict = Depends(require_admin)):
              GROUP BY q.rm_email"""), {"id": campaign_id})).mappings().all()
         feed = (await conn.execute(text("""
             SELECT q.status, q.outcome, q.detail, q.rm_email, q.dialed_at, q.ended_at,
-                   l.name AS lead_name, l.society, l.id AS lead_id,
-                   cl.answered
+                   q.event_id, q.attempts, q.answered,
+                   l.name AS lead_name, l.society, l.id AS lead_id
               FROM dial_queue q
               JOIN leads l ON l.id = q.lead_id
-              LEFT JOIN LATERAL (SELECT bool_or(answered) AS answered FROM call_logs
-                                  WHERE event_id = q.event_id) cl ON true
              WHERE q.campaign_id = :id AND q.dialed_at IS NOT NULL
              ORDER BY q.dialed_at DESC LIMIT 25"""), {"id": campaign_id})).mappings().all()
 

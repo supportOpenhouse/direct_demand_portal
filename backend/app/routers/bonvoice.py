@@ -22,13 +22,13 @@ from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import desc, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
-from ..core.auth import current_user
+from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..models import CallLog
 
@@ -218,6 +218,93 @@ async def bonvoice_call(req: CallRequest, user: dict = Depends(current_user)):
     return {"status": "ringing", "event_id": event_id, "rm_phone_masked": _mask(rm_phone)}
 
 
+# --- pull: ask Bonvoice how a call went ---------------------------------------
+#
+# The callback is push; this is the same information pulled. It exists because a
+# callback that never arrives (URL not registered, 403, network drop) otherwise leaves
+# a call ringing forever as far as we're concerned.
+
+def _field(record: dict, *names: str):
+    """Case-insensitive field read. The docs give `callType` and `Status` for the
+    callback, but the log endpoint's exact casing isn't documented — so match loosely
+    rather than silently reading None off a capitalisation difference."""
+    lowered = {str(k).lower(): v for k, v in record.items()}
+    for n in names:
+        v = lowered.get(n.lower())
+        if v not in (None, ""):
+            return v
+    return None
+
+
+def log_records(body) -> list[dict]:
+    """Pull the call records out of whatever envelope the response uses — a bare list,
+    or a dict wrapping one, or a single record."""
+    if isinstance(body, list):
+        return [r for r in body if isinstance(r, dict)]
+    if not isinstance(body, dict):
+        return []
+    for key in ("data", "result", "results", "records", "logs", "calls"):
+        inner = body.get(key)
+        if isinstance(inner, list):
+            return [r for r in inner if isinstance(r, dict)]
+        if isinstance(inner, dict):
+            return log_records(inner)
+    # a dict of scalars is the record itself
+    return [body] if any(_field(body, k) for k in ("callID", "Status", "EndTime", "callType")) else []
+
+
+def read_call_state(records: list[dict]) -> tuple[bool, bool, str | None]:
+    """(ended, answered, status) as read from a set of log records.
+
+    Ended is inferred from an end time or a hangup lifecycle marker; a record set with
+    neither means the call is still up, so we say nothing and poll again.
+    """
+    ended = answered = False
+    status = None
+    for r in records:
+        ctype = str(_field(r, "callType", "CallType") or "")
+        st = _field(r, "Status", "AgentStatus")
+        if _field(r, "EndTime", "end_time") or ctype == CALL_HANGUP:
+            ended = True
+        if ctype == CALL_ANSWERED or str(st or "").upper().startswith("ANSWER"):
+            answered = True
+        if st:
+            status = str(st)
+    return ended, answered, status
+
+
+async def fetch_call_state(event_id: str) -> tuple[bool, bool, str | None] | None:
+    """Ask Bonvoice how the call for `event_id` is doing. None = couldn't tell."""
+    s = get_settings()
+
+    async def _get(tok: str) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            return await client.get(f"{s.bonvoice_base}/get-autocall-log/{event_id}/",
+                                    headers={"Authorization": f"Token {tok}"})
+
+    try:
+        r = await _get(await _auth_token())
+        if r.status_code == 401:
+            r = await _get(await _auth_token(force=True))
+    except (httpx.HTTPError, HTTPException) as e:
+        log.warning("bonvoice: call-log fetch failed for %s: %s", event_id, e)
+        return None
+    if r.status_code >= 300:
+        log.warning("bonvoice: call-log %s returned %s: %s", event_id, r.status_code, r.text[:200])
+        return None
+    try:
+        records = log_records(r.json())
+    except ValueError:
+        log.warning("bonvoice: call-log %s wasn't JSON: %s", event_id, r.text[:200])
+        return None
+    if not records:
+        # Logged in full once per call: if the envelope differs from what log_records
+        # expects, this is the only way to see it without a live account.
+        log.info("bonvoice: no call records parsed for %s — raw: %s", event_id, r.text[:600])
+        return None
+    return read_call_state(records)
+
+
 # --- inbound: call logs -------------------------------------------------------
 
 def _check_token(request: Request) -> None:
@@ -277,20 +364,25 @@ async def _release_dial_slot(engine, body: dict) -> None:
 
     Both legs report a hangup; the WHERE on status='dialing' makes the second a no-op.
     """
-    if str(body.get("callType", "")) != CALL_HANGUP:
-        return
+    call_type = str(body.get("callType", ""))
     event_id = body.get("eventID")
-    if not event_id:
+    if not event_id or call_type not in (CALL_ANSWERED, CALL_HANGUP):
         return
+    status = body.get("Status") or body.get("AgentStatus") or None
+    # 'answered' is OR-ed and never cleared: the answer event arrives before the
+    # hangup, and it's what decides whether this lead is owed a retry
+    answered = call_type == CALL_ANSWERED or str(status or "").upper().startswith("ANSWER")
+    ends = call_type == CALL_HANGUP
     try:
         async with engine.begin() as conn:
             await conn.execute(
                 text("""UPDATE dial_queue
-                           SET status = 'done', ended_at = now(),
-                               outcome = COALESCE(:outcome, outcome)
+                           SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
+                               ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
+                               outcome  = COALESCE(:outcome, outcome),
+                               answered = answered OR :answered
                          WHERE event_id = :eid AND status = 'dialing'"""),
-                {"eid": str(event_id),
-                 "outcome": body.get("Status") or body.get("AgentStatus") or None},
+                {"eid": str(event_id), "outcome": status, "answered": answered, "ends": ends},
             )
     except Exception:  # noqa: BLE001 — the callback was already acked
         log.exception("bonvoice: failed to release dial slot for event %s", event_id)
@@ -360,6 +452,61 @@ async def bonvoice_webhook(request: Request):
              body.get("callType"), body.get("Leg"), body.get("callID"), body.get("Status"))
     asyncio.create_task(_persist(body))
     return Response(status_code=200)
+
+
+CALL_LOG_FROM = "FROM call_logs c LEFT JOIN leads l ON l.id = c.lead_id"
+
+
+def call_log_filters(q: str | None, answered: bool | None) -> tuple[str, dict]:
+    """WHERE clause + bind params for the call-log list. Split out so the same clause
+    drives both the page and its count, and so it's testable without a database."""
+    where, params = [], {}
+    if q:
+        where.append("(c.source_number ILIKE :q OR c.destination_number ILIKE :q "
+                     "OR c.display_number ILIKE :q OR l.name ILIKE :q)")
+        params["q"] = f"%{q}%"
+    if answered is not None:
+        where.append("c.answered = :answered")
+        params["answered"] = answered
+    return (" WHERE " + " AND ".join(where)) if where else "", params
+
+
+@router.get("/bonvoice/calls", dependencies=[Depends(require_admin)])
+async def call_log(
+    q: str | None = Query(None),          # matches any phone number or the lead's name
+    answered: bool | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Every call leg Bonvoice has reported, newest first — backs the Call Log page.
+
+    One conversation is two legs (A = the RM's handset, B = the lead), so a bridged
+    call shows as two rows. The recording arrives as ResourceURL on the hangup callback.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"items": [], "total": 0}
+    clause, params = call_log_filters(q, answered)
+    async with engine.connect() as conn:
+        total = (await conn.execute(
+            text(f"SELECT count(*) {CALL_LOG_FROM}{clause}"), params)).scalar()
+        rows = (await conn.execute(text(f"""
+            SELECT c.call_id, c.leg, c.event_id, c.lead_id, l.name AS lead_name,
+                   c.direction, c.source_number, c.destination_number, c.display_number,
+                   c.status, c.agent_status, c.answered, c.start_at, c.end_at,
+                   c.recording_url,
+                   -- placed_by is only filled for calls the dialer placed; for a
+                   -- click-to-call the actor rides along in the echoed callBackParams
+                   COALESCE(c.placed_by, c.raw->'callBackParams'->>'actor') AS placed_by
+            {CALL_LOG_FROM}{clause}
+             ORDER BY COALESCE(c.start_at, c.created_at) DESC
+             LIMIT :limit OFFSET :offset"""),
+            {**params, "limit": limit, "offset": offset})).mappings().all()
+    return {"items": [
+        {k: (v.isoformat() if isinstance(v, datetime) else str(v) if isinstance(v, UUID) else v)
+         for k, v in dict(r).items()}
+        for r in rows
+    ], "total": total}
 
 
 @router.get("/leads/{lead_id}/calls")

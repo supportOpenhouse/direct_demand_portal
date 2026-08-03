@@ -117,14 +117,59 @@ async def test_hangup_frees_the_slot_even_with_no_call_id():
     the rest of the campaign, so releasing must not depend on the log row's callID."""
     calls = await _release({"callType": "2", "eventID": "ev123", "Status": "ANSWER"})
     assert len(calls) == 1
-    assert calls[0][1] == {"eid": "ev123", "outcome": "ANSWER"}
     assert "dial_queue" in calls[0][0]
+    assert calls[0][1] == {"eid": "ev123", "outcome": "ANSWER", "answered": True, "ends": True}
 
 
-async def test_only_hangup_releases_the_slot():
+async def test_answer_is_recorded_without_ending_the_call():
+    """The answer event decides whether a retry is owed, but the call is still up —
+    ending it here would free the RM mid-conversation and dial the next lead."""
+    calls = await _release({"callType": "1", "eventID": "ev123"})
+    assert len(calls) == 1
+    assert calls[0][1]["answered"] is True and calls[0][1]["ends"] is False
+
+
+async def test_nothing_else_touches_the_slot():
     assert await _release({"callType": "0", "eventID": "ev123"}) == []  # initiated
-    assert await _release({"callType": "1", "eventID": "ev123"}) == []  # answered
     assert await _release({"callType": "2"}) == []                      # nothing to match on
+
+
+"""The call-log poller parses a response shape the docs describe but don't pin down,
+so it has to survive the plausible variations rather than assume one."""
+
+
+def test_log_records_unwraps_whatever_envelope_is_used():
+    from app.routers.bonvoice import log_records
+    rec = {"callID": "c1", "Status": "ANSWER"}
+    assert log_records([rec]) == [rec]
+    assert log_records({"data": [rec]}) == [rec]
+    assert log_records({"result": {"records": [rec]}}) == [rec]
+    assert log_records(rec) == [rec]                    # a bare record
+    assert log_records({"responseCode": 200}) == []      # an envelope with no records
+    assert log_records("nope") == []
+
+
+def test_call_state_reads_end_and_answer_however_they_are_spelled():
+    from app.routers.bonvoice import read_call_state
+    # hangup lifecycle marker
+    assert read_call_state([{"callType": "2"}])[0] is True
+    # or simply an end time, whatever the casing
+    assert read_call_state([{"EndTime": "2026-08-03 12:41:00"}])[0] is True
+    assert read_call_state([{"endtime": "2026-08-03 12:41:00"}])[0] is True
+
+    ended, answered, status = read_call_state([
+        {"callType": "1", "Status": "ANSWERED"}, {"callType": "2", "Status": "ANSWERED"},
+    ])
+    assert (ended, answered, status) == (True, True, "ANSWERED")
+
+
+def test_a_call_still_in_progress_is_left_alone():
+    """No end marker means the call is still up — closing it here would hang up on the
+    RM mid-conversation as far as the queue is concerned."""
+    from app.routers.bonvoice import read_call_state
+    ended, answered, _ = read_call_state([{"callType": "0", "StartTime": "2026-08-03 12:40:43"}])
+    assert ended is False and answered is False
+    assert read_call_state([]) == (False, False, None)
 
 
 def test_calling_window():

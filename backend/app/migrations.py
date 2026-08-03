@@ -51,6 +51,8 @@ _ADD_COLUMNS = [
     # visit planner: `rm` split into the lead's RM and whoever accompanies the visit
     ("visits", "lead_rm", "TEXT"),
     ("visits", "rm_accompanying", "TEXT"),
+    # auto-dialer: connected/not for each attempt, filled by the callback or the poller
+    ("dial_queue", "answered", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

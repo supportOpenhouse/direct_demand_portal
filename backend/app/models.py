@@ -459,6 +459,10 @@ class DialQueueItem(Base):
     # pending | dialing | done | failed | skipped
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     event_id: Mapped[str | None] = mapped_column(Text, index=True)
+    # did this attempt actually connect — decides whether a retry is owed. Kept here
+    # rather than read from call_logs so the dialer works when callbacks don't arrive
+    # and the poller is the only source of truth.
+    answered: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     outcome: Mapped[str | None] = mapped_column(Text)
     detail: Mapped[str | None] = mapped_column(Text)  # why a dial failed, verbatim
     dialed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))

@@ -43,6 +43,19 @@ async def sync_visit_status():
     return result
 
 
+async def _bookable_managers() -> list[dict]:
+    """Active users who hold an Openhouse SMID. Only these can be the accompanying RM —
+    the booking API takes a SalesManager id, so a name without one can't be sent."""
+    engine = neon_engine()
+    if engine is None:
+        return []
+    async with engine.connect() as conn:
+        rows = await conn.execute(text(
+            "SELECT name, smid FROM users "
+            "WHERE active AND smid IS NOT NULL AND name IS NOT NULL ORDER BY name"))
+    return [{"name": r[0], "smid": r[1]} for r in rows]
+
+
 @router.get("/visits/booking-config")
 async def booking_config(user: dict = Depends(current_user)):
     """Tells the drawer whether the current user can book + the city→CP labels to show."""
@@ -52,6 +65,7 @@ async def booking_config(user: dict = Depends(current_user)):
         "configured": s.crm_booking_configured,
         "smid": smid,
         "can_book": s.crm_booking_configured and smid is not None,
+        "bookable": await _bookable_managers(),
         "default_source": DEFAULT_SOURCE,
         "city_cp": {city: {"cp_id": cp, "label": label} for city, (cp, label) in BROKER_BY_CITY.items()},
     }
@@ -69,6 +83,8 @@ class BookRequest(BaseModel):
     selected_date: str
     selected_time: str
     source: str = DEFAULT_SOURCE
+    # SMID of the RM accompanying the visit; omitted → the caller's own
+    sales_manager_id: int | None = None
     lead_id: UUID | None = None   # links the booking to a lead → drives the Pipeline tab
     visits: list[BookVisitIn]
 
@@ -88,11 +104,15 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
         if not v.buyer_name.strip() or len(v.buyer_mobile.strip()) < 5:
             raise HTTPException(status_code=400, detail="Each visit needs a buyer name and at least 5 mobile digits")
 
-    smid = await _user_smid(user)
+    # sales_manager_id is the RM ACCOMPANYING the visit, not the lead's RM and not
+    # necessarily whoever clicked Book — the planner sends it explicitly. Falling back
+    # to the caller keeps older clients working.
+    smid = req.sales_manager_id or await _user_smid(user)
     if smid is None:
         raise HTTPException(status_code=403, detail="You're not set up to book visits — ask an admin to add your Openhouse SMID in Settings.")
 
-    log.info("book: user=%s smid=%s n=%s date=%s slot=%s", user.get("email"), smid, len(req.visits), req.selected_date, req.selected_time)
+    log.info("book: user=%s smid=%s (accompanying) n=%s date=%s slot=%s",
+             user.get("email"), smid, len(req.visits), req.selected_date, req.selected_time)
     results = await book_visits(smid, req.selected_date, req.selected_time, req.source, [v.model_dump() for v in req.visits])
     booked = sum(1 for r in results if r["ok"])
 

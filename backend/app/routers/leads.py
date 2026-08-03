@@ -705,7 +705,9 @@ class VisitStop(BaseModel):
 
 class VisitPlan(BaseModel):
     trip_date: str | None = None
-    rm: str | None = None
+    rm: str | None = None              # legacy single field, still written for rollback
+    lead_rm: str | None = None         # the RM who owns the lead
+    rm_accompanying: str | None = None # who goes on the visit; defaults to lead_rm
     start_lat: float | None = None
     start_lng: float | None = None
     total_km: float | None = None
@@ -731,7 +733,9 @@ async def save_visit(lead_id: UUID, payload: VisitPlan):
         if (await conn.execute(text("SELECT 1 FROM leads WHERE id = :id"), {"id": lead_id})).first() is None:
             raise HTTPException(status_code=404, detail="lead not found")
         await conn.execute(pg_insert(Visit).values(
-            lead_id=lead_id, trip_date=trip, rm=payload.rm,
+            lead_id=lead_id, trip_date=trip, rm=payload.lead_rm or payload.rm,
+            lead_rm=payload.lead_rm or payload.rm,
+            rm_accompanying=payload.rm_accompanying or payload.lead_rm or payload.rm,
             start_lat=payload.start_lat, start_lng=payload.start_lng,
             total_km=payload.total_km, total_min=payload.total_min, route_source=payload.route_source,
             stops=[s.model_dump() for s in payload.stops],
@@ -755,6 +759,8 @@ async def latest_visit(lead_id: UUID):
         return {"plan": None}
     return {"plan": {
         "trip_date": v["trip_date"].isoformat() if v["trip_date"] else None, "rm": v["rm"],
+        "lead_rm": v["lead_rm"] or v["rm"],
+        "rm_accompanying": v["rm_accompanying"] or v["lead_rm"] or v["rm"],
         "start_lat": float(v["start_lat"]) if v["start_lat"] is not None else None,
         "start_lng": float(v["start_lng"]) if v["start_lng"] is not None else None,
         "total_km": float(v["total_km"]) if v["total_km"] is not None else None,
@@ -774,8 +780,11 @@ async def list_assignees():
         return {"items": []}
     async with engine.connect() as conn:
         res = await conn.execute(text(
-            "SELECT name, email FROM users WHERE active AND name IS NOT NULL AND role <> 'admin' ORDER BY name"))
-        return {"items": [{"name": r[0], "email": r[1]} for r in res]}
+            "SELECT name, email, smid FROM users "
+            "WHERE active AND name IS NOT NULL AND role <> 'admin' ORDER BY name"))
+        # smid is included so the visit planner can offer only RMs who can actually be
+        # booked against — the Openhouse API needs a SalesManager id, not a name
+        return {"items": [{"name": r[0], "email": r[1], "smid": r[2]} for r in res]}
 
 
 class AssignPayload(BaseModel):

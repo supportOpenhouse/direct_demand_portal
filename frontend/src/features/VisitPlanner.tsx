@@ -6,7 +6,7 @@
    - saves the plan to the lead */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useInventory, useAssignees, formatPrice } from "../lib/queries";
+import { useInventory, useAssignees, useLead, useBookingConfig, formatPrice } from "../lib/queries";
 import { InventoryItem, api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { optimizeRoute, estimateLeg, pathKm, fmtMin, Pt } from "../lib/geo";
@@ -18,6 +18,11 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }: { leadId: string; leadName: string | null; leadCity: string | null; leadPhone?: string | null; onClose: () => void }) {
   const { data: inv } = useInventory();
   const { data: assignees } = useAssignees();
+  const { data: lead } = useLead(leadId);
+  const { data: cfg } = useBookingConfig();
+  const leadOwner = lead?.assigned_to ?? null;
+  // only SMID holders can be the accompanying RM — the booking API needs the id
+  const bookable = cfg?.bookable ?? [];
   const toast = useToast();
   const qc = useQueryClient();
 
@@ -25,7 +30,10 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
   const [locating, setLocating] = useState(true);
   const [stopIds, setStopIds] = useState<number[]>([]);
   const [tripDate, setTripDate] = useState(today());
-  const [rm, setRm] = useState("");
+  const [leadRm, setLeadRm] = useState("");
+  // defaults to the lead's RM and stays in step until someone picks a different
+  // person; their SMID is what the booking API receives as sales_manager_id
+  const [rmAccompanying, setRmAccompanying] = useState("");
   const [saving, setSaving] = useState(false);
   const [googleMetrics, setGoogleMetrics] = useState<{ km: number; min: number } | null>(null);
   const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on Openhouse" section
@@ -84,7 +92,10 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
   useEffect(() => { locate(); }, []);
 
   useEffect(() => {
-    if (rm === "" && assignees?.items.length) setRm(assignees.items[0].name);
+    if (leadRm === "" && assignees?.items.length) {
+      const owner = assignees.items.find((a) => a.name === leadOwner)?.name;
+      setLeadRm(owner ?? assignees.items[0].name);
+    }
   }, [assignees]);
 
   // init the map once
@@ -182,7 +193,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     if (!stops.length) { toast("Add at least one property", "gold", "⚠"); return; }
     setSaving(true);
     api.saveVisit(leadId, {
-      trip_date: tripDate, rm, start_lat: start?.lat ?? null, start_lng: start?.lng ?? null,
+      trip_date: tripDate, lead_rm: leadRm, rm_accompanying: rmAccompanying || leadRm, start_lat: start?.lat ?? null, start_lng: start?.lng ?? null,
       total_km: total.km, total_min: total.min, route_source: total.source,
       stops: stops.map((s) => ({ inventory_id: s.id, name: s.name, society: s.society, locality: s.locality, price_text: s.price_text, lat: s.lat, lng: s.lng })),
     })
@@ -231,13 +242,22 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
               <button className="btn ghost sm" onClick={locate}>📍 Allow / retry</button>
             </div>
           )}
-          <div className="two">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
             <div className="field" style={{ marginBottom: 12 }}><label>Trip date</label>
               <input type="date" value={tripDate} onChange={(e) => setTripDate(e.target.value)} /></div>
-            <div className="field" style={{ marginBottom: 12 }}><label>RM accompanying</label>
-              <select value={rm} onChange={(e) => setRm(e.target.value)}>
+            <div className="field" style={{ marginBottom: 12 }}><label>Lead RM</label>
+              <select value={leadRm} onChange={(e) => setLeadRm(e.target.value)}>
                 {(assignees?.items ?? []).map((a) => <option key={a.email}>{a.name}</option>)}
-                <option>Self</option>
+              </select></div>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label>RM accompanying <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— books the visit</span></label>
+              {/* only SMID holders: the Openhouse API takes a SalesManager id, so a
+                  name without one can't be booked against */}
+              <select value={rmAccompanying || leadRm} onChange={(e) => setRmAccompanying(e.target.value)}>
+                {bookable.map((b) => <option key={b.smid}>{b.name}</option>)}
+                {!bookable.some((b) => b.name === (rmAccompanying || leadRm)) && (
+                  <option value={rmAccompanying || leadRm}>{rmAccompanying || leadRm} (no SMID)</option>
+                )}
               </select></div>
           </div>
 
@@ -367,7 +387,9 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
           )}
         </div>
       </div>
-      {booking && <BookVisitsDrawer units={bookUnits} leadId={leadId} leadName={leadName} leadPhone={leadPhone} onClose={() => setBooking(false)} />}
+      {booking && <BookVisitsDrawer units={bookUnits} leadId={leadId} leadName={leadName} leadPhone={leadPhone}
+        salesManagerId={bookable.find((b) => b.name === (rmAccompanying || leadRm))?.smid ?? null}
+        rmAccompanying={rmAccompanying || leadRm} onClose={() => setBooking(false)} />}
     </div>
   );
 }

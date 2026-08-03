@@ -2,7 +2,8 @@
    that books 1–10 visits on the LIVE Openhouse app via the CRM booking API.
    Slot/date logic is client-side (lib/slots); the CP/broker for each unit is derived
    from its city (Gurgaon → CP 708, Noida/Ghaziabad → CP 1367); the booker's
-   SalesManager id (smid) is resolved server-side from the logged-in user. */
+   sales_manager_id is the RM ACCOMPANYING the visit — passed in from the planner,
+   not the logged-in user. The server falls back to the caller's own smid if omitted. */
 import { useMemo, useState } from "react";
 import { formatPrice, useBookingConfig } from "../lib/queries";
 import { api } from "../lib/api";
@@ -31,13 +32,15 @@ const STEPS = ["Details", "Review", "Done"] as const;
 const last5 = (phone: string | null | undefined) => (phone || "").replace(/\D/g, "").slice(-5);
 
 export function BookVisitsDrawer({
-  units, onClose, leadId, leadName, leadPhone,
+  units, onClose, leadId, leadName, leadPhone, salesManagerId, rmAccompanying,
 }: {
   units: BookUnit[];
   onClose: () => void;
   leadId?: string;
   leadName?: string | null;
   leadPhone?: string | null;
+  salesManagerId?: number | null;  // SMID of the RM accompanying — not the caller
+  rmAccompanying?: string;         // their name, for the confirmation line
 }) {
   const toast = useToast();
   const cfg = useBookingConfig();
@@ -75,6 +78,7 @@ export function BookVisitsDrawer({
   const confirm = () => {
     setBooking(true);
     api.bookVisits({
+      sales_manager_id: salesManagerId ?? null,
       selected_date: date.date,
       selected_time: slot,
       source: cfg.data?.default_source || "direct",
@@ -229,7 +233,11 @@ export function BookVisitsDrawer({
                 <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the Openhouse app and
                 <b> cannot be edited or undone</b>. The buyer &amp; CP are notified immediately.
               </div>
-              <div className="bv-sec-label">{date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</div>
+              <div className="bv-sec-label">
+                {date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}
+                {/* booked against the accompanying RM, not whoever clicked confirm */}
+                {rmAccompanying && <> · with <b>{rmAccompanying}</b></>}
+              </div>
               {visits.map(({ unit, buyer }) => (
                 <div key={String(unit.homeId)} className="bv-visit-card">
                   <div className="bv-vc-top">

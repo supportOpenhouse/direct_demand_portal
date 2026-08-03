@@ -48,6 +48,9 @@ _ADD_COLUMNS = [
     # WhatsApp conversation ownership (round-robin across active RMs)
     ("wa_contacts", "assigned_to", "TEXT"),
     ("wa_contacts", "assigned_at", "TIMESTAMPTZ"),
+    # visit planner: `rm` split into the lead's RM and whoever accompanies the visit
+    ("visits", "lead_rm", "TEXT"),
+    ("visits", "rm_accompanying", "TEXT"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -130,6 +133,15 @@ async def run_migrations(engine) -> None:
             # tag became nullable when assignment arrived — a contact can have an
             # owner before anyone classifies it
             await conn.execute(text("ALTER TABLE wa_contacts ALTER COLUMN tag DROP NOT NULL"))
+
+            # seed the split visit-RM columns from the single field they replace: the
+            # stored value was the lead's RM, and the accompanying RM defaults to the
+            # same person. Only fills NULLs, so hand-picked values survive.
+            await conn.execute(text(
+                "UPDATE visits SET lead_rm = rm WHERE lead_rm IS NULL AND rm IS NOT NULL"))
+            await conn.execute(text(
+                "UPDATE visits SET rm_accompanying = rm "
+                "WHERE rm_accompanying IS NULL AND rm IS NOT NULL"))
 
             # seed Openhouse SalesManager ids (smid) for the booking team by name —
             # only fills blanks, so admin edits via Settings are never clobbered. Runs

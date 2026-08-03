@@ -219,7 +219,13 @@ class Visit(Base):
         UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True
     )
     trip_date: Mapped[str | None] = mapped_column(Date)
+    # legacy single field — kept populated until nothing reads it (see
+    # scripts/split_visit_rm.sql). Its value was always the lead's own RM.
     rm: Mapped[str | None] = mapped_column(Text)
+    lead_rm: Mapped[str | None] = mapped_column(Text)          # who owns the lead
+    # who actually goes; defaults to lead_rm. Their smid is what the Openhouse
+    # booking API receives as sales_manager_id.
+    rm_accompanying: Mapped[str | None] = mapped_column(Text)
     start_lat: Mapped[float | None] = mapped_column(Numeric)
     start_lng: Mapped[float | None] = mapped_column(Numeric)
     total_km: Mapped[float | None] = mapped_column(Numeric)

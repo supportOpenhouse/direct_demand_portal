@@ -35,6 +35,8 @@ export interface VisitStop {
 export interface VisitPlan {
   trip_date?: string | null;
   rm?: string | null;
+  lead_rm?: string | null;
+  rm_accompanying?: string | null;
   start_lat?: number | null;
   start_lng?: number | null;
   total_km?: number | null;
@@ -449,6 +451,8 @@ export interface ManagedUser {
 export interface BookingConfig {
   configured: boolean;
   smid: number | null;
+  // active users holding an Openhouse SMID — the only valid accompanying RMs
+  bookable: { name: string; smid: number }[];
   can_book: boolean;
   default_source: string;
   city_cp: Record<string, { cp_id: number; label: string }>;
@@ -464,6 +468,7 @@ export interface BookRequest {
   selected_date: string;
   selected_time: string;
   source: string;
+  sales_manager_id?: number | null;  // the RM accompanying, not the caller
   lead_id?: string | null;   // links the booking to a lead → drives the Pipeline tab
   visits: BookVisitIn[];
 }

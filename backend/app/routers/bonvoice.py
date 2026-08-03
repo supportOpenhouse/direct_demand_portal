@@ -417,7 +417,10 @@ async def _persist(body: dict) -> None:
         "answered": str(body.get("callType", "")) == CALL_ANSWERED,
         "start_at": _dt(body.get("StartTime")),
         "end_at": _dt(body.get("EndTime")),
-        "recording_url": body.get("ResourceURL") or None,
+        # the recording — Bonvoice's docs write it ResourceURL, their support call it
+        # resourceurl, so read it case-insensitively rather than lose recordings to a
+        # capital letter
+        "recording_url": _field(body, "ResourceURL", "recordingURL") or None,
         "raw": body,
     }
     stmt = pg_insert(CallLog).values(**values)

@@ -57,6 +57,20 @@ def test_lead_id_survives_both_callback_encodings():
     assert lead_id_from({"lead_id": "nonsense"}) is None
 
 
+def test_call_log_filters_bind_every_value():
+    """The clause is interpolated into the SQL, so anything user-supplied must arrive
+    as a bind param — and an unfiltered list must not emit a dangling WHERE."""
+    from app.routers.bonvoice import call_log_filters
+
+    assert call_log_filters(None, None) == ("", {})
+    clause, params = call_log_filters("98460'; drop table leads --", True)
+    assert "drop table" not in clause and clause.startswith(" WHERE ")
+    assert clause.count(" AND ") == 1
+    assert params == {"q": "%98460'; drop table leads --%", "answered": True}
+    # answered=False is a real filter, not an absent one
+    assert call_log_filters(None, False)[1] == {"answered": False}
+
+
 def test_webhook_always_acks_200():
     """A non-2xx makes the PBX retry; the callback fires up to 6 times per call."""
     for body, ctype in [

@@ -383,7 +383,112 @@ export const api = {
   reassignUserLeads: (id: string, toUserId: string) =>
     request<{ status: string; moved: number }>(`/v1/users/${id}/reassign`, { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) }),
   forceLogoutAll: () => request<{ status: string }>("/v1/sessions/logout-all", { method: "POST" }),
+  // auto-dialer (admin)
+  dialerFields: () => request<DialerFields>("/v1/dialer/fields"),
+  dialerPreview: (rules: RuleNode) =>
+    request<{ count: number }>("/v1/dialer/preview", { method: "POST", body: JSON.stringify({ rules }) }),
+  campaigns: () => request<{ items: CampaignRow[] }>("/v1/dialer/campaigns"),
+  createCampaign: (c: CampaignIn) =>
+    request<{ id: string; queued: number }>("/v1/dialer/campaigns", { method: "POST", body: JSON.stringify(c) }),
+  campaign: (id: string) => request<CampaignDetail>(`/v1/dialer/campaigns/${id}`),
+  campaignAction: (id: string, action: "start" | "pause" | "stop") =>
+    request<{ status: string }>(`/v1/dialer/campaigns/${id}/${action}`, { method: "POST" }),
 };
+
+/* ── Auto-dialer ───────────────────────────────────────────────────────────
+   The rule tree is sent to the server verbatim and compiled to SQL there — the
+   field/op whitelist in /v1/dialer/fields is the same one the compiler enforces. */
+export type RuleValue = string[] | number | boolean;
+export interface RuleCondition {
+  id: string;
+  type: "condition";
+  field: string;
+  op: string;
+  value: RuleValue;
+}
+export interface RuleGroup {
+  id: string;
+  type: "group";
+  combinator: "AND" | "OR";
+  children: RuleNode[];
+}
+export type RuleNode = RuleCondition | RuleGroup;
+
+export interface DialerField {
+  key: string;
+  label: string;
+  kind: "multi" | "daterange" | "number" | "bool";
+  ops: string[];
+  options: string[];
+}
+export interface DialerRM {
+  email: string;
+  name: string;
+  has_phone: boolean;
+}
+export interface DialerFields {
+  fields: DialerField[];
+  rms: DialerRM[];
+}
+
+export interface CampaignIn {
+  name: string;
+  rules: RuleNode;
+  rms: string[];
+  strategy: string;
+  gap_seconds: number;
+  window_start: string;
+  window_end: string;
+  max_attempts: number;
+  cooldown_minutes: number;
+  start: boolean;
+}
+export interface CampaignRow {
+  id: string;
+  name: string;
+  status: "draft" | "running" | "paused" | "done";
+  strategy: string;
+  rms: string[];
+  created_at: string;
+  started_at: string | null;
+  pending: number;
+  live: number;
+  completed: number;
+  total: number;
+}
+export interface CampaignFeedRow {
+  status: string;
+  outcome: string | null;
+  detail: string | null;
+  rm_email: string | null;
+  dialed_at: string | null;
+  ended_at: string | null;
+  lead_name: string | null;
+  society: string | null;
+  lead_id: string;
+  answered: boolean | null;
+}
+export interface CampaignDetail {
+  /* The stored campaign row itself — the queue counts live under `stats`, not here. */
+  campaign: {
+    id: string;
+    name: string;
+    status: "draft" | "running" | "paused" | "done";
+    strategy: string;
+    rms: string[];
+    rules: RuleNode;
+    gap_seconds: number;
+    window_start: string;
+    window_end: string;
+    max_attempts: number;
+    cooldown_minutes: number;
+    created_at: string;
+    started_at: string | null;
+  };
+  stats: { pending: number; live: number; done: number; failed: number; skipped: number; total: number };
+  per_rm: Record<string, { live: number; done: number }>;
+  feed: CampaignFeedRow[];
+}
 
 /** One visit booked on the Openhouse app. A lead can have many — each its own visit id. */
 export interface CrmVisitRow {

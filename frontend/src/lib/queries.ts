@@ -339,6 +339,56 @@ export function useSyncLeads() {
   });
 }
 
+/* ── Auto-dialer ─────────────────────────────────────────────────────────── */
+
+export function useDialerFields() {
+  return useQuery({ queryKey: ["dialer-fields"], queryFn: api.dialerFields, staleTime: 300_000 });
+}
+
+/** Live match count. Debounced by the caller — this fires on every rule edit. */
+export function useRulePreview(rules: import("./api").RuleNode) {
+  return useQuery({
+    queryKey: ["dialer-preview", rules],
+    queryFn: () => api.dialerPreview(rules),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useCampaigns() {
+  return useQuery({ queryKey: ["campaigns"], queryFn: api.campaigns, refetchInterval: 5_000 });
+}
+
+/* The dial loop lives on the server; 2s polling is how the browser learns a call
+   started or ended. Only polls while a campaign is actually selected. */
+export function useCampaign(id: string | null) {
+  return useQuery({
+    queryKey: ["campaign", id],
+    queryFn: () => api.campaign(id as string),
+    enabled: !!id,
+    refetchInterval: 2_000,
+  });
+}
+
+export function useCreateCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createCampaign,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["campaigns"] }),
+  });
+}
+
+export function useCampaignAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "start" | "pause" | "stop" }) =>
+      api.campaignAction(id, action),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["campaigns"] });
+      qc.invalidateQueries({ queryKey: ["campaign"] });
+    },
+  });
+}
+
 /** "86.5 L" / 132 lacs → display string like the prototype's ₹ pricing */
 export function formatPrice(priceLacs: number | null, priceText: string | null): string {
   if (priceLacs != null) {

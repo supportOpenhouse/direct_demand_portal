@@ -18,7 +18,10 @@ from .core.ratelimit import limiter
 from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
-from .routers import auth, bonvoice, gupshup, health, inventory, leads, logs, supply, users, visits
+from .routers import (
+    auth, bonvoice, dialer, gupshup, health, inventory, leads, logs, supply, users, visits,
+)
+from .services.dialer import start_dialer, stop_dialer
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 _settings = get_settings()
@@ -63,6 +66,8 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(_locked_startup("inventory_sync", run_sync))
         asyncio.create_task(_locked_startup("leads_sync", run_leads_sync))
         start_scheduler(settings.SYNC_INTERVAL_MINUTES, settings.LEADS_SYNC_INTERVAL_HOURS)
+        # auto-dialer: places the next call the moment a hangup callback frees an RM
+        start_dialer()
     else:
         log.info("RUN_SCHEDULER=false — cron + startup syncs disabled on this instance")
 
@@ -71,6 +76,7 @@ async def lifespan(app: FastAPI):
                     "lock is disabled across instances (fine only for a single instance)")
 
     yield
+    stop_dialer()
     stop_scheduler()
     await close_redis()
     await dispose_engines()
@@ -168,3 +174,4 @@ app.include_router(visits.router, prefix="/v1")
 app.include_router(logs.router, prefix="/v1")
 app.include_router(gupshup.router, prefix="/v1")
 app.include_router(bonvoice.router, prefix="/v1")
+app.include_router(dialer.router, prefix="/v1")

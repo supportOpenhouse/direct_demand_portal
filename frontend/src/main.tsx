@@ -13,6 +13,7 @@ import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import Chat from "./pages/Chat";
+import Dialer from "./pages/Dialer";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: "leads/rnr", element: <Navigate to="/leads/rejected" replace /> },
       { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
       { path: "leads/:id", element: <LeadDetail /> },
+      { path: "dialer", element: <Dialer /> },
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "supply", element: <Supply /> },

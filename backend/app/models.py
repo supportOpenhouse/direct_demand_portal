@@ -402,6 +402,75 @@ class WaMessage(Base):
     __table_args__ = (Index("ix_wa_messages_phone_created", phone, created_at.desc()),)
 
 
+class DialCampaign(Base):
+    """An auto-dialer run: who to call (a rule tree), who calls them (a pool of RMs),
+    and the pacing.
+
+    Concurrency is bounded by the pool, not by a dial rate — Click2Call rings the RM's
+    own handset first, so one RM can only ever hold one live call. N RMs in the pool =
+    at most N calls in flight."""
+
+    __tablename__ = "dial_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    # the AND/OR condition tree from the builder; compiled to SQL when the campaign starts
+    rules: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    rms: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")  # user emails
+    strategy: Mapped[str] = mapped_column(Text, nullable=False, server_default="round_robin")
+    # seconds of breathing room after a call ends before that RM is dialled again;
+    # 0 = the next lead rings the moment the hangup callback lands
+    gap_seconds: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    window_start: Mapped[str] = mapped_column(Text, nullable=False, server_default="10:00")
+    window_end: Mapped[str] = mapped_column(Text, nullable=False, server_default="19:00")
+    # a lead that never connected goes back in the queue until it has used up its
+    # attempts, but not before cooldown_minutes have passed
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="360")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
+    # draft | running | paused | done
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    started_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+
+
+class DialQueueItem(Base):
+    """One lead's slot in a campaign queue.
+
+    `status` is the whole scheduler: pending → dialing (an RM's phone is ringing) →
+    done. The Bonvoice hangup callback flips dialing → done by `event_id`, which is
+    what frees that RM for the next lead."""
+
+    __tablename__ = "dial_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    campaign_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dial_campaigns.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    lead_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False
+    )
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    rm_email: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    # pending | dialing | done | failed | skipped
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    event_id: Mapped[str | None] = mapped_column(Text, index=True)
+    outcome: Mapped[str | None] = mapped_column(Text)
+    detail: Mapped[str | None] = mapped_column(Text)  # why a dial failed, verbatim
+    dialed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    ended_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+
+    __table_args__ = (
+        # one slot per lead per campaign — re-materialising a queue can't duplicate calls
+        Index("ux_dial_queue_campaign_lead", campaign_id, lead_id, unique=True),
+        Index("ix_dial_queue_campaign_status", campaign_id, status),
+    )
+
+
 class AuditLog(Base):
     """Audit trail — one row per meaningful API action, written by the audit
     middleware. Insert-only; surfaced on the admin Logs page."""

@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
@@ -37,6 +37,7 @@ router = APIRouter(tags=["bonvoice"])
 
 AUTOCALL_BRIDGE = "3"  # autocallType for a two-leg bridged call (4 = TTS, 5 = voicebot)
 CALL_ANSWERED = "1"    # callType on the lifecycle callback
+CALL_HANGUP = "2"
 
 # Token cache. The docs give no TTL, so it's held until a 401 forces a refresh rather
 # than expiring on a guess. Process-local: re-authing per instance is one cheap call.
@@ -100,6 +101,63 @@ async def _auth_token(force: bool = False) -> str:
 
 # --- outbound: click-to-call --------------------------------------------------
 
+async def place_bridge(rm_phone: str, lead_phone: str, callback_params: dict) -> str:
+    """Place one Click2Call bridge and return its eventID.
+
+    Leg A is the RM's handset, leg B the lead; Bonvoice only dials the lead once the
+    RM picks up. `callback_params` is echoed verbatim on every lifecycle callback, so
+    whatever we need to reconcile the call later goes in there.
+
+    Raises HTTPException on anything that isn't an accepted call — including the
+    HTTP-200-with-an-error-body case, which is how Bonvoice reports most rejections.
+    """
+    s = get_settings()
+    event_id = uuid4().hex[:16]  # docs: unique alphanumeric, 8–16 chars
+    payload = {
+        "autocallType": AUTOCALL_BRIDGE,
+        "destination": rm_phone,          # leg A — rings the RM
+        "ringStrategy": "ringall",
+        "legACallerID": s.BONVOICE_DID,
+        "legAChannelID": s.BONVOICE_CHANNEL_ID,
+        "legADialAttempts": "1",
+        "legBDestination": lead_phone,    # leg B — the lead
+        "legBCallerID": s.BONVOICE_DID,
+        "legBChannelID": s.BONVOICE_CHANNEL_ID,
+        "legBDialAttempts": "1",
+        "eventID": event_id,
+        # echoed back on every call-log callback — this is what links logs to leads
+        "callBackParams": callback_params,
+    }
+
+    async def _post(tok: str) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=25.0) as client:
+            return await client.post(
+                f"{s.bonvoice_base}/autoDialManagement/autoCallBridging/",
+                json=payload, headers={"Authorization": f"Token {tok}"},
+            )
+
+    try:
+        r = await _post(await _auth_token())
+        if r.status_code == 401:  # cached token went stale — re-auth once, then give up
+            r = await _post(await _auth_token(force=True))
+    except httpx.HTTPError as e:
+        log.warning("bonvoice call failed: %s", e)
+        raise HTTPException(status_code=502, detail=f"Couldn't reach Bonvoice: {e}")
+
+    if r.status_code >= 300:
+        log.warning("bonvoice rejected the call (%s): %s", r.status_code, r.text[:300])
+        raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {r.text[:200]}")
+
+    # A rejection comes back as HTTP 200 with an error body — e.g.
+    # {"error": "DID is not configured"} — so the status code alone means nothing.
+    # Success looks like {"responseCode": 200, "responseType": "Success", ...}.
+    problem = _rejection_reason(r)
+    if problem:
+        log.warning("bonvoice rejected the call: %s", problem)
+        raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {problem}")
+    return event_id
+
+
 class CallRequest(BaseModel):
     lead_id: UUID
 
@@ -142,50 +200,10 @@ async def bonvoice_call(req: CallRequest, user: dict = Depends(current_user)):
             detail="Add your mobile number in Settings — the call rings your phone first.",
         )
 
-    event_id = uuid4().hex[:16]  # docs: unique alphanumeric, 8–16 chars
-    payload = {
-        "autocallType": AUTOCALL_BRIDGE,
-        "destination": rm_phone,          # leg A — rings the RM
-        "ringStrategy": "ringall",
-        "legACallerID": s.BONVOICE_DID,
-        "legAChannelID": s.BONVOICE_CHANNEL_ID,
-        "legADialAttempts": "1",
-        "legBDestination": lead_phone,    # leg B — the lead
-        "legBCallerID": s.BONVOICE_DID,
-        "legBChannelID": s.BONVOICE_CHANNEL_ID,
-        "legBDialAttempts": "1",
-        "eventID": event_id,
-        # echoed back on every call-log callback — this is what links logs to leads
-        "callBackParams": {"lead_id": str(req.lead_id), "actor": user.get("email")},
-    }
-
-    async def _post(tok: str) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            return await client.post(
-                f"{s.bonvoice_base}/autoDialManagement/autoCallBridging/",
-                json=payload, headers={"Authorization": f"Token {tok}"},
-            )
-
-    try:
-        r = await _post(await _auth_token())
-        if r.status_code == 401:  # cached token went stale — re-auth once, then give up
-            r = await _post(await _auth_token(force=True))
-    except httpx.HTTPError as e:
-        log.warning("bonvoice call failed: %s", e)
-        raise HTTPException(status_code=502, detail=f"Couldn't reach Bonvoice: {e}")
-
-    if r.status_code >= 300:
-        log.warning("bonvoice rejected the call (%s): %s", r.status_code, r.text[:300])
-        raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {r.text[:200]}")
-
-    # A rejection comes back as HTTP 200 with an error body — e.g.
-    # {"error": "DID is not configured"} — so the status code alone means nothing.
-    # Success looks like {"responseCode": 200, "responseType": "Success", ...}.
-    problem = _rejection_reason(r)
-    if problem:
-        log.warning("bonvoice rejected the call: %s", problem)
-        raise HTTPException(status_code=502, detail=f"Bonvoice rejected the call: {problem}")
-
+    event_id = await place_bridge(
+        rm_phone, lead_phone,
+        {"lead_id": str(req.lead_id), "actor": user.get("email")},
+    )
     log.info("bonvoice call placed by=%s rm=%s lead=%s event=%s",
              user.get("email"), _mask(rm_phone), _mask(lead_phone), event_id)
     return {"status": "ringing", "event_id": event_id, "rm_phone_masked": _mask(rm_phone)}
@@ -273,6 +291,18 @@ async def _persist(body: dict) -> None:
         async with engine.begin() as conn:
             await conn.execute(stmt.on_conflict_do_update(
                 index_elements=[CallLog.call_id, CallLog.leg], set_=updates))
+            # Hangup releases the auto-dialer slot, which is what lets the next lead
+            # ring on that RM's phone. Both legs report a hangup; the WHERE on
+            # status='dialing' makes the second one a no-op.
+            if str(body.get("callType", "")) == CALL_HANGUP and values["event_id"]:
+                await conn.execute(
+                    text("""UPDATE dial_queue
+                               SET status = 'done', ended_at = now(),
+                                   outcome = COALESCE(:outcome, outcome)
+                             WHERE event_id = :eid AND status = 'dialing'"""),
+                    {"eid": values["event_id"],
+                     "outcome": values["status"] or values["agent_status"]},
+                )
     except Exception:  # noqa: BLE001 — the callback was already acked
         log.exception("bonvoice: failed to persist call log")
 

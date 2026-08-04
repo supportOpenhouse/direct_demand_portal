@@ -66,9 +66,27 @@ def test_call_log_filters_bind_every_value():
     clause, params = call_log_filters("98460'; drop table leads --", True)
     assert "drop table" not in clause and clause.startswith(" WHERE ")
     assert clause.count(" AND ") == 1
-    assert params == {"q": "%98460'; drop table leads --%", "answered": True}
+    assert params["q"] == "%98460'; drop table leads --%" and params["answered"] is True
     # answered=False is a real filter, not an absent one
     assert call_log_filters(None, False)[1] == {"answered": False}
+
+
+def test_searching_by_phone_matches_every_stored_format():
+    """Bonvoice reports '9999799588', users.phone holds '919999999999' and leads.phone
+    '+91 99997 99588'. Searching any of those forms has to find the same calls, so the
+    comparison runs on the last 10 digits of both sides."""
+    from app.routers.bonvoice import call_log_filters
+
+    for typed in ("9999799588", "919999799588", "+91 99997 99588", "0 99997 99588"):
+        clause, params = call_log_filters(typed, None)
+        assert params["q10"] == "9999799588", f"{typed} normalised to {params.get('q10')}"
+        assert clause.count("regexp_replace") == 4   # both call numbers, the DID, the lead
+        assert ":q10" in clause and ":q" in clause   # digits OR the plain text search
+    # a name search stays a name search — no digits, no phone comparison
+    clause, params = call_log_filters("Priya", None)
+    assert "q10" not in params and "regexp_replace" not in clause
+    # too short to be a mobile: treated as text, not a truncated number
+    assert "q10" not in call_log_filters("99997", None)[1]
 
 
 # One real row from POST /crm/callrecords/, numbers changed. Everything the mapping

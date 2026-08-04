@@ -60,7 +60,7 @@ export default function CallLog() {
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Outcome" value={conn} options={ANSWERED} onChange={(v) => reset(() => setConn(v))} width={150} />
           <div className="field" style={{ marginBottom: 0, width: 220 }}>
-            <input value={q} placeholder="Search number / lead name…" onChange={(e) => reset(() => setQ(e.target.value))} style={{ padding: "7px 10px", fontSize: 12.5 }} />
+            <input value={q} placeholder="Search phone (any format) / lead name…" onChange={(e) => reset(() => setQ(e.target.value))} style={{ padding: "7px 10px", fontSize: 12.5 }} />
           </div>
           {anyFilter && (
             <button className="btn ghost sm" onClick={() => { setQ(""); setConn(""); setPage(0); }}>Clear</button>

@@ -24,13 +24,13 @@ from uuid import UUID, uuid4
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import desc, select, text
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
-from ..models import CallLog
+from ..models import CallLog, Lead, User
 
 log = logging.getLogger("bonvoice")
 router = APIRouter(tags=["bonvoice"])
@@ -414,6 +414,55 @@ def record_to_callback(rec: dict) -> dict:
             }
 
 
+async def attach_lead_and_actor(mapped: list[dict]) -> int:
+    """Fill in `callBackParams` for pulled records, which carry only phone numbers.
+
+    A call placed from the portal comes back with its lead id echoed; one pulled from
+    the record API doesn't, so the lead is found by number instead — Customer against
+    leads.phone, Agent against users.phone, both compared on their last 10 digits.
+    Returns how many records got a lead.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return 0
+    customers = {p for p in (_digits(m.get("Customer")) for m in mapped) if p}
+    agents = {p for p in (_digits(m.get("Agent")) for m in mapped) if p}
+    leads: dict[str, str] = {}
+    users: dict[str, str] = {}
+    async with engine.connect() as conn:
+        if customers:
+            p10 = func.right(func.regexp_replace(Lead.phone, r"\D", "", "g"), 10)
+            rows = (await conn.execute(
+                select(p10.label("p10"), Lead.id).where(p10.in_(sorted(customers)))
+                # oldest first, so the newest lead on a repeated number wins the key
+                .order_by(Lead.created_at)
+            )).mappings().all()
+            leads = {r["p10"]: str(r["id"]) for r in rows}
+        if agents:
+            u10 = func.right(func.regexp_replace(User.phone, r"\D", "", "g"), 10)
+            rows = (await conn.execute(
+                select(u10.label("p10"), User.email).where(u10.in_(sorted(agents)))
+            )).mappings().all()
+            users = {r["p10"]: r["email"] for r in rows}
+
+    linked = 0
+    for m in mapped:
+        found = {}
+        lead_id = leads.get(_digits(m.get("Customer")))
+        actor = users.get(_digits(m.get("Agent")))
+        if lead_id:
+            found["lead_id"] = lead_id
+            linked += 1
+        if actor:
+            found["actor"] = actor
+        if not found:
+            continue
+        existing = m.get("callBackParams")
+        # an echoed lead id came from the call itself — never overwrite it with a guess
+        m["callBackParams"] = {**found, **existing} if isinstance(existing, dict) else found
+    return linked
+
+
 @router.post("/bonvoice/calls/sync", dependencies=[Depends(require_admin)])
 async def sync_call_records(
     date_from: str = Query(..., alias="from"),   # YYYY-MM-DD
@@ -429,17 +478,15 @@ async def sync_call_records(
     if not get_settings().bonvoice_configured:
         raise HTTPException(status_code=503, detail="Bonvoice isn't configured.")
     records = await fetch_call_records(date_from, date_to, agent)
-    # ponytail: one upsert per record, sequentially. A month is a few thousand
-    # round trips on an admin-triggered button — batch it if that ever gets slow.
-    stored = 0
-    for rec in records:
-        mapped = record_to_callback(rec)
-        if not mapped["callID"]:
-            continue
-        await _persist(mapped)
-        stored += 1
-    log.info("bonvoice: synced %s/%s call records for %s..%s", stored, len(records), date_from, date_to)
-    return {"fetched": len(records), "stored": stored}
+    mapped = [m for m in (record_to_callback(r) for r in records) if m["callID"]]
+    linked = await attach_lead_and_actor(mapped)
+    # ponytail: one upsert per record, sequentially. A month is ~150 round trips on an
+    # admin-triggered button — batch it if a wider range ever gets slow.
+    for m in mapped:
+        await _persist(m)
+    log.info("bonvoice: synced %s/%s call records (%s linked to leads) for %s..%s",
+             len(mapped), len(records), linked, date_from, date_to)
+    return {"fetched": len(records), "stored": len(mapped), "linked": linked}
 
 
 # --- inbound: call logs -------------------------------------------------------
@@ -597,14 +644,29 @@ async def bonvoice_webhook(request: Request):
 CALL_LOG_FROM = "FROM call_logs c LEFT JOIN leads l ON l.id = c.lead_id"
 
 
+def _p10_sql(col: str) -> str:
+    """The last 10 digits of a phone column — the one key every format agrees on.
+    Bonvoice reports '9220633844', users.phone holds '919999999999' and leads.phone
+    '+91 99997 99588'; all three reduce to the same 10 digits."""
+    return rf"right(regexp_replace(coalesce({col}, ''), '\D', '', 'g'), 10)"
+
+
 def call_log_filters(q: str | None, answered: bool | None) -> tuple[str, dict]:
     """WHERE clause + bind params for the call-log list. Split out so the same clause
     drives both the page and its count, and so it's testable without a database."""
     where, params = [], {}
     if q:
-        where.append("(c.source_number ILIKE :q OR c.destination_number ILIKE :q "
-                     "OR c.display_number ILIKE :q OR l.name ILIKE :q)")
+        parts = ["c.source_number ILIKE :q", "c.destination_number ILIKE :q",
+                 "c.display_number ILIKE :q", "l.name ILIKE :q"]
         params["q"] = f"%{q}%"
+        # a search that's really a phone number matches on digits, so pasting
+        # '+91 99997 99588', '919999799588' or '9999799588' all find the same calls
+        q10 = _digits(q)
+        if q10:
+            parts += [f"{_p10_sql(c)} = :q10" for c in
+                      ("c.source_number", "c.destination_number", "c.display_number", "l.phone")]
+            params["q10"] = q10
+        where.append("(" + " OR ".join(parts) + ")")
     if answered is not None:
         where.append("c.answered = :answered")
         params["answered"] = answered

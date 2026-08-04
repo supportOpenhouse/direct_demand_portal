@@ -228,6 +228,27 @@ async def materialize(conn, campaign_id, rules: dict) -> int:
 
 # ── the tick ─────────────────────────────────────────────────────────────────
 
+def window_minutes(raw: str, fallback: int) -> int:
+    """'HH:MM' → minutes past midnight. A malformed value falls back to the caller's
+    bound, matching _in_window's "a broken window means always on"."""
+    try:
+        h, m = (int(x) for x in str(raw).split(":")[:2])
+    except (ValueError, TypeError):
+        return fallback
+    return h * 60 + m
+
+
+def windows_overlap(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
+    """Do two calling windows share any minute of the day?
+
+    Half-open on purpose: a campaign ending at 13:00 and one starting at 13:00 do
+    not overlap. _in_window has no midnight wrap (start <= now <= end), so neither
+    does this."""
+    a0, a1 = window_minutes(a_start, 0), window_minutes(a_end, 24 * 60)
+    b0, b1 = window_minutes(b_start, 0), window_minutes(b_end, 24 * 60)
+    return a0 < b1 and b0 < a1
+
+
 def _in_window(start: str, end: str) -> bool:
     """Calling hours are IST wall-clock. A blank or malformed window means always on."""
     try:

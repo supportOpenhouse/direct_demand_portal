@@ -15,6 +15,7 @@ from ..core.auth import require_admin
 from ..db import neon_engine
 from ..services.dialer import (
     FIELDS, OPS, aliases_for, assign_owners, compile_rules, count_matching, materialize,
+    windows_overlap,
 )
 
 log = logging.getLogger("dialer")
@@ -30,6 +31,35 @@ def _engine():
     if engine is None:
         raise HTTPException(status_code=503, detail="database not configured")
     return engine
+
+
+async def _assert_no_rm_conflict(conn, rms: list[str], window_start: str, window_end: str,
+                                 exclude_id=None) -> None:
+    """Refuse to run a campaign that shares an RM, at overlapping hours, with one
+    that's already running.
+
+    This has to be enforced here because the scheduler can't see it: `_tick_campaign`
+    counts an RM's live calls with `WHERE campaign_id = :cid`, so two running
+    campaigns would each judge the same RM idle and Click2Call would ring their
+    handset twice at once — the second call lands on a busy line and the queue item
+    burns an attempt for nothing.
+    """
+    rows = (await conn.execute(text(
+        "SELECT id, name, rms, window_start, window_end FROM dial_campaigns "
+        "WHERE status = 'running'"))).mappings().all()
+    wanted = {e.lower() for e in rms}
+    for r in rows:
+        if exclude_id is not None and r["id"] == exclude_id:
+            continue
+        shared = sorted(wanted & {str(e).lower() for e in (r["rms"] or [])})
+        if not shared:
+            continue
+        if windows_overlap(window_start, window_end, r["window_start"], r["window_end"]):
+            raise HTTPException(status_code=409, detail=(
+                f"{shared[0]} is already dialling on '{r['name']}' "
+                f"({r['window_start']}–{r['window_end']}). Pause that campaign, drop that RM, "
+                f"or pick a calling window that doesn't overlap."
+            ))
 
 
 class Rules(BaseModel):
@@ -156,6 +186,8 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
         unknown = [e for e in payload.rms if e.lower() not in known]
         if unknown:
             raise HTTPException(status_code=400, detail=f"not an active RM: {unknown[0]}")
+        if payload.start:  # a draft dials nothing, so it can't conflict yet
+            await _assert_no_rm_conflict(conn, payload.rms, payload.window_start, payload.window_end)
 
         cid = (await conn.execute(text("""
             INSERT INTO dial_campaigns
@@ -202,6 +234,18 @@ async def campaign_action(campaign_id: UUID, action: str, _: dict = Depends(requ
         raise HTTPException(status_code=400, detail=f"unknown action {action!r}")
     engine = _engine()
     async with engine.begin() as conn:
+        # Resuming is starting: the same conflict has to be caught here, or you could
+        # create a draft (or pause one) and walk it into an overlap the create path
+        # would have refused.
+        if status == "running":
+            me = (await conn.execute(text(
+                "SELECT rms, window_start, window_end FROM dial_campaigns WHERE id = :id"),
+                {"id": campaign_id})).mappings().first()
+            if me is None:
+                raise HTTPException(status_code=404, detail="campaign not found")
+            await _assert_no_rm_conflict(conn, [str(e) for e in (me["rms"] or [])],
+                                         me["window_start"], me["window_end"],
+                                         exclude_id=campaign_id)
         updated = (await conn.execute(text("""
             UPDATE dial_campaigns
                SET status = :status,

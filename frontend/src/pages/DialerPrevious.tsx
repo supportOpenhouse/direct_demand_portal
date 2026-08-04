@@ -6,11 +6,36 @@
    call_logs.campaign_id, stamped when the callback lands — see routers/bonvoice.py. */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useCallLog, useCampaign, useCampaigns, callDuration, formatDateTime } from "../lib/queries";
+import {
+  useCallLog, useCampaign, useCampaignAction, useCampaigns, useDialerFields,
+  callDuration, formatDateTime,
+} from "../lib/queries";
 import RecordingPlayer from "../components/RecordingPlayer";
-import { CampaignRow } from "../lib/api";
+import { useToast } from "../components/Toast";
+import { CampaignFeedRow, CampaignRow, DialerField, RuleNode } from "../lib/api";
 
 const PAGE = 50;
+
+/* ── live feed row (moved here with the live panel) ─────────────────────── */
+const outcomeColor = (r: CampaignFeedRow) =>
+  r.status === "dialing" ? "var(--amber)"
+    : r.status === "failed" ? "var(--coral)"
+    : r.answered ? "var(--emerald)" : "var(--muted)";
+
+/* A row only leaves "dialing" when Bonvoice posts the hangup callback. If that never
+   arrives the call looks stuck ringing until the server reaps it minutes later — so
+   say what's actually happening instead of showing a stale state. */
+const RINGING_GRACE_MS = 90_000;
+
+const outcomeText = (r: CampaignFeedRow) => {
+  if (r.status === "failed") return r.detail || "Not placed";
+  if (r.status !== "dialing") return r.answered ? "Connected" : (r.outcome || "No answer");
+  const ringingFor = r.dialed_at ? Date.now() - new Date(r.dialed_at).getTime() : 0;
+  return ringingFor > RINGING_GRACE_MS ? "Ringing… (no hangup callback yet)" : "Ringing…";
+};
+
+const hhmm = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "";
 
 const STATUS_TONE: Record<string, string> = {
   running: "var(--emerald)", paused: "var(--amber)",
@@ -21,6 +46,53 @@ const STRATEGY_LABEL: Record<string, string> = {
   assigned: "Assigned leads", round_robin: "Round-robin", least_load: "Least load",
 };
 
+/* How each operator reads in prose. The builder shows a <select>; here the rule is
+   history, so it should read as a sentence rather than a form control. */
+const OP_PHRASE: Record<string, string> = {
+  "IN": "is any of", "NOT IN": "is none of", "BETWEEN": "between", "IS": "is",
+};
+
+/* A field with no value set compiles to TRUE (see compile_rules) — i.e. it filters
+   nothing. Saying "any" is the honest rendering; an empty chip list looks broken. */
+function condText(node: Extract<RuleNode, { type: "condition" }>, f?: DialerField) {
+  const label = f?.label || node.field.replace(/_/g, " ").replace(/^./, (s) => s.toUpperCase());
+  const v = node.value;
+  if (Array.isArray(v)) {
+    if (node.op === "BETWEEN") {
+      const [a, b] = v as string[];
+      return { label, phrase: a || b ? `between ${a || "…"} and ${b || "…"}` : "any date", chips: [] };
+    }
+    return v.length
+      ? { label, phrase: OP_PHRASE[node.op] || node.op, chips: v as string[] }
+      : { label, phrase: "any value", chips: [] };
+  }
+  if (typeof v === "boolean") return { label, phrase: `is ${v ? "yes" : "no"}`, chips: [] };
+  return { label, phrase: `${node.op} ${v}`, chips: [] };
+}
+
+function RuleView({ node, fields }: { node: RuleNode; fields: DialerField[] }) {
+  if (node.type === "condition") {
+    const { label, phrase, chips } = condText(node, fields.find((f) => f.key === node.field));
+    return (
+      <div className="rv-cond">
+        <b>{label}</b> <span className="rv-op">{phrase}</span>
+        {chips.map((c) => <span key={c} className="rv-chip">{c}</span>)}
+      </div>
+    );
+  }
+  if (!node.children.length) {
+    return <div className="rv-cond"><span className="rv-op">No conditions — matched every lead.</span></div>;
+  }
+  return (
+    <div className="rv-group">
+      <div className="rv-comb">Match {node.combinator === "AND" ? "all" : "any"} of</div>
+      <div className="rv-kids">
+        {node.children.map((c) => <RuleView key={c.id} node={c} fields={fields} />)}
+      </div>
+    </div>
+  );
+}
+
 function Tile({ n, label, hint }: { n: number | string; label: string; hint?: string }) {
   return (
     <div className="dl-stat" title={hint}>
@@ -30,7 +102,13 @@ function Tile({ n, label, hint }: { n: number | string; label: string; hint?: st
 }
 
 export default function DialerPrevious() {
+  const toast = useToast();
   const campaigns = useCampaigns();
+  const action = useCampaignAction();
+  // Field labels for the rule tree ("stage" → "Lead stage") and RM display names for
+  // the live panel. Cached under the same key the scheduler uses — one request total.
+  const dialerMeta = useDialerFields();
+  const fields = dialerMeta.data?.fields ?? [];
   const [activeId, setActiveId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
 
@@ -57,6 +135,21 @@ export default function DialerPrevious() {
 
   const pick = (id: string) => { setActiveId(id); setPage(0); };
 
+  // A campaign is "live" until it's stopped: paused still holds a queue and can be
+  // resumed, so its panel and controls stay up.
+  const isLive = c?.status === "running" || c?.status === "paused";
+  const running = c?.status === "running";
+  const perRM = detail.data?.per_rm || {};
+  const feed = detail.data?.feed || [];
+  const rmName = Object.fromEntries((dialerMeta.data?.rms || []).map((r) => [r.email, r.name]));
+
+  const act = (a: "start" | "pause" | "stop") =>
+    activeId && action.mutate({ id: activeId, action: a }, {
+      // The server refuses a resume that would double-book an RM (409) — surface
+      // that reason rather than leaving the button looking broken.
+      onError: (e: any) => toast(e.message, "gold", "⚠"),
+    });
+
   if (campaigns.isLoading) return <div className="card dl-empty" style={{ padding: 28 }}>Loading campaigns…</div>;
   if (campaigns.isError) {
     return <div className="card dl-empty" style={{ padding: 28 }}>
@@ -74,6 +167,62 @@ export default function DialerPrevious() {
   return (
     <div className="dl-layout" style={{ gridTemplateColumns: "260px 1fr" }}>
       <aside className="dl-side">
+        {/* Only while a campaign is actually live — a finished one has its totals in
+            the Summary card, and a permanent row of zeros is just furniture. */}
+        {isLive && (
+          <>
+            <div className="card dl-livecard">
+              <div className="dl-livehead">
+                <span className={"dl-livedot" + (running ? " on" : "")} />
+                {running ? "Dialing live" : "Campaign paused"}
+              </div>
+              <div className="dl-stats">
+                <div className="dl-stat"><b>{stats?.pending ?? 0}</b><span>In queue</span></div>
+                <div className="dl-stat"><b>{stats?.live ?? 0}</b><span>On call</span></div>
+                <div className="dl-stat"><b>{(stats?.done ?? 0) + (stats?.failed ?? 0)}</b><span>Done</span></div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="dl-eyebrow">Relationship managers</div>
+              <div className="dl-rmlist">
+                {(c?.rms || []).map((email) => {
+                  const s = perRM[email];
+                  const onCall = !!s?.live;
+                  return (
+                    <div key={email} className="dl-rmrow">
+                      <span className={"dl-statdot" + (onCall ? " pulse" : "")}
+                        style={{ background: onCall ? "var(--amber)" : "var(--emerald)" }} />
+                      <div className="dl-rmmeta">
+                        <b>{rmName[email] || email}</b>
+                        <span>{onCall ? "On a call" : running ? "Waiting for the next lead" : "Idle"}</span>
+                      </div>
+                      <span className="dl-donebadge">{s?.done ?? 0}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="dl-eyebrow">Recent calls</div>
+              <div className="dl-feed">
+                {!feed.length && <div className="dl-empty">No calls yet.</div>}
+                {feed.map((r) => (
+                  <div key={r.lead_id + (r.dialed_at || "")} className="dl-feedrow">
+                    <span className="dl-feeddot" style={{ background: outcomeColor(r) }} />
+                    <div className="dl-rmmeta">
+                      <b>{r.lead_name || r.society || "Lead"}</b>
+                      <span>{rmName[r.rm_email || ""] || r.rm_email} · {outcomeText(r)}</span>
+                    </div>
+                    <span className="dl-feedtime">{hhmm(r.ended_at || r.dialed_at)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
         <div className="card">
           <div className="dl-eyebrow">Campaigns</div>
           <div className="dl-rmlist">
@@ -101,9 +250,18 @@ export default function DialerPrevious() {
               <div className="dl-eyebrow">Summary</div>
               <h2 className="dl-cardtitle">{c?.name || "—"}</h2>
             </div>
-            <span className="dl-count">
-              {c?.started_at ? formatDateTime(c.started_at) : "never started"}
-            </span>
+            {isLive ? (
+              <span style={{ display: "flex", gap: 6 }}>
+                <button className="btn sm" onClick={() => act(running ? "pause" : "start")}>
+                  {running ? "Pause" : "Resume"}
+                </button>
+                <button className="btn sm" onClick={() => act("stop")}>Stop</button>
+              </span>
+            ) : (
+              <span className="dl-count">
+                {c?.started_at ? formatDateTime(c.started_at) : "never started"}
+              </span>
+            )}
           </div>
 
           <div className="dl-stats" style={{ marginBottom: 12 }}>
@@ -126,7 +284,19 @@ export default function DialerPrevious() {
 
         <section className="card">
           <div className="dl-cardhead">
-            <div><div className="dl-eyebrow">Settings</div><h2 className="dl-cardtitle">How it was set up</h2></div>
+            <div><div className="dl-eyebrow">Step 1</div><h2 className="dl-cardtitle">Who got called</h2></div>
+            <span className="dl-count"><b>{stats?.total ?? 0}</b> queued</span>
+          </div>
+          {c ? <RuleView node={c.rules} fields={fields} />
+             : <div className="dl-empty">—</div>}
+          <p className="dl-note">
+            Leads with no phone number, and test rows, were never dialled whatever the rules say.
+          </p>
+        </section>
+
+        <section className="card">
+          <div className="dl-cardhead">
+            <div><div className="dl-eyebrow">Step 2 &amp; 3</div><h2 className="dl-cardtitle">How it was set up</h2></div>
           </div>
           <div className="dl-settings">
             <label className="dl-field"><span>Who called</span>

@@ -831,8 +831,11 @@ a.nav-item{text-decoration:none}
 .dl-matchchip{font-size:12px;font-weight:600;color:var(--ink-2);background:var(--panel-2);
   border:1px solid var(--line);padding:7px 12px;border-radius:20px;font-family:"Spline Sans Mono"}
 
-.dl-layout{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
-@media(max-width:1100px){.dl-layout{grid-template-columns:1fr}}
+/* One column by default — Schedule Campaign is the form on its own now that the
+   live panel moved to Previous Campaigns, and a hardcoded 320px sidebar column
+   would leave a hole. Previous Campaigns sets its own two-column template. */
+.dl-layout{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
+@media(max-width:1100px){.dl-layout{grid-template-columns:1fr!important}}
 .dl-main{display:flex;flex-direction:column;gap:16px}
 .dl-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:0}
 .dl-main .card,.dl-side .card{padding:18px}
@@ -915,6 +918,21 @@ a.nav-item{text-decoration:none}
 .dl-stat{display:flex;flex-direction:column;gap:2px}
 /* Default to ink: these tiles are reused on the white Previous Campaigns summary,
    where the old hardcoded #fff rendered the numbers invisible. */
+/* Read-only rule tree on Previous Campaigns. The scheduler renders this same tree
+   as editable controls; here it's history, so it reads as an indented sentence. */
+.rv-group{font-size:12.5px}
+.rv-comb{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px}
+.rv-kids{display:flex;flex-direction:column;gap:7px;padding-left:12px;border-left:2px solid var(--line)}
+.rv-kids .rv-group{padding:8px 0 2px}
+.rv-cond{font-size:12.5px;color:var(--ink-2);line-height:1.9}
+.rv-cond b{color:var(--ink);font-weight:600}
+.rv-op{color:var(--muted)}
+.rv-chip{
+  display:inline-block;margin-left:5px;padding:2px 8px;border-radius:6px;
+  background:var(--panel-2);border:1px solid var(--line);
+  font-family:"Spline Sans Mono";font-size:11.5px;color:var(--ink-2);
+}
+
 .dl-stat b{font-size:24px;font-weight:700;color:var(--ink);font-family:"Spline Sans Mono"}
 .dl-stat span{font-size:10.5px;color:var(--muted)}
 .dl-livecard .dl-stat b{color:#fff}

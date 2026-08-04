@@ -78,6 +78,22 @@ def test_assigned_strategy_matches_every_way_a_name_is_written():
     assert aliases_for("  ", "") == []
 
 
+def test_calling_windows_overlap_is_half_open():
+    """Two running campaigns may not share an RM at overlapping hours — the scheduler
+    counts live calls per campaign, so both would ring the same handset at once."""
+    from app.services.dialer import windows_overlap
+
+    assert windows_overlap("10:00", "19:00", "11:00", "12:00")   # fully contained
+    assert windows_overlap("10:00", "12:00", "11:00", "14:00")   # partial
+    assert windows_overlap("10:00", "19:00", "10:00", "19:00")   # identical
+    assert not windows_overlap("10:00", "13:00", "13:00", "18:00")  # touching ≠ overlapping
+    assert not windows_overlap("10:00", "12:00", "14:00", "16:00")  # disjoint
+    # a malformed window means "always on" (matching _in_window), so it conflicts
+    # with everything rather than silently letting a double-dial through
+    assert windows_overlap("", "", "14:00", "16:00")
+    assert windows_overlap("garbage", "nonsense", "00:00", "00:01")
+
+
 class _FakeConn:
     def __init__(self, calls):
         self.calls = calls

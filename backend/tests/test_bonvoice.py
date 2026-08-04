@@ -71,26 +71,67 @@ def test_call_log_filters_bind_every_value():
     assert call_log_filters(None, False)[1] == {"answered": False}
 
 
+# One real row from POST /crm/callrecords/, numbers changed. Everything the mapping
+# has to cope with is in here: 12-hour local timestamps, no EndTime, no leg, and the
+# two parties named Customer/DisplayNumber instead of source/destination.
+PULLED_RECORD = {
+    "Agent": "09810925822", "eventId": None, "DisplayNumber": "8065453090",
+    "Customer": "9220633844", "StartTime": "2026-08-04 12:43:30 PM",
+    "DataSource": "Bonvoice", "Status": "ANSWERED", "CallDirection": "outgoing",
+    "CallDuration": "3min 12sec",
+    "callID": "1785827610.7806364-8065453090-9220633844-20260804-124330",
+    "CallRecord": "https://backend.pbx.bonvoice.com/externalapi/v1/8/downloadvoice/x/",
+}
+
+
 def test_pulled_record_maps_onto_the_callback_shape():
-    """/crm/callrecords/ describes the same call as the webhook but with its own
-    casing and no lifecycle callType — the mapping is what lets both feeds upsert
-    onto the same row."""
+    """/crm/callrecords/ describes the same call as the webhook with different names
+    and no lifecycle callType — the mapping is what lets both feeds upsert one row."""
     from app.routers.bonvoice import record_to_callback
 
-    rec = {"callID": "c99", "source": "9846098460", "destination": "9812345678",
-           "status": "ANSWERED", "startTime": "2026-08-01T10:00:00",
-           "endTime": "2026-08-01T10:02:00", "resourceurl": "https://rec/c99.mp3",
-           "someUnmappedField": "kept"}
-    m = record_to_callback(rec)
-    assert m["callID"] == "c99"
-    assert m["Leg"] == "A"                      # records don't name a leg
-    assert m["SourceNumber"] == "9846098460" and m["DestinationNumber"] == "9812345678"
-    assert m["ResourceURL"] == "https://rec/c99.mp3"   # the recording, lowercased
-    assert m["StartTime"] and m["EndTime"]
-    assert m["callType"] == "1"                 # ANSWERED → connected
-    assert m["someUnmappedField"] == "kept"     # rides along into raw
+    m = record_to_callback(PULLED_RECORD)
+    assert m["callID"] == PULLED_RECORD["callID"]
+    assert m["Leg"] == "A"                          # records don't name a leg
+    # outbound: we dial out from the DID to the customer; inbound is the reverse
+    assert (m["SourceNumber"], m["DestinationNumber"]) == ("8065453090", "9220633844")
+    inbound = record_to_callback({**PULLED_RECORD, "CallDirection": "incoming"})
+    assert (inbound["SourceNumber"], inbound["DestinationNumber"]) == ("9220633844", "8065453090")
+    assert m["ResourceURL"] == PULLED_RECORD["CallRecord"]
+    assert m["callType"] == "1"                     # ANSWERED → connected
+    assert m["DataSource"] == "Bonvoice"            # unmapped fields ride along into raw
+
+
+def test_pulled_timestamps_are_read_as_indian_local_time():
+    """'2026-08-04 12:43:30 PM' is IST and unlabelled — stored naive it would land in
+    a timestamptz column as UTC and read 5½ hours early. End time is start + duration,
+    the record carrying no EndTime of its own."""
+    from app.routers.bonvoice import record_to_callback
+
+    m = record_to_callback(PULLED_RECORD)
+    assert m["StartTime"] == "2026-08-04T12:43:30+05:30"
+    assert m["EndTime"] == "2026-08-04T12:46:42+05:30"   # +3min 12sec
+
+
+def test_pulled_record_edge_cases():
+    from app.routers.bonvoice import record_to_callback
+
     # a missed call must not synthesise "answered"
-    assert record_to_callback({"callID": "c1", "status": "NO ANSWER"})["callType"] == ""
+    assert record_to_callback({**PULLED_RECORD, "Status": "NOANSWER"})["callType"] == ""
+    # a zero-second call has a recording url that serves "File not exist"
+    assert record_to_callback({**PULLED_RECORD, "CallDuration": "0 min 0sec"})["ResourceURL"] is None
+    # nothing parseable → no invented timestamps, and the row still maps
+    bare = record_to_callback({"callID": "c1"})
+    assert bare["StartTime"] is None and bare["EndTime"] is None and bare["Leg"] == "A"
+
+
+def test_call_records_envelope_is_unwrapped():
+    """The response is {"call_count": n, "call_logs": [...]} — miss that key and a
+    working sync silently stores nothing."""
+    from app.routers.bonvoice import log_records
+
+    assert log_records({"call_count": 2, "call_logs": [PULLED_RECORD, PULLED_RECORD]}) == \
+        [PULLED_RECORD, PULLED_RECORD]
+    assert log_records({"call_count": 0, "call_logs": []}) == []
 
 
 def test_webhook_always_acks_200():

@@ -17,7 +17,7 @@ import json
 import logging
 import re
 import secrets
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
@@ -35,6 +35,7 @@ from ..models import CallLog
 log = logging.getLogger("bonvoice")
 router = APIRouter(tags=["bonvoice"])
 
+IST = timezone(timedelta(hours=5, minutes=30))  # the PBX reports local time, unlabelled
 AUTOCALL_BRIDGE = "3"  # autocallType for a two-leg bridged call (4 = TTS, 5 = voicebot)
 CALL_ANSWERED = "1"    # callType on the lifecycle callback
 CALL_HANGUP = "2"
@@ -243,7 +244,8 @@ def log_records(body) -> list[dict]:
         return [r for r in body if isinstance(r, dict)]
     if not isinstance(body, dict):
         return []
-    for key in ("data", "result", "results", "records", "logs", "calls"):
+    # call_logs is what /crm/callrecords/ actually uses (alongside a call_count)
+    for key in ("call_logs", "callLogs", "data", "result", "results", "records", "logs", "calls"):
         inner = body.get(key)
         if isinstance(inner, list):
             return [r for r in inner if isinstance(r, dict)]
@@ -305,20 +307,46 @@ async def fetch_call_state(event_id: str) -> tuple[bool, bool, str | None] | Non
     return read_call_state(records)
 
 
+def _records_base() -> str:
+    """The call-record API only answers on the `backend.` host — the bare pbx host
+    that click-to-call uses returns nginx's 405 for it. Derived rather than configured
+    so one BONVOICE_BASE_URL keeps working for both."""
+    base = get_settings().bonvoice_base
+    return base if "//backend." in base else base.replace("//", "//backend.", 1)
+
+
+def _pbx_dt(value) -> datetime | None:
+    """Timestamps come back as '2026-08-04 11:04:51 AM' — 12-hour, no timezone, and
+    Indian local time. Naive would land in the DB as UTC and read 5½ hours early."""
+    try:
+        return datetime.strptime(str(value).strip(), "%Y-%m-%d %I:%M:%S %p").replace(tzinfo=IST)
+    except (ValueError, TypeError):
+        return _dt(value)
+
+
+def _duration_secs(value) -> int | None:
+    """'0 min 0sec' / '3 min 12 sec' → seconds. There's no EndTime in a pulled record,
+    so this is the only way to know when the call finished."""
+    m = re.search(r"(?:(\d+)\s*min)?\s*(?:(\d+)\s*sec)?", str(value or ""))
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    return int(m.group(1) or 0) * 60 + int(m.group(2) or 0)
+
+
 async def fetch_call_records(date_from: str, date_to: str, agent: str | None = None) -> list[dict]:
     """Every call record Bonvoice holds for a date range — POST /crm/callrecords/.
 
     `agent` narrows it to one extension; omitted, the account's whole history comes
     back. Dates are plain YYYY-MM-DD, as in their docs.
     """
-    s = get_settings()
     payload = {"from": date_from, "to": date_to}
     if agent:
         payload["agent"] = agent
+    url = f"{_records_base()}/crm/callrecords/"
 
     async def _post(tok: str) -> httpx.Response:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            return await client.post(f"{s.bonvoice_base}/crm/callrecords/", json=payload,
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            return await client.post(url, json=payload,
                                      headers={"Authorization": f"Token {tok}"})
 
     r = await _post(await _auth_token())
@@ -343,28 +371,46 @@ async def fetch_call_records(date_from: str, date_to: str, agent: str | None = N
 def record_to_callback(rec: dict) -> dict:
     """Reshape one /crm/callrecords/ row into the callback shape `_persist` upserts.
 
-    The two feeds describe the same call with different casing and, for a pulled row,
-    no lifecycle `callType` — so connectedness is read off the status text instead.
+    A pulled record is one row per *conversation*, not per leg, and it names the two
+    parties as Customer (the other person) and DisplayNumber (our DID) rather than
+    source/destination — so which is which depends on CallDirection. It carries no
+    lifecycle callType and no EndTime either: connectedness comes off the status text,
+    and the end is start + CallDuration.
+
     Unmapped fields ride along untouched and land in `raw`.
     """
     _, answered, status = read_call_state([rec])
+    customer = _field(rec, "Customer", "SourceNumber", "DestinationNumber")
+    did = _field(rec, "DisplayNumber", "did")
+    direction = str(_field(rec, "CallDirection", "Direction", "direction") or "")
+    inbound = direction.lower().startswith("in")
+    start = _pbx_dt(_field(rec, "StartTime", "startTime", "start_time", "callDate"))
+    secs = _duration_secs(_field(rec, "CallDuration", "Duration"))
+    end = _pbx_dt(_field(rec, "EndTime", "endTime", "end_time"))
+    if end is None and start and secs is not None:
+        end = start + timedelta(seconds=secs)
     return {**rec,
             "callID": _field(rec, "callID", "call_id", "uniqueid", "uniqueId"),
+            # records don't split legs; 'A' merges with the caller leg a callback wrote
             "Leg": _field(rec, "Leg", "leg") or "A",
             "eventID": _field(rec, "eventID", "event_id"),
             "callBackParams": _field(rec, "callBackParams", "callback_params"),
-            "Direction": _field(rec, "Direction", "direction", "callType_desc"),
-            "SourceNumber": _field(rec, "SourceNumber", "source", "caller", "from"),
-            "DestinationNumber": _field(rec, "DestinationNumber", "destination", "callee", "to"),
-            "DisplayNumber": _field(rec, "DisplayNumber", "did", "displayNumber"),
+            "Direction": direction or None,
+            "SourceNumber": customer if inbound else did,
+            "DestinationNumber": did if inbound else customer,
+            "DisplayNumber": did,
             "Status": status or _field(rec, "Status", "callStatus", "disposition"),
-            "AgentStatus": _field(rec, "AgentStatus", "agentStatus"),
+            "AgentStatus": _field(rec, "AgentStatus", "agentStatus", "Agent"),
             # synthesised: `answered` is OR-ed into the row, so a false here can never
             # unset what a live callback already recorded
             "callType": CALL_ANSWERED if answered else "",
-            "StartTime": _field(rec, "StartTime", "startTime", "start_time", "callDate"),
-            "EndTime": _field(rec, "EndTime", "endTime", "end_time"),
-            "ResourceURL": _field(rec, "ResourceURL", "recordingURL", "recording_url"),
+            "StartTime": start.isoformat() if start else None,
+            "EndTime": end.isoformat() if end else None,
+            # their field for the recording is CallRecord; the callback calls it
+            # ResourceURL. A zero-second call gets a url too, but fetching it answers
+            # "File not exist" — so drop it rather than hand the page a dead player.
+            "ResourceURL": None if secs == 0 else
+                _field(rec, "CallRecord", "ResourceURL", "recordingURL", "recording_url"),
             }
 
 

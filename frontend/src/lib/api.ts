@@ -468,7 +468,8 @@ export interface CampaignRow {
   pending: number;
   live: number;
   completed: number;
-  total: number;        // leads queued
+  total: number;        // every queue row, incl. leads skipped as not-in-pool
+  targeted: number;     // leads the campaign was actually pointed at
   unique_leads: number; // leads actually dialled at least once
   total_calls: number;  // sum of attempts — higher than unique_leads once retries run
   connected: number;
@@ -508,7 +509,8 @@ export interface CampaignDetail {
   };
   stats: {
     pending: number; live: number; done: number; failed: number; skipped: number;
-    total: number;        // leads queued
+    total: number;        // every queue row, incl. leads skipped as not-in-pool
+    targeted: number;     // leads the campaign was actually pointed at
     unique_leads: number; // leads dialled at least once
     total_calls: number;  // sum of attempts — exceeds unique_leads once retries run
     connected: number;

@@ -282,22 +282,28 @@ export default function DialerPrevious() {
           )}
         </section>
 
+        {/* All three builder steps in one card — as a record of what was asked for,
+            they read as one instruction, not three separate settings screens. */}
         <section className="card">
           <div className="dl-cardhead">
-            <div><div className="dl-eyebrow">Step 1</div><h2 className="dl-cardtitle">Who got called</h2></div>
-            <span className="dl-count"><b>{stats?.total ?? 0}</b> queued</span>
+            <div>
+              <div className="dl-eyebrow">Setup</div>
+              <h2 className="dl-cardtitle">Campaign instructions</h2>
+            </div>
+            {/* `targeted`, not `total`: under the 'assigned' strategy the queue holds
+                every rule match and then skips the ones nobody in the pool owns, so
+                `total` reported 1727 for a campaign aimed at one RM's 4 leads. */}
+            <span className="dl-count"><b>{stats?.targeted ?? 0}</b> targeted leads</span>
           </div>
+
+          <div className="dl-substep">Who to call</div>
           {c ? <RuleView node={c.rules} fields={fields} />
              : <div className="dl-empty">—</div>}
           <p className="dl-note">
             Leads with no phone number, and test rows, were never dialled whatever the rules say.
           </p>
-        </section>
 
-        <section className="card">
-          <div className="dl-cardhead">
-            <div><div className="dl-eyebrow">Step 2 &amp; 3</div><h2 className="dl-cardtitle">How it was set up</h2></div>
-          </div>
+          <div className="dl-substep divider">Who calls them, and how fast</div>
           <div className="dl-settings">
             <label className="dl-field"><span>Who called</span>
               <input className="dl-input" disabled

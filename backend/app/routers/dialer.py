@@ -14,8 +14,8 @@ from sqlalchemy import text
 from ..core.auth import require_admin
 from ..db import neon_engine
 from ..services.dialer import (
-    FIELDS, OPS, aliases_for, assign_owners, compile_rules, count_matching, materialize,
-    windows_overlap,
+    FIELDS, OPS, UNOWNED_DETAIL, aliases_for, assign_owners, compile_rules, count_matching,
+    materialize, windows_overlap,
 )
 
 log = logging.getLogger("dialer")
@@ -153,6 +153,14 @@ async def list_campaigns(_: dict = Depends(require_admin)):
                    count(q.id) FILTER (WHERE q.status = 'dialing')            AS live,
                    count(q.id) FILTER (WHERE q.status IN ('done','failed'))   AS completed,
                    count(q.id)                                                AS total,
+                   -- what the campaign was actually pointed at. Under 'assigned' the
+                   -- queue holds every rule match, then the ones nobody in the pool
+                   -- owns are skipped — those were never targeted, so counting them
+                   -- reported 1727 for a campaign aimed at one RM's 4 leads. Rows
+                   -- skipped by Stop still count: they were targeted, just not reached.
+                   count(q.id) FILTER (
+                       WHERE q.status <> 'skipped' OR q.detail IS DISTINCT FROM :unowned
+                   )                                                          AS targeted,
                    -- with retries on, calls > leads: one queue row can be dialled
                    -- max_attempts times, so `attempts` is the only honest call count
                    count(q.id) FILTER (WHERE q.attempts > 0)                  AS unique_leads,
@@ -160,7 +168,7 @@ async def list_campaigns(_: dict = Depends(require_admin)):
                    count(q.id) FILTER (WHERE q.answered)                      AS connected
               FROM dial_campaigns c LEFT JOIN dial_queue q ON q.campaign_id = c.id
              GROUP BY c.id ORDER BY c.created_at DESC LIMIT 50
-        """))).mappings().all()
+        """), {"unowned": UNOWNED_DETAIL})).mappings().all()
     return {"items": [dict(r) for r in rows]}
 
 
@@ -276,13 +284,19 @@ async def campaign_detail(campaign_id: UUID, _: dict = Depends(require_admin)):
                    count(*) FILTER (WHERE status = 'failed')            AS failed,
                    count(*) FILTER (WHERE status = 'skipped')           AS skipped,
                    count(*)                                             AS total,
-                   -- `total` counts queued leads; with max_attempts > 1 a lead can be
-                   -- rung several times, so these two differ and both matter
+                   -- leads this campaign was pointed at: every rule match lands in the
+                   -- queue, but under 'assigned' the ones nobody in the pool owns are
+                   -- skipped and were never really targeted. Stop-skipped rows do count.
+                   count(*) FILTER (
+                       WHERE status <> 'skipped' OR detail IS DISTINCT FROM :unowned
+                   )                                                    AS targeted,
+                   -- with max_attempts > 1 a lead can be rung several times, so leads
+                   -- and calls diverge and both matter
                    count(*) FILTER (WHERE attempts > 0)                 AS unique_leads,
                    COALESCE(sum(attempts), 0)                           AS total_calls,
                    count(*) FILTER (WHERE answered)                     AS connected
               FROM dial_queue WHERE campaign_id = :id"""),
-            {"id": campaign_id})).mappings().first()
+            {"id": campaign_id, "unowned": UNOWNED_DETAIL})).mappings().first()
         per_rm = (await conn.execute(text("""
             SELECT q.rm_email,
                    count(*) FILTER (WHERE q.status = 'dialing')          AS live,

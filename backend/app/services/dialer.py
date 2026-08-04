@@ -182,6 +182,16 @@ def aliases_for(name: str | None, assignment_name: str | None) -> list[str]:
     return sorted(out)
 
 
+"""Why a queue row was skipped before anyone could dial it.
+
+Two different things set status='skipped': this (the lead belongs to nobody in the
+pool, so it was never really part of the campaign) and Stop (it *was* targeted, we
+just never reached it). Counting them together made a 4-lead test campaign report
+1727 targeted, so the reason has to be distinguishable — hence a shared constant
+rather than the literal repeated in the stats queries."""
+UNOWNED_DETAIL = "not assigned to anyone in this pool"
+
+
 async def assign_owners(conn, campaign_id, owners: list[tuple[str, list[str]]]) -> int:
     """Strategy 'assigned': stamp each queued lead with the RM it already belongs to.
 
@@ -201,9 +211,9 @@ async def assign_owners(conn, campaign_id, owners: list[tuple[str, list[str]]]) 
         )
     skipped = await conn.execute(
         text("""UPDATE dial_queue
-                   SET status = 'skipped', detail = 'not assigned to anyone in this pool'
+                   SET status = 'skipped', detail = :unowned
                  WHERE campaign_id = :cid AND status = 'pending' AND rm_email IS NULL"""),
-        {"cid": campaign_id},
+        {"cid": campaign_id, "unowned": UNOWNED_DETAIL},
     )
     return skipped.rowcount or 0
 

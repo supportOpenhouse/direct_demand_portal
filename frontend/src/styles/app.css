@@ -918,6 +918,14 @@ a.nav-item{text-decoration:none}
 .dl-stat{display:flex;flex-direction:column;gap:2px}
 /* Default to ink: these tiles are reused on the white Previous Campaigns summary,
    where the old hardcoded #fff rendered the numbers invisible. */
+/* Section headings inside the merged "Campaign instructions" card — enough to
+   separate the three builder steps without splitting them back into three cards. */
+.dl-substep{
+  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);font-weight:700;margin-bottom:9px;
+}
+.dl-substep.divider{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
+
 /* Read-only rule tree on Previous Campaigns. The scheduler renders this same tree
    as editable controls; here it's history, so it reads as an indented sentence. */
 .rv-group{font-size:12.5px}

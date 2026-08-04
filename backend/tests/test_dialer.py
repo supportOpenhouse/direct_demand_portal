@@ -94,6 +94,33 @@ def test_calling_windows_overlap_is_half_open():
     assert windows_overlap("garbage", "nonsense", "00:00", "00:01")
 
 
+def test_unowned_skips_are_tagged_with_the_shared_constant():
+    """'targeted leads' counts queue rows minus the ones skipped as not-in-pool, and
+    it tells them apart from Stop-skipped rows by this exact `detail` string. If the
+    literal here and the one in the stats filter drift, a campaign aimed at one RM's
+    4 leads silently reports every rule match again (1727)."""
+    import asyncio
+
+    from app.services.dialer import UNOWNED_DETAIL, assign_owners
+
+    calls = []
+
+    class _Res:
+        rowcount = 3
+
+    class _Conn:
+        async def execute(self, stmt, params=None):
+            calls.append((str(stmt), params or {}))
+            return _Res()
+
+    skipped = asyncio.run(assign_owners(_Conn(), "cid", [("rm@x.in", ["rm"])]))
+    assert skipped == 3
+    skip_stmt, skip_params = calls[-1]
+    assert "status = 'skipped'" in skip_stmt
+    assert skip_params["unowned"] == UNOWNED_DETAIL
+    assert UNOWNED_DETAIL not in skip_stmt  # bound, not inlined
+
+
 class _FakeConn:
     def __init__(self, calls):
         self.calls = calls

@@ -178,7 +178,7 @@ const hhmm = (iso: string | null) =>
 /* What a brand-new campaign starts as. Kept in one place because the form has to
    be able to snap back to it when you leave a saved campaign — see resetForm. */
 const DEFAULTS = {
-  name: "Untitled campaign",
+  name: "",  // deliberately blank — naming the campaign is required, not defaulted
   strategy: "assigned",
   gap: 0,
   win: { start: "10:00", end: "19:00" },
@@ -266,10 +266,13 @@ export default function Dialer() {
   }
 
   function launch() {
+    // Named first: "Untitled campaign" ×6 in Previous Campaigns is unreadable, and
+    // the name is the only thing distinguishing two runs of the same rules.
+    if (!name.trim()) return toast("Give this campaign a name", "gold", "⚠");
     if (!rms.length) return toast("Pick at least one RM — they do the calling", "gold", "⚠");
     if (!matched) return toast("No leads match these rules", "gold", "⚠");
     createCampaign.mutate({
-      name: name.trim() || "Untitled campaign", rules: tree, rms, strategy,
+      name: name.trim(), rules: tree, rms, strategy,
       gap_seconds: gap, window_start: win.start, window_end: win.end,
       max_attempts: attempts, cooldown_minutes: cooldown, start: true,
     }, {
@@ -300,14 +303,16 @@ export default function Dialer() {
     <div className="dl-page">
       <div className="dl-head">
         <input className="dl-nameinput" value={name} onChange={(e) => setName(e.target.value)}
-          disabled={!!activeId} />
+          placeholder="Name this campaign…" maxLength={120} disabled={!!activeId} />
         <span className="dl-matchchip">
           {preview.isFetching ? "counting…"
             : scoped ? `${matched} leads to call` : `${matched} leads matched`}
         </span>
         <div className="dl-spacer" />
         {!activeId ? (
-          <button className="btn primary" onClick={launch} disabled={createCampaign.isPending}>
+          <button className="btn primary" onClick={launch}
+            disabled={createCampaign.isPending || !name.trim()}
+            title={name.trim() ? "" : "Name the campaign first"}>
             {createCampaign.isPending ? "Starting…" : "Start dialing"}
           </button>
         ) : (

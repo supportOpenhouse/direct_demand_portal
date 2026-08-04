@@ -1,5 +1,5 @@
 /* 1:1 port of the prototype's <aside class="sidebar"> markup. */
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { useLeadCounts } from "../lib/queries";
 import {
@@ -74,6 +74,9 @@ const IconDialer = () => (
 export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
+  // Auto Dialer's sub-pages only unfold once you're inside it — the Admin section
+  // stays a flat list from everywhere else.
+  const inDialer = useLocation().pathname.startsWith("/dialer");
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -144,14 +147,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
             <NavLink to="/dialer" className={navClass} title="Auto Dialer">
               <IconDialer /> <span className="nav-t">Auto Dialer</span>
             </NavLink>
-            <div className="nav-sub">
-              <NavLink to="/dialer/schedule" className={navClass} title="Schedule Campaign">
-                <span className="nav-t">Schedule Campaign</span>
-              </NavLink>
-              <NavLink to="/dialer/previous" className={navClass} title="Previous Campaigns">
-                <span className="nav-t">Previous Campaigns</span>
-              </NavLink>
-            </div>
+            {inDialer && (
+              <div className="nav-sub">
+                <NavLink to="/dialer/schedule" className={navClass} title="Schedule Campaign">
+                  <span className="nav-t">Schedule Campaign</span>
+                </NavLink>
+                <NavLink to="/dialer/previous" className={navClass} title="Previous Campaigns">
+                  <span className="nav-t">Previous Campaigns</span>
+                </NavLink>
+              </div>
+            )}
           </>
         )}
         <NavLink to="/settings" className={navClass} title="Settings & Access">
@@ -168,7 +173,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           </NavLink>
         )}
       </nav>
-      <div className="spacer"></div>
+      {/* no spacer — #nav is flex:1 and pushes the chip down on its own */}
       <UserChip />
     </aside>
   );

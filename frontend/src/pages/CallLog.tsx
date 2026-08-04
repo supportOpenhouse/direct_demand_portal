@@ -93,7 +93,9 @@ export default function CallLog() {
                 <tr key={`${c.call_id}-${c.leg}`}>
                   <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>{formatDateTime(c.start_at) || "—"}</td>
                   <td style={{ fontSize: 12.5 }}>
-                    {c.lead_id ? <Link to={`/leads/${c.lead_id}`}>{c.lead_name || "View lead"}</Link> : <span style={{ color: "var(--muted)" }}>—</span>}
+                    {c.lead_id
+                      ? <Link className="lead-link" to={`/leads/${c.lead_id}`}>{c.lead_name || "View lead"}</Link>
+                      : <span style={{ color: "var(--muted)" }}>—</span>}
                   </td>
                   <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
                     {c.source_number || "—"} → {c.destination_number || "—"}

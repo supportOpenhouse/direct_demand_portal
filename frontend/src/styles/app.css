@@ -23,6 +23,7 @@
   /* semantic accents — each with a soft tint */
   --emerald:#059669;  --emerald-soft:#d6f3e5;   /* won / success      */
   --blue:#2563eb;     --blue-soft:#dde8fe;       /* new                    */
+  --blue-deep:#1e40af;                           /* lead links in call logs */
   --cyan:#0e8fa8;     --cyan-soft:#cdeef4;       /* call not received      */
   --amber:#d68309;    --amber-soft:#fdeccb;      /* visit scheduled        */
   --violet:#7c3aed;   --violet-soft:#ebe5fd;     /* AI summary, supply AMA */
@@ -77,7 +78,23 @@ body{
   display:flex;flex-direction:column;
   padding:18px 14px;
   border-right:1px solid #080b12;
+  /* min-height:0 lets the nav below actually shrink and scroll — without it a
+     flex item refuses to go under its content height and the whole column
+     overflows, carrying the user chip off the bottom of the screen. */
+  min-height:0;overflow:hidden;
 }
+/* Brand and the collapse toggle stay put; only the link list scrolls. */
+.brand,.nav-collapse,.sidebar .user{flex:none}
+#nav{
+  flex:1 1 auto;min-height:0;overflow-y:auto;
+  overscroll-behavior:contain;   /* don't chain the scroll to the page behind it */
+  scrollbar-width:thin;scrollbar-color:#2a3445 transparent;
+}
+/* A default scrollbar is a bright slab on this dark panel — thin it down. */
+#nav::-webkit-scrollbar{width:6px}
+#nav::-webkit-scrollbar-track{background:transparent}
+#nav::-webkit-scrollbar-thumb{background:#2a3445;border-radius:3px}
+#nav::-webkit-scrollbar-thumb:hover{background:#3a4a6b}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
 .brand .logo{
   width:38px;height:38px;flex:none;
@@ -110,7 +127,6 @@ body{
 .nav-sub .nav-item.active::before{left:-12px;top:6px;bottom:6px}
 .app.collapsed .nav-sub{display:none}  /* nothing but text in here — hide it with the labels */
 
-.sidebar .spacer{flex:1}
 .user{
   display:flex;align-items:center;gap:10px;padding:10px;border-radius:11px;
   background:var(--ink-sidebar-2);margin-top:10px;cursor:pointer;
@@ -159,6 +175,16 @@ body{
 }
 .btn svg{width:15px;height:15px}
 a.btn{text-decoration:none} /* .btn on a react-router <Link> */
+
+/* Lead link in the call-log tables. All-caps needs the extra tracking and a
+   heavier weight to stay readable at 12.5px, and the deep blue keeps enough
+   contrast against the row that it still reads as clickable without the default
+   link blue shouting over the rest of the table. */
+.lead-link{
+  color:var(--blue-deep);text-transform:uppercase;letter-spacing:.04em;
+  font-weight:600;text-decoration:none;
+}
+.lead-link:hover{text-decoration:underline}
 .btn.primary{background:var(--ink);color:#fff}
 .btn.primary:hover{background:#000;transform:translateY(-1px)}
 .btn.green{background:var(--emerald);color:#fff}
@@ -800,6 +826,8 @@ a.nav-item{text-decoration:none}
 .dl-nameinput{font-family:inherit;font-size:15px;font-weight:700;color:var(--ink);background:var(--panel);
   border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:260px}
 .dl-nameinput:disabled{background:var(--panel-2);color:var(--ink-2)}
+/* the name is required, so an empty box has to read as "fill me in", not as a title */
+.dl-nameinput::placeholder{color:var(--muted);font-weight:500}
 .dl-matchchip{font-size:12px;font-weight:600;color:var(--ink-2);background:var(--panel-2);
   border:1px solid var(--line);padding:7px 12px;border-radius:20px;font-family:"Spline Sans Mono"}
 

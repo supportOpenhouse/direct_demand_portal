@@ -112,7 +112,6 @@ export default function DialerPrevious() {
             <Tile n={stats?.total_calls ?? 0} label="Total calls placed"
                   hint="Every attempt, retries included" />
             <Tile n={stats?.connected ?? 0} label="Connected" />
-            <Tile n={stats?.total ?? 0} label="Queued" hint="Leads the rules put in this campaign's queue" />
           </div>
 
           {/* Only worth saying when retries actually happened — on a single-attempt
@@ -184,8 +183,9 @@ export default function DialerPrevious() {
                       {formatDateTime(r.start_at) || "—"}
                     </td>
                     <td style={{ fontSize: 12.5 }}>
-                      {r.lead_id ? <Link to={`/leads/${r.lead_id}`}>{r.lead_name || "View lead"}</Link>
-                                 : <span style={{ color: "var(--muted)" }}>—</span>}
+                      {r.lead_id
+                        ? <Link className="lead-link" to={`/leads/${r.lead_id}`}>{r.lead_name || "View lead"}</Link>
+                        : <span style={{ color: "var(--muted)" }}>—</span>}
                     </td>
                     <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
                       {r.source_number || "—"} → {r.destination_number || "—"}

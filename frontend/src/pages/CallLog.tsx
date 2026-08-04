@@ -7,6 +7,7 @@ import { useCallLog, useSyncCallLog, callDuration, formatDateTime } from "../lib
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
+import RecordingPlayer from "../components/RecordingPlayer";
 
 const PAGE = 50;
 const ANSWERED = ["Connected", "Not connected"];
@@ -78,7 +79,7 @@ export default function CallLog() {
               <th>From → To</th>
               <th>Status</th>
               <th style={{ width: 70 }}>Duration</th>
-              <th style={{ width: 250 }}>Recording</th>
+              <th style={{ width: 110 }}>Recording</th>
               <th>Placed by</th>
             </tr>
           </thead>
@@ -108,10 +109,10 @@ export default function CallLog() {
                   </td>
                   <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{callDuration(c.start_at, c.end_at)}</td>
                   <td>
-                    {/* ponytail: the native player streams Bonvoice's ResourceURL straight
-                        from their CDN — proxy it through the API only if it starts 401ing */}
+                    {/* ponytail: streams Bonvoice's ResourceURL straight from their
+                        CDN — proxy it through the API only if it starts 401ing */}
                     {c.recording_url ? (
-                      <audio controls preload="none" src={c.recording_url} style={{ height: 32, width: 240 }} />
+                      <RecordingPlayer src={c.recording_url} />
                     ) : <span style={{ color: "var(--muted)" }}>—</span>}
                   </td>
                   <td style={{ fontSize: 12, color: "var(--muted)" }}>{c.placed_by || "—"}</td>

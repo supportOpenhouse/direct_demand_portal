@@ -533,10 +533,6 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .mand-flag.show{display:block}
 .summary-box{background:linear-gradient(135deg,var(--violet-soft),#f5f1fe);border:1px solid #ddd2f8;border-radius:12px;padding:15px}
 .summary-box .ai{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--violet);margin-bottom:8px}
-.rec{display:flex;align-items:center;gap:11px;padding:10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px}
-.rec .play{width:34px;height:34px;border-radius:8px;background:var(--ink);color:#fff;display:grid;place-items:center;flex:none;cursor:pointer}
-.rec .wave{flex:1;height:24px;display:flex;align-items:center;gap:2px}
-.rec .wave i{width:2.5px;background:#cdd5e2;border-radius:2px}
 
 /* ============================================================
    phase-1 additions: real supply stages (replaces msi/token/nego)

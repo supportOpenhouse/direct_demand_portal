@@ -84,9 +84,16 @@ def actor_from_request(request) -> dict | None:
         return None
     try:
         payload = jwt.decode(auth.split(" ", 1)[1].strip(), settings.JWT_SECRET, algorithms=["HS256"])
-        return {"email": payload.get("email"), "name": payload.get("name"), "role": payload.get("role")}
     except jwt.PyJWTError:
         return None
+    # The claim is a week old; prefer the live role current_user just cached for
+    # this very request, so the log doesn't credit a demoted user as an admin.
+    # In-memory only — audit must never add a DB read to the request path.
+    from ..core.auth import _user_cache
+
+    cached = _user_cache.get(str(payload.get("sub")))
+    role = (cached[1] or {}).get("role") if cached and cached[1] else None
+    return {"email": payload.get("email"), "name": payload.get("name"), "role": role or payload.get("role")}
 
 
 async def record(*, actor, method, path, status, duration_ms, ip, request_id) -> None:

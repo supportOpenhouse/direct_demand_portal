@@ -5,6 +5,7 @@
    nobody has rung yet is just noise in the column. */
 import { useLeadCalls, callDuration, formatDateTime } from "../lib/queries";
 import { LeadCallRow } from "../lib/api";
+import RecordingPlayer from "./RecordingPlayer";
 
 const IconPhone = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -47,11 +48,9 @@ export default function CallActivityCard({ leadId }: { leadId: string }) {
                 {callDuration(c.start_at, c.end_at)}
               </span>
             </div>
-            {/* ponytail: native player, straight off Bonvoice's url — same as the
-                Call Log page. Zero-duration calls have no file, so no player. */}
-            {c.recording_url && (
-              <audio controls preload="none" src={c.recording_url} style={{ height: 32, width: "100%" }} />
-            )}
+            {/* Streams straight off Bonvoice's url — same as the Call Log page.
+                Zero-duration calls have no file, so no player. */}
+            {c.recording_url && <RecordingPlayer src={c.recording_url} />}
           </div>
         ))}
       </div>

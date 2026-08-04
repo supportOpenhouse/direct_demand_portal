@@ -110,6 +110,59 @@ async def force_logout_all(actor_email: str) -> None:
     _epoch_cache.update(value=now.timestamp(), read_at=time.monotonic())  # enforce instantly on this worker
 
 
+# --- live role/active lookup -------------------------------------------------
+# The JWT stamps role/active as they were at sign-in, but a token lives a week
+# (JWT_EXPIRY_HOURS), so trusting the claim left a demoted admin with real admin
+# access until it lapsed. Re-read the row instead. Cached per user with a short
+# TTL so auth doesn't hit Postgres on every request; update_user drops the entry
+# on write, so on one worker the change lands instantly and others catch up
+# within the TTL.
+_USER_TTL = 30.0
+_user_cache: dict[str, tuple[float, dict | None]] = {}  # id -> (read_at, state | None)
+
+
+def forget_user(user_id) -> None:
+    """Drop a user's cached row — called right after an admin edits or deletes them."""
+    _user_cache.pop(str(user_id), None)
+
+
+async def _read_user_state(user_id: str) -> dict | None:
+    """`{'role', 'active'}` from the users table, or None when the id is unknown.
+
+    Fail-open, matching `_read_auth_epoch`: on a DB error the last cached value is
+    reused, and a cold miss returns None so the caller falls back to the token's
+    claims. A Neon blip must not 403 the whole team mid-call."""
+    from uuid import UUID
+
+    try:
+        uid = UUID(str(user_id))
+    except ValueError:
+        return None  # not a real user id — nothing to look up
+
+    key = str(user_id)
+    hit = _user_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _USER_TTL:
+        return hit[1]
+
+    from sqlalchemy import text
+
+    from ..db import neon_engine
+
+    state = hit[1] if hit else None
+    engine = neon_engine()
+    if engine is not None:
+        try:
+            async with engine.connect() as conn:
+                row = (await conn.execute(
+                    text("SELECT role, active FROM users WHERE id = :id"), {"id": uid},
+                )).first()
+            state = {"role": row[0], "active": bool(row[1])} if row else None
+        except Exception:
+            log.warning("user state read failed — honouring token", exc_info=True)
+    _user_cache[key] = (time.monotonic(), state)
+    return state
+
+
 async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
     settings = get_settings()
     if not settings.auth_enabled:
@@ -123,8 +176,13 @@ async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bea
     epoch = await _read_auth_epoch()
     if epoch is not None and payload.get("iat", 0) < epoch:
         raise HTTPException(status_code=401, detail="session ended — please sign in again")
+    # The token proves *who* they are; the row decides what they may do now.
+    state = await _read_user_state(payload["sub"])
+    if state is not None and not state["active"]:
+        raise HTTPException(status_code=401, detail="your account is disabled — contact an admin")
     return {
-        "id": payload["sub"], "email": payload["email"], "role": payload.get("role", "rm"),
+        "id": payload["sub"], "email": payload["email"],
+        "role": (state or {}).get("role") or payload.get("role", "rm"),
         "name": payload.get("name"), "picture": payload.get("picture"),
         "assignment_name": payload.get("assignment_name"),
     }

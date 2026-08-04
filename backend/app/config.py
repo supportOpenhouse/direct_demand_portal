@@ -130,10 +130,11 @@ class Settings(BaseSettings):
     GOOGLE_OAUTH_CLIENT_ID: str = ""
     JWT_SECRET: str = "dev-insecure-change-me"
     # a full week — the team lives in this tool all day and a short session logs them
-    # out mid-call. NOTE: current_user() trusts the JWT's claims and never re-reads the
-    # user row, so deactivating someone in Settings (or changing their role) only takes
-    # effect when their token lapses — now up to 7 days. Rotate JWT_SECRET to force an
-    # immediate, everyone-out logout.
+    # out mid-call. Safe to leave long: current_user() re-reads role/active from the
+    # users row on every request (30s cache), so a demotion or a deactivation in
+    # Settings bites immediately rather than waiting out the token. Only the identity
+    # claims (sub/email/name) come from the JWT. Rotate JWT_SECRET, or POST
+    # /sessions/logout-all, to force an immediate everyone-out logout.
     JWT_EXPIRY_HOURS: int = 168
     # restrict logins to this email domain ("" = any Google account)
     ALLOWED_EMAIL_DOMAIN: str = "openhouse.in"

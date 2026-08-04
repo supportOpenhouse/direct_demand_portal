@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..core.auth import assignment_aliases, force_logout_all, require_admin
+from ..core.auth import assignment_aliases, force_logout_all, forget_user, require_admin
 from ..db import neon_engine
 from ..models import User
 
@@ -107,6 +107,7 @@ async def update_user(user_id: UUID, payload: UserUpdate):
         res = await conn.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="user not found")
+    forget_user(user_id)  # a role/active edit must bite now, not when their token lapses
     return {"status": "ok"}
 
 
@@ -117,6 +118,7 @@ async def delete_user(user_id: UUID):
         res = await conn.execute(text("DELETE FROM users WHERE id = :id"), {"id": user_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="user not found")
+    forget_user(user_id)
     return {"status": "ok"}
 
 

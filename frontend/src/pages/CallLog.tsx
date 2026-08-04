@@ -3,7 +3,7 @@
    one for the lead. The leg itself isn't shown — it's noise next to the numbers. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useCallLog, useSyncCallLog, callDuration, formatDateTime } from "../lib/queries";
+import { useCallLog, useSyncCallLog, useRepairMissingCalls, callDuration, formatDateTime } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
@@ -28,6 +28,21 @@ export default function CallLog() {
   const sync = useSyncCallLog();
   const runSync = () => sync.mutate({ from, to }, {
     onSuccess: (r) => toast(`Synced ${r.stored} of ${r.fetched} call records`, "green", "✓"),
+    onError: (e: any) => toast(e.message, "gold", "⚠"),
+  });
+
+  // Rows whose source_number never arrived — a callback that carried the numbers was
+  // dropped. Report what's left over, not just what was fixed: Bonvoice may simply
+  // not hold a record for some of them, and silence would read as "all done".
+  const repair = useRepairMissingCalls();
+  const runRepair = () => repair.mutate(undefined, {
+    onSuccess: (r) => {
+      if (!r.missing_before) return toast("No calls are missing their numbers", "green", "✓");
+      const left = r.missing_after ? ` · ${r.missing_after} still missing` : "";
+      const capped = r.truncated ? ` · only the newest ${r.days.length} days were pulled` : "";
+      toast(`Repaired ${r.repaired} of ${r.missing_before}${left}${capped}`,
+            r.repaired ? "green" : "gold", r.repaired ? "✓" : "⚠");
+    },
     onError: (e: any) => toast(e.message, "gold", "⚠"),
   });
 
@@ -65,6 +80,10 @@ export default function CallLog() {
           <button className="btn sm" onClick={runSync} disabled={sync.isPending}
                   title="Pull Bonvoice's own call records for this date range">
             {sync.isPending ? "Syncing…" : "Sync from Bonvoice"}
+          </button>
+          <button className="btn sm" onClick={runRepair} disabled={repair.isPending}
+                  title="Re-pull only the days holding calls whose numbers never arrived">
+            {repair.isPending ? "Repairing…" : "Fix missing numbers"}
           </button>
         </div>
       </div>

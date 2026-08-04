@@ -245,6 +245,13 @@ export function useSyncCallLog() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["call-log"] }),
   });
 }
+export function useRepairMissingCalls() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.repairMissingCalls,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["call-log"] }),
+  });
+}
 export function useLogActors() {
   return useQuery({ queryKey: ["log-actors"], queryFn: api.logActors, staleTime: 60_000 });
 }

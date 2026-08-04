@@ -217,6 +217,13 @@ export function useCallLog(params: import("./api").CallLogParams) {
     staleTime: 10_000,
   });
 }
+export function useSyncCallLog() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ from, to }: { from: string; to: string }) => api.syncCallLog(from, to),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["call-log"] }),
+  });
+}
 export function useLogActors() {
   return useQuery({ queryKey: ["log-actors"], queryFn: api.logActors, staleTime: 60_000 });
 }

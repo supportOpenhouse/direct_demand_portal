@@ -2,13 +2,16 @@
    A bridged call is two rows: leg A rings the RM's handset, leg B dials the lead. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useCallLog, formatDateTime } from "../lib/queries";
+import { useCallLog, useSyncCallLog, formatDateTime } from "../lib/queries";
 import { CallLogRow } from "../lib/api";
 import { FilterSelect } from "../components/Filters";
+import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
 
 const PAGE = 50;
 const ANSWERED = ["Connected", "Not connected"];
+
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
 function duration(row: CallLogRow): string {
   if (!row.start_at || !row.end_at) return "—";
@@ -22,6 +25,17 @@ export default function CallLog() {
   const [conn, setConn] = useState("");
   const [page, setPage] = useState(0);
   const dq = useDebounce(q, 300);
+  const toast = useToast();
+
+  // Backfill window — last 30 days by default, which is the usual "why isn't that
+  // call here?" range. Bonvoice holds the full history if you widen it.
+  const [from, setFrom] = useState(() => ymd(new Date(Date.now() - 30 * 864e5)));
+  const [to, setTo] = useState(() => ymd(new Date()));
+  const sync = useSyncCallLog();
+  const runSync = () => sync.mutate({ from, to }, {
+    onSuccess: (r) => toast(`Synced ${r.stored} of ${r.fetched} call records`, "green", "✓"),
+    onError: (e: any) => toast(e.message, "gold", "⚠"),
+  });
 
   const { data, isLoading, isFetching } = useCallLog({
     q: dq || undefined,
@@ -51,6 +65,13 @@ export default function CallLog() {
           {anyFilter && (
             <button className="btn ghost sm" onClick={() => { setQ(""); setConn(""); setPage(0); }}>Clear</button>
           )}
+          <span style={{ width: 1, height: 22, background: "var(--line)" }} />
+          <input className="pick-ctrl" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} title="Sync from" style={{ padding: "7px 9px", fontSize: 12.5 }} />
+          <input className="pick-ctrl" type="date" value={to} min={from} onChange={(e) => setTo(e.target.value)} title="Sync to" style={{ padding: "7px 9px", fontSize: 12.5 }} />
+          <button className="btn sm" onClick={runSync} disabled={sync.isPending}
+                  title="Pull Bonvoice's own call records for this date range">
+            {sync.isPending ? "Syncing…" : "Sync from Bonvoice"}
+          </button>
         </div>
       </div>
 

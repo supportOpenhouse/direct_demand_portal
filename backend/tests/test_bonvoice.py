@@ -71,6 +71,28 @@ def test_call_log_filters_bind_every_value():
     assert call_log_filters(None, False)[1] == {"answered": False}
 
 
+def test_pulled_record_maps_onto_the_callback_shape():
+    """/crm/callrecords/ describes the same call as the webhook but with its own
+    casing and no lifecycle callType — the mapping is what lets both feeds upsert
+    onto the same row."""
+    from app.routers.bonvoice import record_to_callback
+
+    rec = {"callID": "c99", "source": "9846098460", "destination": "9812345678",
+           "status": "ANSWERED", "startTime": "2026-08-01T10:00:00",
+           "endTime": "2026-08-01T10:02:00", "resourceurl": "https://rec/c99.mp3",
+           "someUnmappedField": "kept"}
+    m = record_to_callback(rec)
+    assert m["callID"] == "c99"
+    assert m["Leg"] == "A"                      # records don't name a leg
+    assert m["SourceNumber"] == "9846098460" and m["DestinationNumber"] == "9812345678"
+    assert m["ResourceURL"] == "https://rec/c99.mp3"   # the recording, lowercased
+    assert m["StartTime"] and m["EndTime"]
+    assert m["callType"] == "1"                 # ANSWERED → connected
+    assert m["someUnmappedField"] == "kept"     # rides along into raw
+    # a missed call must not synthesise "answered"
+    assert record_to_callback({"callID": "c1", "status": "NO ANSWER"})["callType"] == ""
+
+
 def test_webhook_always_acks_200():
     """A non-2xx makes the PBX retry; the callback fires up to 6 times per call."""
     for body, ctype in [

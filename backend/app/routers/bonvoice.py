@@ -305,6 +305,97 @@ async def fetch_call_state(event_id: str) -> tuple[bool, bool, str | None] | Non
     return read_call_state(records)
 
 
+async def fetch_call_records(date_from: str, date_to: str, agent: str | None = None) -> list[dict]:
+    """Every call record Bonvoice holds for a date range — POST /crm/callrecords/.
+
+    `agent` narrows it to one extension; omitted, the account's whole history comes
+    back. Dates are plain YYYY-MM-DD, as in their docs.
+    """
+    s = get_settings()
+    payload = {"from": date_from, "to": date_to}
+    if agent:
+        payload["agent"] = agent
+
+    async def _post(tok: str) -> httpx.Response:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            return await client.post(f"{s.bonvoice_base}/crm/callrecords/", json=payload,
+                                     headers={"Authorization": f"Token {tok}"})
+
+    r = await _post(await _auth_token())
+    if r.status_code == 401:
+        r = await _post(await _auth_token(force=True))
+    if r.status_code >= 300:
+        raise HTTPException(status_code=502,
+                            detail=f"Bonvoice call records failed ({r.status_code}): {r.text[:200]}")
+    try:
+        body = r.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="Bonvoice returned a non-JSON call-record list")
+    records = log_records(body)
+    if not records:
+        # Once per empty pull: the only way to see an unexpected envelope without a
+        # live account is to log the raw body.
+        log.info("bonvoice: no call records parsed for %s..%s — raw: %s",
+                 date_from, date_to, r.text[:600])
+    return records
+
+
+def record_to_callback(rec: dict) -> dict:
+    """Reshape one /crm/callrecords/ row into the callback shape `_persist` upserts.
+
+    The two feeds describe the same call with different casing and, for a pulled row,
+    no lifecycle `callType` — so connectedness is read off the status text instead.
+    Unmapped fields ride along untouched and land in `raw`.
+    """
+    _, answered, status = read_call_state([rec])
+    return {**rec,
+            "callID": _field(rec, "callID", "call_id", "uniqueid", "uniqueId"),
+            "Leg": _field(rec, "Leg", "leg") or "A",
+            "eventID": _field(rec, "eventID", "event_id"),
+            "callBackParams": _field(rec, "callBackParams", "callback_params"),
+            "Direction": _field(rec, "Direction", "direction", "callType_desc"),
+            "SourceNumber": _field(rec, "SourceNumber", "source", "caller", "from"),
+            "DestinationNumber": _field(rec, "DestinationNumber", "destination", "callee", "to"),
+            "DisplayNumber": _field(rec, "DisplayNumber", "did", "displayNumber"),
+            "Status": status or _field(rec, "Status", "callStatus", "disposition"),
+            "AgentStatus": _field(rec, "AgentStatus", "agentStatus"),
+            # synthesised: `answered` is OR-ed into the row, so a false here can never
+            # unset what a live callback already recorded
+            "callType": CALL_ANSWERED if answered else "",
+            "StartTime": _field(rec, "StartTime", "startTime", "start_time", "callDate"),
+            "EndTime": _field(rec, "EndTime", "endTime", "end_time"),
+            "ResourceURL": _field(rec, "ResourceURL", "recordingURL", "recording_url"),
+            }
+
+
+@router.post("/bonvoice/calls/sync", dependencies=[Depends(require_admin)])
+async def sync_call_records(
+    date_from: str = Query(..., alias="from"),   # YYYY-MM-DD
+    date_to: str = Query(..., alias="to"),
+    agent: str | None = Query(None),             # one extension, or all of them
+):
+    """Backfill the call log from Bonvoice for a date range.
+
+    The webhook only ever reports calls placed after it was wired up; this pulls in
+    everything else — history, calls placed from a handset, anything a dropped
+    callback lost.
+    """
+    if not get_settings().bonvoice_configured:
+        raise HTTPException(status_code=503, detail="Bonvoice isn't configured.")
+    records = await fetch_call_records(date_from, date_to, agent)
+    # ponytail: one upsert per record, sequentially. A month is a few thousand
+    # round trips on an admin-triggered button — batch it if that ever gets slow.
+    stored = 0
+    for rec in records:
+        mapped = record_to_callback(rec)
+        if not mapped["callID"]:
+            continue
+        await _persist(mapped)
+        stored += 1
+    log.info("bonvoice: synced %s/%s call records for %s..%s", stored, len(records), date_from, date_to)
+    return {"fetched": len(records), "stored": stored}
+
+
 # --- inbound: call logs -------------------------------------------------------
 
 def _check_token(request: Request) -> None:

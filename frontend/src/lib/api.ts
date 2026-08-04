@@ -375,6 +375,11 @@ export const api = {
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
     return request<CallLogResponse>(`/v1/bonvoice/calls?${qs.toString()}`);
   },
+  /* Backfill from Bonvoice's own records — the webhook only knows about calls placed
+     after it was wired up. Dates are YYYY-MM-DD. */
+  syncCallLog: (from: string, to: string) =>
+    request<{ fetched: number; stored: number }>(
+      `/v1/bonvoice/calls/sync?from=${from}&to=${to}`, { method: "POST" }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   placeCall: (lead_id: string) =>

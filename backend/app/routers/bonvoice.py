@@ -720,7 +720,8 @@ async def lead_calls(lead_id: UUID, user: dict = Depends(current_user)):
     async with engine.connect() as conn:
         rows = (await conn.execute(
             select(CallLog.call_id, CallLog.leg, CallLog.direction, CallLog.status,
-                   CallLog.agent_status, CallLog.answered, CallLog.start_at, CallLog.end_at)
+                   CallLog.agent_status, CallLog.answered, CallLog.start_at, CallLog.end_at,
+                   CallLog.recording_url)
             .where(CallLog.lead_id == lead_id)
             .order_by(desc(CallLog.start_at)).limit(50)
         )).mappings().all()

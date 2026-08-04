@@ -375,6 +375,7 @@ export const api = {
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
     return request<CallLogResponse>(`/v1/bonvoice/calls?${qs.toString()}`);
   },
+  leadCalls: (id: string) => request<{ items: LeadCallRow[] }>(`/v1/leads/${id}/calls`),
   /* Backfill from Bonvoice's own records — the webhook only knows about calls placed
      after it was wired up. Dates are YYYY-MM-DD. */
   syncCallLog: (from: string, to: string) =>
@@ -572,6 +573,18 @@ export interface CallLogRow {
   placed_by: string | null;
 }
 export interface CallLogResponse { items: CallLogRow[]; total: number; }
+/* One lead's call history, for the lead-detail card. */
+export interface LeadCallRow {
+  call_id: string;
+  leg: string;
+  direction: string | null;
+  status: string | null;
+  agent_status: string | null;
+  answered: boolean;
+  start_at: string | null;
+  end_at: string | null;
+  recording_url: string | null;
+}
 export interface CallLogParams {
   q?: string; answered?: boolean; limit?: number; offset?: number;
 }

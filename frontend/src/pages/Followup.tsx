@@ -161,7 +161,6 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                       <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
-                        <div className="ph">{l.phone}</div>
                       </div>
                     </div>
                   </td>

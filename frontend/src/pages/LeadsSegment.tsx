@@ -186,7 +186,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                               due callback has to be visible here or it's invisible */}
                           {segment === "qualified" && <DueBadge at={l.follow_up_at} />}
                         </div>
-                        <div className="ph">{l.phone}</div>
                       </div>
                     </div>
                   </td>

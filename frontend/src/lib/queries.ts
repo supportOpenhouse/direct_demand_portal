@@ -209,6 +209,23 @@ export function useLogs(params: import("./api").LogsParams) {
     staleTime: 10_000,
   });
 }
+/* mm:ss between two call timestamps, "—" when either end is missing. */
+export function callDuration(startAt: string | null, endAt: string | null): string {
+  if (!startAt || !endAt) return "—";
+  const secs = Math.round((+new Date(endAt) - +new Date(startAt)) / 1000);
+  if (secs < 0) return "—";
+  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+}
+
+export function useLeadCalls(id: string, enabled = true) {
+  return useQuery({
+    queryKey: ["lead-calls", id],
+    queryFn: () => api.leadCalls(id),
+    enabled: enabled && !!id,
+    staleTime: 15_000,
+  });
+}
+
 export function useCallLog(params: import("./api").CallLogParams) {
   return useQuery({
     queryKey: ["call-log", params],

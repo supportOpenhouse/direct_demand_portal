@@ -202,7 +202,6 @@ export default function NewLeads() {
                             <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>
                           )}
                         </div>
-                        <div className="ph" style={{ whiteSpace: "nowrap" }}>{l.phone}</div>
                       </div>
                     </div>
                   </td>

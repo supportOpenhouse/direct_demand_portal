@@ -1,9 +1,9 @@
-/* Bonvoice Call Log — every call leg Bonvoice has reported, with its recording.
-   A bridged call is two rows: leg A rings the RM's handset, leg B dials the lead. */
+/* Bonvoice Call Log — every call Bonvoice has reported, with its recording.
+   Rows are legs, not calls: a live bridged call writes one for the RM's handset and
+   one for the lead. The leg itself isn't shown — it's noise next to the numbers. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useCallLog, useSyncCallLog, formatDateTime } from "../lib/queries";
-import { CallLogRow } from "../lib/api";
+import { useCallLog, useSyncCallLog, callDuration, formatDateTime } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
@@ -12,13 +12,6 @@ const PAGE = 50;
 const ANSWERED = ["Connected", "Not connected"];
 
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
-
-function duration(row: CallLogRow): string {
-  if (!row.start_at || !row.end_at) return "—";
-  const secs = Math.round((+new Date(row.end_at) - +new Date(row.start_at)) / 1000);
-  if (secs < 0) return "—";
-  return `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
-}
 
 export default function CallLog() {
   const [q, setQ] = useState("");
@@ -55,7 +48,7 @@ export default function CallLog() {
     <>
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> call legs{isFetching ? " · updating…" : ""}
+          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> calls{isFetching ? " · updating…" : ""}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Outcome" value={conn} options={ANSWERED} onChange={(v) => reset(() => setConn(v))} width={150} />
@@ -82,7 +75,6 @@ export default function CallLog() {
             <tr>
               <th style={{ width: 150 }}>When</th>
               <th>Lead</th>
-              <th style={{ width: 46 }}>Leg</th>
               <th>From → To</th>
               <th>Status</th>
               <th style={{ width: 70 }}>Duration</th>
@@ -92,9 +84,9 @@ export default function CallLog() {
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
+              <tr><td colSpan={7}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 24 }}>{anyFilter ? "No calls match these filters." : "No calls logged yet."}</div></td></tr>
+              <tr><td colSpan={7}><div className="empty" style={{ padding: 24 }}>{anyFilter ? "No calls match these filters." : "No calls logged yet."}</div></td></tr>
             ) : (
               items.map((c) => (
                 <tr key={`${c.call_id}-${c.leg}`}>
@@ -102,7 +94,6 @@ export default function CallLog() {
                   <td style={{ fontSize: 12.5 }}>
                     {c.lead_id ? <Link to={`/leads/${c.lead_id}`}>{c.lead_name || "View lead"}</Link> : <span style={{ color: "var(--muted)" }}>—</span>}
                   </td>
-                  <td><span className="cfg-chip">{c.leg}</span></td>
                   <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
                     {c.source_number || "—"} → {c.destination_number || "—"}
                   </td>
@@ -115,7 +106,7 @@ export default function CallLog() {
                     </span>{" "}
                     <span style={{ color: "var(--muted)", fontSize: 11.5 }}>{c.status || c.agent_status || ""}</span>
                   </td>
-                  <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{duration(c)}</td>
+                  <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{callDuration(c.start_at, c.end_at)}</td>
                   <td>
                     {/* ponytail: the native player streams Bonvoice's ResourceURL straight
                         from their CDN — proxy it through the API only if it starts 401ing */}

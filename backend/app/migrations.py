@@ -53,6 +53,9 @@ _ADD_COLUMNS = [
     ("visits", "rm_accompanying", "TEXT"),
     # auto-dialer: connected/not for each attempt, filled by the callback or the poller
     ("dial_queue", "answered", "BOOLEAN NOT NULL DEFAULT false"),
+    # which campaign placed a call — lets Previous Campaigns list every call it made,
+    # retries included, after dial_queue has moved on to a new event_id
+    ("call_logs", "campaign_id", "UUID"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -135,6 +138,18 @@ async def run_migrations(engine) -> None:
             # tag became nullable when assignment arrived — a contact can have an
             # owner before anyone classifies it
             await conn.execute(text("ALTER TABLE wa_contacts ALTER COLUMN tag DROP NOT NULL"))
+
+            # attribute past dialer calls to their campaign. Only the attempt whose
+            # event_id is still on the queue row is recoverable: a retry NULLs it
+            # (services/dialer.py), so earlier attempts of finished campaigns stay
+            # unattributed for good. Everything placed from here on is exact.
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_call_logs_campaign_id
+                    ON call_logs (campaign_id)"""))
+            await conn.execute(text("""
+                UPDATE call_logs c SET campaign_id = q.campaign_id
+                  FROM dial_queue q
+                 WHERE q.event_id = c.event_id AND c.campaign_id IS NULL"""))
 
             # seed the split visit-RM columns from the single field they replace: the
             # stored value was the lead's RM, and the accompanying RM defaults to the

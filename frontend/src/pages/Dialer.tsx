@@ -6,7 +6,7 @@
 
    Concurrency is the size of the pool: Click2Call rings the RM's own handset first, so
    one RM can only ever hold one live call. Three RMs = three calls at a time. */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useCampaign, useCampaignAction, useCampaigns, useCreateCampaign, useDialerFields,
   useRulePreview,
@@ -175,6 +175,17 @@ const outcomeText = (r: CampaignFeedRow) => {
 const hhmm = (iso: string | null) =>
   iso ? new Date(iso).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "";
 
+/* What a brand-new campaign starts as. Kept in one place because the form has to
+   be able to snap back to it when you leave a saved campaign — see resetForm. */
+const DEFAULTS = {
+  name: "Untitled campaign",
+  strategy: "assigned",
+  gap: 0,
+  win: { start: "10:00", end: "19:00" },
+  attempts: 1,
+  cooldown: 360,
+};
+
 /* ── page ───────────────────────────────────────────────────────────────── */
 export default function Dialer() {
   const toast = useToast();
@@ -183,14 +194,14 @@ export default function Dialer() {
   const createCampaign = useCreateCampaign();
   const action = useCampaignAction();
 
-  const [name, setName] = useState("Untitled campaign");
+  const [name, setName] = useState(DEFAULTS.name);
   const [tree, setTree] = useState<RuleGroup>(emptyTree);
   const [rms, setRms] = useState<string[]>([]);
-  const [strategy, setStrategy] = useState("assigned");
-  const [gap, setGap] = useState(0);
-  const [win, setWin] = useState({ start: "10:00", end: "19:00" });
-  const [attempts, setAttempts] = useState(1);
-  const [cooldown, setCooldown] = useState(360);
+  const [strategy, setStrategy] = useState(DEFAULTS.strategy);
+  const [gap, setGap] = useState(DEFAULTS.gap);
+  const [win, setWin] = useState(DEFAULTS.win);
+  const [attempts, setAttempts] = useState(DEFAULTS.attempts);
+  const [cooldown, setCooldown] = useState(DEFAULTS.cooldown);
   const [activeId, setActiveId] = useState<string | null>(null);
 
   const fields = meta.data?.fields || [];
@@ -218,6 +229,41 @@ export default function Dialer() {
     () => Object.fromEntries(pool.map((r) => [r.email, r.name])),
     [pool],
   );
+
+  /* Opening a saved campaign showed the new-campaign defaults: every Step 1–3
+     input is local state that nothing ever populated from the row. Steps 1–3 are
+     all disabled while activeId is set, so this only ever writes to a read-only
+     form — it can't fight typing.
+
+     Keyed on the campaign *id*, not on `live`: useCampaign polls every 2s for the
+     live stats, and depending on the object would re-set all eight fields twice a
+     second for no reason. */
+  const loadedId = live?.campaign.id;
+  useEffect(() => {
+    const c = live?.campaign;
+    if (!c) return;
+    setName(c.name);
+    setTree(c.rules as RuleGroup);
+    setRms(c.rms);
+    setStrategy(c.strategy);
+    setGap(c.gap_seconds);
+    setWin({ start: c.window_start, end: c.window_end });
+    setAttempts(c.max_attempts);
+    setCooldown(c.cooldown_minutes);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedId]);
+
+  function resetForm() {
+    setActiveId(null);
+    setName(DEFAULTS.name);
+    setTree(emptyTree());
+    setRms([]);
+    setStrategy(DEFAULTS.strategy);
+    setGap(DEFAULTS.gap);
+    setWin(DEFAULTS.win);
+    setAttempts(DEFAULTS.attempts);
+    setCooldown(DEFAULTS.cooldown);
+  }
 
   function launch() {
     if (!rms.length) return toast("Pick at least one RM — they do the calling", "gold", "⚠");
@@ -270,7 +316,7 @@ export default function Dialer() {
               {running ? "Pause" : "Resume"}
             </button>
             <button className="btn" onClick={() => act("stop")}>Stop</button>
-            <button className="btn" onClick={() => setActiveId(null)}>New campaign</button>
+            <button className="btn" onClick={resetForm}>New campaign</button>
           </>
         )}
       </div>
@@ -377,6 +423,14 @@ export default function Dialer() {
               <div className="dl-stat"><b>{stats?.live ?? 0}</b><span>On call</span></div>
               <div className="dl-stat"><b>{(stats?.done ?? 0) + (stats?.failed ?? 0)}</b><span>Done</span></div>
             </div>
+            {/* With retries on, "done" undercounts the dialling: one lead can be rung
+                several times. Only shown once a repeat has actually happened. */}
+            {!!stats && stats.total_calls > stats.unique_leads && (
+              <div className="dl-note" style={{ marginTop: 8 }}>
+                {stats.unique_leads} unique lead{stats.unique_leads === 1 ? "" : "s"} called ·{" "}
+                <b>{stats.total_calls} calls placed</b>
+              </div>
+            )}
           </div>
 
           <div className="card">

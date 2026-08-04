@@ -71,6 +71,27 @@ def test_call_log_filters_bind_every_value():
     assert call_log_filters(None, False)[1] == {"answered": False}
 
 
+def test_campaign_filter_scopes_the_call_log_without_inlining_the_id():
+    """Previous Campaigns reuses this endpoint, so campaign_id joins the same clause
+    as a bind param and composes with the other filters."""
+    import uuid
+
+    from app.routers.bonvoice import call_log_filters
+
+    cid = uuid.uuid4()
+    clause, params = call_log_filters(None, None, cid)
+    assert clause == " WHERE c.campaign_id = :campaign_id"
+    assert params == {"campaign_id": cid} and str(cid) not in clause
+
+    # composes: campaign + search + answered are ANDed, none of them inlined
+    clause, params = call_log_filters("amit", True, cid)
+    assert clause.count(" AND ") == 2
+    assert params["campaign_id"] == cid and params["q"] == "%amit%"
+
+    # absent campaign stays absent — the Call Log page must not gain a filter
+    assert call_log_filters(None, None) == ("", {})
+
+
 def test_searching_by_phone_matches_every_stored_format():
     """Bonvoice reports '9999799588', users.phone holds '919999999999' and leads.phone
     '+91 99997 99588'. Searching any of those forms has to find the same calls, so the

@@ -20,6 +20,8 @@ const TITLES: Record<string, string> = {
   "/supply": "Supply Pipeline",
   "/societies": "Society Insights",
   "/goldmine": "Gold Mine — Re-engagement",
+  "/dialer/schedule": "Schedule Campaign",
+  "/dialer/previous": "Previous Campaigns",
   "/settings": "Settings & Access",
   "/logs": "Activity Logs",
   "/call-log": "Bonvoice Call Log",

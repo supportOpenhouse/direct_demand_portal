@@ -67,8 +67,10 @@ async def dialer_fields(_: dict = Depends(require_admin)):
             ))).mappings().all()
             options[key] = [r["v"] for r in rows]
         rms = (await conn.execute(text(
+            # RMs only — the pool is who does the calling, and Click2Call rings
+            # their own handset. Admins run campaigns; they aren't dialled by them.
             "SELECT email, name, assignment_name, phone FROM users "
-            "WHERE active ORDER BY name NULLS LAST, email"
+            "WHERE active AND role = 'rm' ORDER BY name NULLS LAST, email"
         ))).mappings().all()
     return {
         "fields": [
@@ -98,7 +100,8 @@ async def dialer_preview(payload: Rules, _: dict = Depends(require_admin)):
         wanted = {e.lower() for e in payload.rms}
         async with engine.connect() as conn:
             users = (await conn.execute(text(
-                "SELECT email, name, assignment_name FROM users WHERE active"))).mappings().all()
+                "SELECT email, name, assignment_name FROM users "
+                "WHERE active AND role = 'rm'"))).mappings().all()
         for u in users:
             if u["email"].lower() in wanted:
                 aliases += aliases_for(u["name"], u["assignment_name"])
@@ -119,7 +122,12 @@ async def list_campaigns(_: dict = Depends(require_admin)):
                    count(q.id) FILTER (WHERE q.status = 'pending')            AS pending,
                    count(q.id) FILTER (WHERE q.status = 'dialing')            AS live,
                    count(q.id) FILTER (WHERE q.status IN ('done','failed'))   AS completed,
-                   count(q.id)                                                AS total
+                   count(q.id)                                                AS total,
+                   -- with retries on, calls > leads: one queue row can be dialled
+                   -- max_attempts times, so `attempts` is the only honest call count
+                   count(q.id) FILTER (WHERE q.attempts > 0)                  AS unique_leads,
+                   COALESCE(sum(q.attempts), 0)                               AS total_calls,
+                   count(q.id) FILTER (WHERE q.answered)                      AS connected
               FROM dial_campaigns c LEFT JOIN dial_queue q ON q.campaign_id = c.id
              GROUP BY c.id ORDER BY c.created_at DESC LIMIT 50
         """))).mappings().all()
@@ -139,12 +147,15 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
         raise HTTPException(status_code=400, detail="pick at least one RM to do the calling")
 
     async with engine.begin() as conn:
+        # role='rm' is enforced here, not just hidden in the picker — otherwise a
+        # hand-rolled POST could still queue calls to an admin's handset.
         users = (await conn.execute(text(
-            "SELECT email, name, assignment_name FROM users WHERE active"))).mappings().all()
+            "SELECT email, name, assignment_name FROM users "
+            "WHERE active AND role = 'rm'"))).mappings().all()
         known = {u["email"].lower(): u for u in users}
         unknown = [e for e in payload.rms if e.lower() not in known]
         if unknown:
-            raise HTTPException(status_code=400, detail=f"not an active user: {unknown[0]}")
+            raise HTTPException(status_code=400, detail=f"not an active RM: {unknown[0]}")
 
         cid = (await conn.execute(text("""
             INSERT INTO dial_campaigns
@@ -220,7 +231,12 @@ async def campaign_detail(campaign_id: UUID, _: dict = Depends(require_admin)):
                    count(*) FILTER (WHERE status = 'done')              AS done,
                    count(*) FILTER (WHERE status = 'failed')            AS failed,
                    count(*) FILTER (WHERE status = 'skipped')           AS skipped,
-                   count(*)                                             AS total
+                   count(*)                                             AS total,
+                   -- `total` counts queued leads; with max_attempts > 1 a lead can be
+                   -- rung several times, so these two differ and both matter
+                   count(*) FILTER (WHERE attempts > 0)                 AS unique_leads,
+                   COALESCE(sum(attempts), 0)                           AS total_calls,
+                   count(*) FILTER (WHERE answered)                     AS connected
               FROM dial_queue WHERE campaign_id = :id"""),
             {"id": campaign_id})).mappings().first()
         per_rm = (await conn.execute(text("""

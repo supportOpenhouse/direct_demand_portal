@@ -103,6 +103,13 @@ body{
 .nav-item .badge{margin-left:auto;background:var(--coral);color:#fff;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;font-family:"Spline Sans Mono"}
 .nav-item .badge.gold{background:var(--gold)}
 .nav-item .badge.soft{background:#2a3445;color:#aeb7c5}
+/* sub-pages under a nav item (Auto Dialer → Schedule / Previous). The rail sits
+   where the parent's icon does, so the children read as hanging off it. */
+.nav-sub{margin:1px 0 3px 20px;padding-left:11px;border-left:1px solid #2a3445;display:flex;flex-direction:column;gap:1px}
+.nav-sub .nav-item{padding:6px 10px;font-size:12.5px}
+.nav-sub .nav-item.active::before{left:-12px;top:6px;bottom:6px}
+.app.collapsed .nav-sub{display:none}  /* nothing but text in here — hide it with the labels */
+
 .sidebar .spacer{flex:1}
 .user{
   display:flex;align-items:center;gap:10px;padding:10px;border-radius:11px;
@@ -878,8 +885,12 @@ a.nav-item{text-decoration:none}
 .dl-livedot.on{background:var(--amber);animation:dlp 1.4s infinite}
 .dl-stats{display:flex;justify-content:space-between;gap:8px}
 .dl-stat{display:flex;flex-direction:column;gap:2px}
-.dl-stat b{font-size:24px;font-weight:700;color:#fff;font-family:"Spline Sans Mono"}
-.dl-stat span{font-size:10.5px;color:#9aa6bc}
+/* Default to ink: these tiles are reused on the white Previous Campaigns summary,
+   where the old hardcoded #fff rendered the numbers invisible. */
+.dl-stat b{font-size:24px;font-weight:700;color:var(--ink);font-family:"Spline Sans Mono"}
+.dl-stat span{font-size:10.5px;color:var(--muted)}
+.dl-livecard .dl-stat b{color:#fff}
+.dl-livecard .dl-stat span{color:#9aa6bc}
 
 .dl-rmlist,.dl-feed{display:flex;flex-direction:column;gap:2px}
 .dl-rmrow,.dl-feedrow{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid var(--line-2)}

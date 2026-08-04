@@ -138,9 +138,21 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         </NavLink>
         <div className="nav-label">Admin</div>
         {isAdmin && (
-          <NavLink to="/dialer" className={navClass} title="Auto Dialer">
-            <IconDialer /> <span className="nav-t">Auto Dialer</span>
-          </NavLink>
+          <>
+            {/* The parent is a link too, not just a header — /dialer redirects to
+                Schedule Campaign, so clicking it lands somewhere real. */}
+            <NavLink to="/dialer" className={navClass} title="Auto Dialer">
+              <IconDialer /> <span className="nav-t">Auto Dialer</span>
+            </NavLink>
+            <div className="nav-sub">
+              <NavLink to="/dialer/schedule" className={navClass} title="Schedule Campaign">
+                <span className="nav-t">Schedule Campaign</span>
+              </NavLink>
+              <NavLink to="/dialer/previous" className={navClass} title="Previous Campaigns">
+                <span className="nav-t">Previous Campaigns</span>
+              </NavLink>
+            </div>
+          </>
         )}
         <NavLink to="/settings" className={navClass} title="Settings & Access">
           <IconSettings /> <span className="nav-t">Settings &amp; Access</span>

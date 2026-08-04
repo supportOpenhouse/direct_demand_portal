@@ -607,12 +607,22 @@ async def _persist(body: dict) -> None:
         "recording_url": _field(body, "ResourceURL", "recordingURL") or None,
         "raw": body,
     }
-    stmt = pg_insert(CallLog).values(**values)
-    updates = {k: text(f"COALESCE(EXCLUDED.{k}, call_logs.{k})")
-               for k in values if k not in ("call_id", "leg", "answered")}
-    updates["answered"] = text("call_logs.answered OR EXCLUDED.answered")
     try:
         async with engine.begin() as conn:
+            # Attribute the call to the campaign that placed it, while the queue row
+            # still carries this event_id — a retry clears it minutes later and the
+            # link would be unrecoverable. NULL for manual click-to-call, and COALESCE
+            # below means a later callback for the same leg can't blank it.
+            if values["event_id"]:
+                owner = (await conn.execute(text(
+                    "SELECT campaign_id FROM dial_queue WHERE event_id = :ev LIMIT 1"),
+                    {"ev": values["event_id"]})).first()
+                if owner:
+                    values["campaign_id"] = owner[0]
+            stmt = pg_insert(CallLog).values(**values)
+            updates = {k: text(f"COALESCE(EXCLUDED.{k}, call_logs.{k})")
+                       for k in values if k not in ("call_id", "leg", "answered")}
+            updates["answered"] = text("call_logs.answered OR EXCLUDED.answered")
             await conn.execute(stmt.on_conflict_do_update(
                 index_elements=[CallLog.call_id, CallLog.leg], set_=updates))
     except Exception:  # noqa: BLE001 — the callback was already acked
@@ -651,10 +661,16 @@ def _p10_sql(col: str) -> str:
     return rf"right(regexp_replace(coalesce({col}, ''), '\D', '', 'g'), 10)"
 
 
-def call_log_filters(q: str | None, answered: bool | None) -> tuple[str, dict]:
+def call_log_filters(q: str | None, answered: bool | None,
+                     campaign_id: UUID | None = None) -> tuple[str, dict]:
     """WHERE clause + bind params for the call-log list. Split out so the same clause
     drives both the page and its count, and so it's testable without a database."""
     where, params = [], {}
+    if campaign_id is not None:
+        # Previous Campaigns reuses this endpoint rather than running its own query,
+        # so a campaign's calls render in exactly the same shape as the Call Log page.
+        where.append("c.campaign_id = :campaign_id")
+        params["campaign_id"] = campaign_id
     if q:
         parts = ["c.source_number ILIKE :q", "c.destination_number ILIKE :q",
                  "c.display_number ILIKE :q", "l.name ILIKE :q"]
@@ -677,6 +693,7 @@ def call_log_filters(q: str | None, answered: bool | None) -> tuple[str, dict]:
 async def call_log(
     q: str | None = Query(None),          # matches any phone number or the lead's name
     answered: bool | None = Query(None),
+    campaign_id: UUID | None = Query(None),  # only calls one auto-dialer campaign placed
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -688,7 +705,7 @@ async def call_log(
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
-    clause, params = call_log_filters(q, answered)
+    clause, params = call_log_filters(q, answered, campaign_id)
     async with engine.connect() as conn:
         total = (await conn.execute(
             text(f"SELECT count(*) {CALL_LOG_FROM}{clause}"), params)).scalar()

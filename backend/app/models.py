@@ -342,6 +342,12 @@ class CallLog(Base):
     # stored if Bonvoice sends it; nothing downloads or renders it yet
     recording_url: Mapped[str | None] = mapped_column(Text)
     placed_by: Mapped[str | None] = mapped_column(Text)     # portal user who dialled
+    # which auto-dialer campaign placed this call, NULL for manual click-to-call.
+    # Resolved from dial_queue.event_id when the callback lands, because that row's
+    # event_id is cleared once a retry is scheduled — after which the link is gone.
+    campaign_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("dial_campaigns.id", ondelete="SET NULL"), index=True
+    )
     raw: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()

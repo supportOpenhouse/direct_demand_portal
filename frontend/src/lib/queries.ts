@@ -226,10 +226,14 @@ export function useLeadCalls(id: string, enabled = true) {
   });
 }
 
-export function useCallLog(params: import("./api").CallLogParams) {
+/* `enabled` matters for the campaign-scoped view: without it, the first render
+   (before a campaign is picked) fires an *unscoped* request that pulls every call
+   in the system just to throw it away. */
+export function useCallLog(params: import("./api").CallLogParams, enabled = true) {
   return useQuery({
     queryKey: ["call-log", params],
     queryFn: () => api.callLog(params),
+    enabled,
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
@@ -398,7 +402,9 @@ export function useCampaign(id: string | null) {
     queryKey: ["campaign", id],
     queryFn: () => api.campaign(id as string),
     enabled: !!id,
-    refetchInterval: 2_000,
+    // Only a running campaign changes under you. Paused/done/draft are static, so
+    // Previous Campaigns doesn't re-poll finished history 30 times a minute.
+    refetchInterval: (q) => (q.state.data?.campaign.status === "running" ? 2_000 : false),
   });
 }
 

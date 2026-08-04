@@ -15,6 +15,7 @@ import Logs from "./pages/Logs";
 import CallLog from "./pages/CallLog";
 import Chat from "./pages/Chat";
 import Dialer from "./pages/Dialer";
+import DialerPrevious from "./pages/DialerPrevious";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -37,7 +38,10 @@ const router = createBrowserRouter([
       { path: "leads/rnr", element: <Navigate to="/leads/rejected" replace /> },
       { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
       { path: "leads/:id", element: <LeadDetail /> },
-      { path: "dialer", element: <Dialer /> },
+      // Auto Dialer is two pages now; the bare path opens the scheduler
+      { path: "dialer", element: <Navigate to="/dialer/schedule" replace /> },
+      { path: "dialer/schedule", element: <Dialer /> },
+      { path: "dialer/previous", element: <DialerPrevious /> },
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "supply", element: <Supply /> },

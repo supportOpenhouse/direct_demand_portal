@@ -468,7 +468,10 @@ export interface CampaignRow {
   pending: number;
   live: number;
   completed: number;
-  total: number;
+  total: number;        // leads queued
+  unique_leads: number; // leads actually dialled at least once
+  total_calls: number;  // sum of attempts — higher than unique_leads once retries run
+  connected: number;
 }
 export interface CampaignFeedRow {
   status: string;
@@ -503,7 +506,13 @@ export interface CampaignDetail {
     created_at: string;
     started_at: string | null;
   };
-  stats: { pending: number; live: number; done: number; failed: number; skipped: number; total: number };
+  stats: {
+    pending: number; live: number; done: number; failed: number; skipped: number;
+    total: number;        // leads queued
+    unique_leads: number; // leads dialled at least once
+    total_calls: number;  // sum of attempts — exceeds unique_leads once retries run
+    connected: number;
+  };
   per_rm: Record<string, { live: number; done: number }>;
   feed: CampaignFeedRow[];
 }
@@ -587,6 +596,7 @@ export interface LeadCallRow {
 }
 export interface CallLogParams {
   q?: string; answered?: boolean; limit?: number; offset?: number;
+  campaign_id?: string;  // Previous Campaigns: only what this campaign dialled
 }
 export interface LogsParams {
   actor?: string; category?: string; method?: string; q?: string;

@@ -103,6 +103,12 @@ class Settings(BaseSettings):
     BONVOICE_DID: str = ""             # caller ID the lead sees, e.g. 7946350641
     BONVOICE_CHANNEL_ID: str = "1"     # legA/legB channel id issued with the account
     BONVOICE_WEBHOOK_SECRET: str = ""  # ?token= on the call-log callback URL
+    # Scheduled equivalent of the Sync from Bonvoice button. The webhook is the primary
+    # path; this is the safety net for dropped callbacks and handset-dialled calls.
+    BONVOICE_SYNC_INTERVAL_MINUTES: int = 15
+    # Days of history each tick re-pulls. 1 = yesterday+today, so a call at 23:58 is
+    # still picked up by the tick after midnight. Re-persisting is a no-op upsert.
+    BONVOICE_SYNC_LOOKBACK_DAYS: int = 1
 
     @property
     def bonvoice_base(self) -> str:

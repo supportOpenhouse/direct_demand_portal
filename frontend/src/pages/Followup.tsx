@@ -21,6 +21,7 @@ import { CallConnected } from "../components/CallConnected";
 import { NotesCell } from "../components/NotesCell";
 import { AssignControl } from "../components/AssignControl";
 import { CallButton } from "../components/CallButton";
+import LeadPhone from "../components/LeadPhone";
 
 // follow-up due → friendly label + overdue/soon class
 function DueChip({ at }: { at: string | null }) {
@@ -161,6 +162,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                       <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
+                        <LeadPhone phone={l.phone} missCount={l.miss_count} />
                       </div>
                     </div>
                   </td>

@@ -381,13 +381,6 @@ export const api = {
   syncCallLog: (from: string, to: string) =>
     request<{ fetched: number; stored: number }>(
       `/v1/bonvoice/calls/sync?from=${from}&to=${to}`, { method: "POST" }),
-  /* Re-pull only the days holding rows whose source_number never arrived (a dropped
-     callback). Fills the gaps; can't overwrite anything already stored. */
-  repairMissingCalls: () =>
-    request<{
-      missing_before: number; missing_after: number; repaired: number;
-      days: string[]; truncated: boolean; fetched: number; stored: number; linked: number;
-    }>("/v1/bonvoice/calls/repair-missing", { method: "POST" }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
   placeCall: (lead_id: string) =>
@@ -589,6 +582,10 @@ export interface CallLogRow {
   end_at: string | null;
   recording_url: string | null;
   placed_by: string | null;
+  /* Which side of From → To the lead matched on. 'to' = we rang them (normal
+     outgoing). 'from' = they rang us, so nobody here placed the call. null when
+     no lead is attached. */
+  lead_side: "from" | "to" | null;
 }
 export interface CallLogResponse { items: CallLogRow[]; total: number; }
 /* One lead's call history, for the lead-detail card. */

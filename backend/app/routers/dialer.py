@@ -79,7 +79,7 @@ class CampaignIn(BaseModel):
     window_start: str = "10:00"
     window_end: str = "19:00"
     max_attempts: int = Field(default=1, ge=1, le=10)
-    cooldown_minutes: int = Field(default=360, ge=0, le=10080)
+    cooldown_minutes: int = Field(default=180, ge=0, le=10080)
     start: bool = True  # create and immediately begin dialling
 
 

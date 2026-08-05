@@ -11,6 +11,7 @@ import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset }
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
 import { CallButton } from "../components/CallButton";
+import LeadPhone from "../components/LeadPhone";
 import { AssignControl } from "../components/AssignControl";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
@@ -202,6 +203,7 @@ export default function NewLeads() {
                             <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>
                           )}
                         </div>
+                        <LeadPhone phone={l.phone} missCount={l.miss_count} />
                       </div>
                     </div>
                   </td>

@@ -468,25 +468,19 @@ async def attach_lead_and_actor(mapped: list[dict]) -> int:
     return linked
 
 
-@router.post("/bonvoice/calls/sync", dependencies=[Depends(require_admin)])
-async def sync_call_records(
-    date_from: str = Query(..., alias="from"),   # YYYY-MM-DD
-    date_to: str = Query(..., alias="to"),
-    agent: str | None = Query(None),             # one extension, or all of them
-):
-    """Backfill the call log from Bonvoice for a date range.
+async def sync_calls(date_from: str, date_to: str, agent: str | None = None) -> dict:
+    """Pull Bonvoice's own call records for a date range and upsert them.
 
     The webhook only ever reports calls placed after it was wired up; this pulls in
     everything else — history, calls placed from a handset, anything a dropped
-    callback lost.
+    callback lost. Shared by the admin button and the scheduled job so both behave
+    identically.
     """
-    if not get_settings().bonvoice_configured:
-        raise HTTPException(status_code=503, detail="Bonvoice isn't configured.")
     records = await fetch_call_records(date_from, date_to, agent)
     mapped = [m for m in (record_to_callback(r) for r in records) if m["callID"]]
     linked = await attach_lead_and_actor(mapped)
-    # ponytail: one upsert per record, sequentially. A month is ~150 round trips on an
-    # admin-triggered button — batch it if a wider range ever gets slow.
+    # ponytail: one upsert per record, sequentially. A day is ~30 round trips on the
+    # 15-min job — batch it if the window ever widens.
     for m in mapped:
         await _persist(m)
     log.info("bonvoice: synced %s/%s call records (%s linked to leads) for %s..%s",
@@ -494,72 +488,35 @@ async def sync_call_records(
     return {"fetched": len(records), "stored": len(mapped), "linked": linked}
 
 
-@router.post("/bonvoice/calls/repair-missing", dependencies=[Depends(require_admin)])
-async def repair_missing_numbers(
-    max_days: int = Query(60, ge=1, le=365),
-    dry_run: bool = Query(False),
-):
-    """Re-pull Bonvoice's records for the days holding call_logs rows with no
-    source_number, and upsert them over the gaps.
+async def run_call_log_sync(trigger: str = "scheduler") -> None:
+    """Scheduled counterpart of the Sync from Bonvoice button.
 
-    A leg only learns its numbers from the callback that carried them. If that one
-    delivery was dropped, a later lifecycle event still creates the row — with
-    source_number NULL — and nothing ever goes back for it. `_persist` writes every
-    field as COALESCE(EXCLUDED, existing), so re-pulling fills the hole and cannot
-    overwrite anything already good.
-
-    Scoped to the days that actually have holes rather than one min..max range:
-    a handful of NULLs months apart would otherwise re-pull the whole history, one
-    sequential upsert per record.
-
-    Rows whose start_at is NULL too are dated by created_at — when we first stored
-    them, which is within minutes of the call.
+    Rolling window rather than "today": a call at 23:58 is only reported once, and a
+    tick just after midnight asking for the new day alone would never see it. The
+    lookback also re-covers calls whose callback was dropped. Re-persisting a record
+    we already hold is free — `_persist` upserts on (call_id, leg).
     """
+    s = get_settings()
+    if not s.bonvoice_configured:
+        return
+    today = datetime.now(IST).date()
+    date_from = str(today - timedelta(days=max(0, s.BONVOICE_SYNC_LOOKBACK_DAYS)))
+    try:
+        await sync_calls(date_from, str(today))
+    except Exception:  # noqa: BLE001 — a failed pull must never kill the scheduler
+        log.exception("bonvoice: scheduled call-log sync failed (%s)", trigger)
+
+
+@router.post("/bonvoice/calls/sync", dependencies=[Depends(require_admin)])
+async def sync_call_records(
+    date_from: str = Query(..., alias="from"),   # YYYY-MM-DD
+    date_to: str = Query(..., alias="to"),
+    agent: str | None = Query(None),             # one extension, or all of them
+):
+    """Backfill the call log from Bonvoice for a date range."""
     if not get_settings().bonvoice_configured:
         raise HTTPException(status_code=503, detail="Bonvoice isn't configured.")
-    engine = neon_engine()
-    if engine is None:
-        raise HTTPException(status_code=503, detail="database not configured")
-
-    async with engine.connect() as conn:
-        before = (await conn.execute(text(
-            "SELECT count(*) FROM call_logs WHERE source_number IS NULL"))).scalar() or 0
-        days = [str(r[0]) for r in (await conn.execute(text("""
-            SELECT DISTINCT (COALESCE(start_at, created_at) AT TIME ZONE 'Asia/Kolkata')::date AS d
-              FROM call_logs
-             WHERE source_number IS NULL
-               AND COALESCE(start_at, created_at) IS NOT NULL
-             ORDER BY d DESC"""))).all()]
-
-    truncated = len(days) > max_days
-    days = days[:max_days]  # newest first, so a cap keeps the most useful days
-    if dry_run or not days:
-        return {"missing_before": before, "days": days, "truncated": truncated,
-                "fetched": 0, "stored": 0, "linked": 0, "missing_after": before,
-                "dry_run": dry_run}
-
-    fetched = stored = linked = 0
-    for day in days:
-        try:
-            records = await fetch_call_records(day, day)
-        except HTTPException:
-            log.exception("bonvoice: repair pull failed for %s — skipping that day", day)
-            continue  # one bad day must not abandon the rest
-        mapped = [m for m in (record_to_callback(r) for r in records) if m["callID"]]
-        linked += await attach_lead_and_actor(mapped)
-        for m in mapped:
-            await _persist(m)
-        fetched += len(records)
-        stored += len(mapped)
-
-    async with engine.connect() as conn:
-        after = (await conn.execute(text(
-            "SELECT count(*) FROM call_logs WHERE source_number IS NULL"))).scalar() or 0
-    log.info("bonvoice: repaired %d/%d rows missing source_number across %d day(s)",
-             before - after, before, len(days))
-    return {"missing_before": before, "days": days, "truncated": truncated,
-            "fetched": fetched, "stored": stored, "linked": linked,
-            "missing_after": after, "repaired": before - after, "dry_run": False}
+    return await sync_calls(date_from, date_to, agent)
 
 
 # --- inbound: call logs -------------------------------------------------------
@@ -789,7 +746,18 @@ async def call_log(
                    c.recording_url,
                    -- placed_by is only filled for calls the dialer placed; for a
                    -- click-to-call the actor rides along in the echoed callBackParams
-                   COALESCE(c.placed_by, c.raw->'callBackParams'->>'actor') AS placed_by
+                   COALESCE(c.placed_by, c.raw->'callBackParams'->>'actor') AS placed_by,
+                   -- Which side of "From → To" the lead is on. Outgoing puts them in
+                   -- the destination; when they ring us they're the source instead, and
+                   -- nobody here placed the call — so the UI credits the lead. Compared
+                   -- on last-10 digits because the three stores format numbers
+                   -- differently (see _p10_sql).
+                   CASE
+                     WHEN c.lead_id IS NULL OR l.phone IS NULL THEN NULL
+                     WHEN c.source_number IS NOT NULL
+                          AND {_p10_sql('l.phone')} = {_p10_sql('c.source_number')} THEN 'from'
+                     ELSE 'to'
+                   END AS lead_side
             {CALL_LOG_FROM}{clause}
              ORDER BY COALESCE(c.start_at, c.created_at) DESC
              LIMIT :limit OFFSET :offset"""),

@@ -432,7 +432,7 @@ class DialCampaign(Base):
     # a lead that never connected goes back in the queue until it has used up its
     # attempts, but not before cooldown_minutes have passed
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
-    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="360")
+    cooldown_minutes: Mapped[int] = mapped_column(Integer, nullable=False, server_default="180")
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
     # draft | running | paused | done
     created_by: Mapped[str | None] = mapped_column(Text)

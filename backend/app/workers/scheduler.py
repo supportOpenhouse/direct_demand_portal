@@ -80,10 +80,25 @@ def start_scheduler(interval_minutes: int, leads_interval_hours: int = 4) -> Non
         max_instances=1,
         id="visits_sync",
     )
+    # Bonvoice call log. The webhook is the primary path; this catches dropped
+    # callbacks and calls dialled straight from a handset. Skips itself when Bonvoice
+    # isn't configured, so it's harmless on an unconfigured deploy.
+    from ..routers.bonvoice import run_call_log_sync  # local: avoids a router↔worker import cycle
+
+    call_min = max(1, get_settings().BONVOICE_SYNC_INTERVAL_MINUTES)
+    _scheduler.add_job(
+        locked_job("bonvoice_call_sync", run_call_log_sync, max(60, call_min * 60 - 30)),
+        "interval",
+        minutes=call_min,
+        kwargs={"trigger": "scheduler"},
+        coalesce=True,
+        max_instances=1,
+        id="bonvoice_call_sync",
+    )
     _scheduler.start()
     times = ", ".join(f"{h:02d}:{m:02d}" for h, m in LEADS_SYNC_TIMES_IST)
-    log.info("inventory sync every %d min; leads ingest at %s IST; visit status every %d min",
-             inv_min, times, vis_min)
+    log.info("inventory sync every %d min; leads ingest at %s IST; visit status every %d min; "
+             "bonvoice call log every %d min", inv_min, times, vis_min, call_min)
 
 
 def stop_scheduler() -> None:

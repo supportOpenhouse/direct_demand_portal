@@ -16,6 +16,7 @@ import { NotesCell } from "../components/NotesCell";
 import { VisitsCell } from "../components/VisitsCell";
 import { AssignControl } from "../components/AssignControl";
 import { CallButton } from "../components/CallButton";
+import LeadPhone from "../components/LeadPhone";
 import { VisitPlanner } from "../features/VisitPlanner";
 
 const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
@@ -186,6 +187,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                               due callback has to be visible here or it's invisible */}
                           {segment === "qualified" && <DueBadge at={l.follow_up_at} />}
                         </div>
+                        <LeadPhone phone={l.phone} missCount={l.miss_count} />
                       </div>
                     </div>
                   </td>

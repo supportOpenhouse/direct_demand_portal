@@ -162,7 +162,7 @@ const DEFAULTS = {
   gap: 0,
   win: { start: "10:00", end: "19:00" },
   attempts: 1,
-  cooldown: 360,
+  cooldown: 180,  // 3h between retries
 };
 
 /* ── page ───────────────────────────────────────────────────────────────── */

@@ -691,8 +691,42 @@ def _p10_sql(col: str) -> str:
     return rf"right(regexp_replace(coalesce({col}, ''), '\D', '', 'g'), 10)"
 
 
+# The actor who dialled: the auto-dialer writes placed_by directly, a click-to-call
+# echoes it back inside callBackParams. Defined once so the SELECT and the filter
+# below can never disagree about who placed a call.
+PLACED_BY_SQL = "COALESCE(c.placed_by, c.raw->'callBackParams'->>'actor')"
+
+# Sentinels for the "placed by" filter. Neither can collide with a real value —
+# every actor is an email, so both lack an '@'.
+PLACED_BY_LEAD = "by-lead"      # they rang us; the lead is on the From side
+PLACED_BY_UNKNOWN = "unknown"   # nobody recorded, and not lead-placed either
+
+# label → [from, to) seconds. `to` None means open-ended.
+# Half-open [from, to) and contiguous, so every duration lands in exactly one bucket.
+# Inclusive-looking bounds (…59 / 181… / 301…) would read fine but leave gaps: the
+# column is a timestamp difference, so a 59.5s or 300.5s call would match nothing.
+# Contiguous also reads correctly against the labels — "<1 min" IS [0, 60).
+DURATION_BUCKETS: dict[str, tuple[int, int | None]] = {
+    "<1 min": (0, 60),      # 0:00–0:59
+    "1-3 mins": (60, 180),  # 1:00–2:59
+    "3-5 mins": (180, 300), # 3:00–4:59
+    "5+ mins": (300, None), # 5:00 and up
+}
+
+
+def _lead_side_sql() -> str:
+    """Which side of From → To the lead sits on — see the SELECT for the reasoning."""
+    return (
+        "CASE WHEN c.lead_id IS NULL OR l.phone IS NULL THEN NULL "
+        f"WHEN c.source_number IS NOT NULL AND {_p10_sql('l.phone')} = {_p10_sql('c.source_number')} "
+        "THEN 'from' ELSE 'to' END"
+    )
+
+
 def call_log_filters(q: str | None, answered: bool | None,
-                     campaign_id: UUID | None = None) -> tuple[str, dict]:
+                     campaign_id: UUID | None = None,
+                     placed_by: str | None = None,
+                     duration: str | None = None) -> tuple[str, dict]:
     """WHERE clause + bind params for the call-log list. Split out so the same clause
     drives both the page and its count, and so it's testable without a database."""
     where, params = [], {}
@@ -716,6 +750,33 @@ def call_log_filters(q: str | None, answered: bool | None,
     if answered is not None:
         where.append("c.answered = :answered")
         params["answered"] = answered
+    if placed_by:
+        if placed_by == PLACED_BY_LEAD:
+            where.append(f"({_lead_side_sql()}) = 'from'")
+        elif placed_by == PLACED_BY_UNKNOWN:
+            # no recorded actor AND not one the lead placed — otherwise every inbound
+            # call would land in "Unknown" as well as in "By Lead"
+            where.append(f"{PLACED_BY_SQL} IS NULL AND ({_lead_side_sql()}) IS DISTINCT FROM 'from'")
+        else:
+            # An inbound call can carry an actor too — attach_lead_and_actor matches
+            # the RM who *received* it. But the column says "Placed by", and the table
+            # shows the lead there for inbound rows, so filtering by an RM must not
+            # return calls that lead placed. Excluding them also makes the three
+            # choices a true partition instead of overlapping sets.
+            where.append(
+                f"{PLACED_BY_SQL} = :placed_by AND ({_lead_side_sql()}) IS DISTINCT FROM 'from'")
+            params["placed_by"] = placed_by
+    if duration:
+        lo, hi = DURATION_BUCKETS.get(duration, (None, None))
+        if lo is not None:
+            # a leg with no end_at has an unknown length, so it matches no bucket
+            # rather than being silently counted as zero
+            secs = "EXTRACT(EPOCH FROM (c.end_at - c.start_at))"
+            bounds = f"{secs} >= :dur_lo" + (" AND " + f"{secs} < :dur_hi" if hi is not None else "")
+            where.append(f"c.start_at IS NOT NULL AND c.end_at IS NOT NULL AND {bounds}")
+            params["dur_lo"] = lo
+            if hi is not None:
+                params["dur_hi"] = hi
     return (" WHERE " + " AND ".join(where)) if where else "", params
 
 
@@ -724,6 +785,8 @@ async def call_log(
     q: str | None = Query(None),          # matches any phone number or the lead's name
     answered: bool | None = Query(None),
     campaign_id: UUID | None = Query(None),  # only calls one auto-dialer campaign placed
+    placed_by: str | None = Query(None),     # an actor email, or by-lead / unknown
+    duration: str | None = Query(None),      # a DURATION_BUCKETS label
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -735,7 +798,7 @@ async def call_log(
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
-    clause, params = call_log_filters(q, answered, campaign_id)
+    clause, params = call_log_filters(q, answered, campaign_id, placed_by, duration)
     async with engine.connect() as conn:
         total = (await conn.execute(
             text(f"SELECT count(*) {CALL_LOG_FROM}{clause}"), params)).scalar()
@@ -746,18 +809,13 @@ async def call_log(
                    c.recording_url,
                    -- placed_by is only filled for calls the dialer placed; for a
                    -- click-to-call the actor rides along in the echoed callBackParams
-                   COALESCE(c.placed_by, c.raw->'callBackParams'->>'actor') AS placed_by,
+                   {PLACED_BY_SQL} AS placed_by,
                    -- Which side of "From → To" the lead is on. Outgoing puts them in
                    -- the destination; when they ring us they're the source instead, and
                    -- nobody here placed the call — so the UI credits the lead. Compared
                    -- on last-10 digits because the three stores format numbers
                    -- differently (see _p10_sql).
-                   CASE
-                     WHEN c.lead_id IS NULL OR l.phone IS NULL THEN NULL
-                     WHEN c.source_number IS NOT NULL
-                          AND {_p10_sql('l.phone')} = {_p10_sql('c.source_number')} THEN 'from'
-                     ELSE 'to'
-                   END AS lead_side
+                   {_lead_side_sql()} AS lead_side
             {CALL_LOG_FROM}{clause}
              ORDER BY COALESCE(c.start_at, c.created_at) DESC
              LIMIT :limit OFFSET :offset"""),
@@ -767,6 +825,23 @@ async def call_log(
          for k, v in dict(r).items()}
         for r in rows
     ], "total": total}
+
+
+@router.get("/bonvoice/calls/actors", dependencies=[Depends(require_admin)])
+async def call_log_actors():
+    """Distinct people who placed a call — the "Calls placed by" dropdown.
+
+    Server-side because the page only holds 50 rows at a time; deriving the list from
+    what's on screen would hide every RM who isn't on the current page.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text(
+            f"SELECT DISTINCT {PLACED_BY_SQL} AS a {CALL_LOG_FROM} "
+            f"WHERE {PLACED_BY_SQL} IS NOT NULL ORDER BY 1"))).all()
+    return {"items": [r[0] for r in rows]}
 
 
 @router.get("/leads/{lead_id}/calls")

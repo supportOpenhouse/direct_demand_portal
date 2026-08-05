@@ -15,9 +15,14 @@ client = TestClient(app)
 def _isolate_env(monkeypatch):
     """Settings load the developer's real ../.env, so a filled-in GUPSHUP_* would
     otherwise decide these tests — and a configured send would fire real WhatsApp
-    traffic. Each test starts from unconfigured and opts in explicitly."""
+    traffic. Each test starts from unconfigured and opts in explicitly.
+
+    GOOGLE_OAUTH_CLIENT_ID is cleared for the same reason: setting it in .env flips
+    auth_enabled on, and every authed endpoint here starts answering 401 instead of
+    what the test is actually about."""
     s = config.get_settings()  # lru_cached: the same object the app reads
-    for key in ("GUPSHUP_WEBHOOK_SECRET", "GUPSHUP_API_KEY", "GUPSHUP_SOURCE_NUMBER", "GUPSHUP_APP_NAME"):
+    for key in ("GUPSHUP_WEBHOOK_SECRET", "GUPSHUP_API_KEY", "GUPSHUP_SOURCE_NUMBER",
+                "GUPSHUP_APP_NAME", "GOOGLE_OAUTH_CLIENT_ID"):
         monkeypatch.setattr(s, key, "")
 
 # real Gupshup WhatsApp callback shapes

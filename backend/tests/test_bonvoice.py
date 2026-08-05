@@ -15,8 +15,10 @@ def _isolate_env(monkeypatch):
     """Settings read the developer's real ../.env. Without this, filled-in BONVOICE_*
     values would decide these tests — and a configured account would place REAL CALLS."""
     s = config.get_settings()
+    # GOOGLE_OAUTH_CLIENT_ID too: once it's set in .env, auth_enabled flips on and the
+    # authed endpoints here answer 401 instead of the status under test.
     for key in ("BONVOICE_DID", "BONVOICE_TOKEN", "BONVOICE_USERNAME",
-                "BONVOICE_PASSWORD", "BONVOICE_WEBHOOK_SECRET"):
+                "BONVOICE_PASSWORD", "BONVOICE_WEBHOOK_SECRET", "GOOGLE_OAUTH_CLIENT_ID"):
         monkeypatch.setattr(s, key, "")
 
 
@@ -274,3 +276,40 @@ def test_rejection_is_detected_despite_http_200():
     # is worse than silence
     assert _rejection_reason(_FakeResp("<html>502</html>")) is None
     assert _rejection_reason(_FakeResp([1, 2, 3])) is None
+
+
+def test_placed_by_and_duration_filters_bind_and_stay_disjoint():
+    """The three "placed by" choices must partition the log, not overlap: an inbound
+    call can carry an actor too (attach_lead_and_actor matches whoever *received* it),
+    so filtering by an RM has to exclude lead-placed rows or the counts double-count."""
+    from app.routers.bonvoice import (
+        DURATION_BUCKETS, PLACED_BY_LEAD, PLACED_BY_UNKNOWN, call_log_filters,
+    )
+
+    lead_c, _ = call_log_filters(None, None, None, PLACED_BY_LEAD)
+    unknown_c, _ = call_log_filters(None, None, None, PLACED_BY_UNKNOWN)
+    rm_c, rm_p = call_log_filters(None, None, None, "rm@openhouse.in")
+
+    assert "= 'from'" in lead_c
+    # both of the others must explicitly step around lead-placed rows
+    assert "IS DISTINCT FROM 'from'" in unknown_c
+    assert "IS DISTINCT FROM 'from'" in rm_c
+    # the actor is bound, never inlined
+    assert rm_p["placed_by"] == "rm@openhouse.in" and "rm@openhouse.in" not in rm_c
+
+    # duration bounds are bound params, and the open-ended bucket has no upper bound
+    _, p = call_log_filters(None, None, None, None, "1-3 mins")
+    assert (p["dur_lo"], p["dur_hi"]) == (60, 180)
+    _, p = call_log_filters(None, None, None, None, "5+ mins")
+    assert p["dur_lo"] == 300 and "dur_hi" not in p
+    # an unknown label filters nothing rather than erroring
+    assert call_log_filters(None, None, None, None, "nonsense") == ("", {})
+    assert set(DURATION_BUCKETS) == {"<1 min", "1-3 mins", "3-5 mins", "5+ mins"}
+
+    # The SQL is >= lo AND < hi, so the bounds must be CONTIGUOUS. Inclusive-looking
+    # ones (…59, 181…) leave a call of exactly 59.5s or 300.5s in no bucket at all —
+    # the column is a timestamp difference, not whole seconds.
+    edges = list(DURATION_BUCKETS.values())
+    for (_, hi), (lo, _) in zip(edges, edges[1:]):
+        assert hi == lo, f"gap between buckets at {hi}s..{lo}s"
+    assert edges[0][0] == 0 and edges[-1][1] is None  # covers 0 upward, open-ended

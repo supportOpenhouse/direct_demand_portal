@@ -161,7 +161,10 @@ app.add_middleware(  # registered last → outermost (adds CORS headers even on 
     allow_origin_regex=_settings.CORS_ORIGIN_REGEX or None,
     allow_credentials=False,  # Bearer-token auth, no cookies
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    # X-Dev-User is the local "view as" switch. Listing it here only lets the browser
+    # SEND it; current_user still ignores it unless auth is off and APP_ENV isn't prod,
+    # and the production frontend bundle has no code that sets it.
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "X-Dev-User"],
 )
 
 app.include_router(health.router, prefix="/v1")

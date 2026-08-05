@@ -3,15 +3,24 @@
    Google sign-in and attaches the issued JWT to every API call. */
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AuthUser, GOOGLE_CLIENT_ID, getToken, setToken } from "../lib/api";
+import { api, AuthUser, GOOGLE_CLIENT_ID, getToken, setToken,
+         isDevBuild, getDevUser, setDevUser } from "../lib/api";
 
 interface AuthState {
   enabled: boolean;
   user: AuthUser | null;
   loading: boolean;
   logout: () => void;
+  /* Local "view as" — null everywhere except a dev build. Setting it makes every
+     request identify as that user, so the role gates and the server's row scoping
+     both follow. */
+  devUser: string | null;
+  viewAs: (email: string | null) => void;
 }
-const AuthCtx = createContext<AuthState>({ enabled: false, user: null, loading: false, logout: () => {} });
+const AuthCtx = createContext<AuthState>({
+  enabled: false, user: null, loading: false, logout: () => {},
+  devUser: null, viewAs: () => {},
+});
 export const useAuth = () => useContext(AuthCtx);
 
 declare global {
@@ -25,14 +34,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const enabled = !!GOOGLE_CLIENT_ID;
   const qc = useQueryClient();
   const [token, setTok] = useState<string | null>(getToken());
+  const [devUser, setDev] = useState<string | null>(getDevUser());
 
   /* /me is polled, not fetched once: an admin changing someone's role in Settings
      now has to reach that person's open tab. The backend reads role off the users
      row (not the JWT claim), so this picks the change up without a re-login. */
   const { data, isLoading } = useQuery({
-    queryKey: ["me"],
+    // keyed on devUser so switching identity can't serve the previous one from cache
+    queryKey: ["me", devUser],
     queryFn: api.me,
-    enabled: enabled && !!token,
+    // with auth off /me normally never fires; impersonating is the one case where it
+    // must, because the server is what resolves the email into a role
+    enabled: (enabled && !!token) || (isDevBuild && !!devUser),
     refetchInterval: 60_000,
     refetchOnWindowFocus: true,
     retry: false,
@@ -50,6 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     prevRole.current = user?.role;
   }, [user?.role, qc]);
 
+  /* Everything cached was fetched as the previous identity — role scoping means the
+     server will hand back different rows now, so drop all of it rather than show one
+     user's leads under another's name. */
+  const viewAs = (email: string | null) => {
+    setDevUser(email);
+    setDev(email);
+    qc.clear();
+  };
+
   const logout = () => {
     setToken(null);
     setTok(null);
@@ -57,7 +79,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.google?.accounts.id.disableAutoSelect?.();
   };
 
-  const value = { enabled, user, loading: isLoading, logout };
+  /* `enabled` is reported true while impersonating so the role gates actually bite —
+     they're all written `!enabled || user?.role === "admin"`, which would otherwise
+     hand every impersonated RM a full admin view. */
+  const value = {
+    enabled: enabled || !!devUser, user, loading: isLoading, logout, devUser, viewAs,
+  };
   if (!enabled) return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;
   if (token && isLoading)
     return (

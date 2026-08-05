@@ -3,11 +3,12 @@
    one for the lead. The leg itself isn't shown — it's noise next to the numbers. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useCallLog, useSyncCallLog, callDuration, formatDateTime } from "../lib/queries";
+import { useCallLog, useSyncCallLog, useCallLogActors, callDuration, formatDateTime } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
 import RecordingPlayer from "../components/RecordingPlayer";
+import { PLACED_BY_LEAD, PLACED_BY_UNKNOWN, DURATION_OPTIONS } from "../lib/api";
 
 const PAGE = 50;
 const ANSWERED = ["Connected", "Not connected"];
@@ -17,6 +18,8 @@ const ymd = (d: Date) => d.toISOString().slice(0, 10);
 export default function CallLog() {
   const [q, setQ] = useState("");
   const [conn, setConn] = useState("");
+  const [by, setBy] = useState("");
+  const [dur, setDur] = useState("");
   const [page, setPage] = useState(0);
   const dq = useDebounce(q, 300);
   const toast = useToast();
@@ -32,9 +35,21 @@ export default function CallLog() {
   });
 
 
+  /* "By Lead" and "Unknown" sit alongside the RMs because they're the other two ways
+     a row can answer "who placed this?" — an inbound call the lead made, or one with
+     no actor recorded at all. The three are mutually exclusive server-side. */
+  const actors = useCallLogActors().data?.items ?? [];
+  const byOptions = [
+    { value: PLACED_BY_LEAD, label: "By Lead" },
+    { value: PLACED_BY_UNKNOWN, label: "Unknown" },
+    ...actors.map((a) => ({ value: a, label: a })),
+  ];
+
   const { data, isLoading, isFetching } = useCallLog({
     q: dq || undefined,
     answered: conn ? conn === "Connected" : undefined,
+    placed_by: by || undefined,
+    duration: dur || undefined,
     limit: PAGE,
     offset: page * PAGE,
   });
@@ -44,7 +59,7 @@ export default function CallLog() {
   const start = total === 0 ? 0 : page * PAGE + 1;
   const end = Math.min(total, (page + 1) * PAGE);
   const reset = (fn: () => void) => { fn(); setPage(0); };
-  const anyFilter = q || conn;
+  const anyFilter = q || conn || by || dur;
 
   return (
     <>
@@ -54,11 +69,14 @@ export default function CallLog() {
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Outcome" value={conn} options={ANSWERED} onChange={(v) => reset(() => setConn(v))} width={150} />
+          <FilterSelect label="Placed by" value={by} options={byOptions} onChange={(v) => reset(() => setBy(v))} width={210} />
+          <FilterSelect label="Duration" value={dur} options={DURATION_OPTIONS} onChange={(v) => reset(() => setDur(v))} width={140} />
           <div className="field" style={{ marginBottom: 0, width: 220 }}>
             <input value={q} placeholder="Search phone (any format) / lead name…" onChange={(e) => reset(() => setQ(e.target.value))} style={{ padding: "7px 10px", fontSize: 12.5 }} />
           </div>
           {anyFilter && (
-            <button className="btn ghost sm" onClick={() => { setQ(""); setConn(""); setPage(0); }}>Clear</button>
+            <button className="btn ghost sm"
+              onClick={() => { setQ(""); setConn(""); setBy(""); setDur(""); setPage(0); }}>Clear</button>
           )}
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
           <input className="pick-ctrl" type="date" value={from} max={to} onChange={(e) => setFrom(e.target.value)} title="Sync from" style={{ padding: "7px 9px", fontSize: 12.5 }} />

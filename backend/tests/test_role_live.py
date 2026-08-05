@@ -27,6 +27,12 @@ class _Creds:
         self.credentials = token
 
 
+class _Req:
+    """current_user takes the Request so it can read the local view-as header."""
+    def __init__(self, who=None):
+        self.headers = {"x-dev-user": who} if who else {}
+
+
 class _FakeEngine:
     """Serves one users row, or raises to simulate a Neon blip."""
 
@@ -76,7 +82,7 @@ def _resolve(row, token_role="admin", boom=False):
 
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(app.db, "neon_engine", lambda: engine)
-        return asyncio.run(auth.current_user(_Creds(_token(token_role)))), engine
+        return asyncio.run(auth.current_user(_Req(), _Creds(_token(token_role)))), engine
 
 
 def test_role_comes_from_the_row_not_the_token():
@@ -107,12 +113,12 @@ def test_the_row_is_cached_then_dropped_on_edit():
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(app.db, "neon_engine", lambda: engine)
         creds = _Creds(_token("admin"))
-        asyncio.run(auth.current_user(creds))
-        asyncio.run(auth.current_user(creds))
+        asyncio.run(auth.current_user(_Req(), creds))
+        asyncio.run(auth.current_user(_Req(), creds))
         assert engine.reads == 1, "second request inside the TTL must not re-read"
 
         auth.forget_user("11111111-1111-1111-1111-111111111111")
-        asyncio.run(auth.current_user(creds))
+        asyncio.run(auth.current_user(_Req(), creds))
         assert engine.reads == 2, "an admin edit must invalidate the cache"
 
 

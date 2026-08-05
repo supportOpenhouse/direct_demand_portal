@@ -1,6 +1,22 @@
 const API_URL = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
 export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
 
+/* Local-only "view as another user".
+
+   sessionStorage, not localStorage, so each TAB carries its own identity — you can
+   have three tabs open as three different people at once. localStorage would flip
+   every tab together.
+
+   import.meta.env.DEV is replaced at build time, so this whole branch is removed from
+   a production bundle: the header cannot be sent by the deployed app even by hand. */
+export const DEV_USER_KEY = "dd_dev_user";
+export const isDevBuild = import.meta.env.DEV;
+export const getDevUser = () => (isDevBuild ? sessionStorage.getItem(DEV_USER_KEY) : null);
+export const setDevUser = (email: string | null) => {
+  if (!isDevBuild) return;
+  email ? sessionStorage.setItem(DEV_USER_KEY, email) : sessionStorage.removeItem(DEV_USER_KEY);
+};
+
 const TOKEN_KEY = "dd_token";
 export const getToken = () => localStorage.getItem(TOKEN_KEY);
 export const setToken = (t: string | null) =>
@@ -87,6 +103,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     headers: {
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      // dev only; the server ignores it unless auth is off AND APP_ENV isn't prod
+      ...(getDevUser() ? { "X-Dev-User": getDevUser() as string } : {}),
       ...(init?.headers || {}),
     },
   });
@@ -383,6 +401,8 @@ export const api = {
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
     return request<CallLogResponse>(`/v1/bonvoice/calls?${qs.toString()}`);
   },
+  /* Who has placed calls — server-side, since the page only holds 50 rows at a time. */
+  callLogActors: () => request<{ items: string[] }>("/v1/bonvoice/calls/actors"),
   leadCalls: (id: string) => request<{ items: LeadCallRow[] }>(`/v1/leads/${id}/calls`),
   /* Backfill from Bonvoice's own records — the webhook only knows about calls placed
      after it was wired up. Dates are YYYY-MM-DD. */
@@ -391,6 +411,19 @@ export const api = {
       `/v1/bonvoice/calls/sync?from=${from}&to=${to}`, { method: "POST" }),
   // users (admin)
   users: () => request<{ items: ManagedUser[] }>("/v1/users"),
+  /* The "view as" list, fetched WITHOUT the X-Dev-User header on purpose: /v1/users is
+     admin-only, so once you're viewing as an RM the normal call 403s, the dropdown
+     empties and you're stranded with no way back. */
+  devUserList: async (): Promise<{ items: ManagedUser[] }> => {
+    // inert in prod: the object property survives bundling, the request must not
+    if (!isDevBuild) return { items: [] };
+    // Throws on purpose. Swallowing into an empty list looked like a *successful*
+    // fetch of zero users, so react-query cached it and never retried — one attempt
+    // made before the API was up left the switcher permanently blank.
+    const r = await fetch(`${API_URL}/v1/users`, { headers: { "Content-Type": "application/json" } });
+    if (!r.ok) throw new Error(`users ${r.status}`);
+    return r.json();
+  },
   placeCall: (lead_id: string) =>
     request<{ status: string; event_id: string; rm_phone_masked: string }>("/v1/bonvoice/call", {
       method: "POST", body: JSON.stringify({ lead_id }),
@@ -611,7 +644,16 @@ export interface LeadCallRow {
 export interface CallLogParams {
   q?: string; answered?: boolean; limit?: number; offset?: number;
   campaign_id?: string;  // Previous Campaigns: only what this campaign dialled
+  placed_by?: string;    // an actor email, or the BY_LEAD / UNKNOWN sentinels
+  duration?: string;     // one of DURATION_OPTIONS
 }
+
+/* Sentinels the server understands for `placed_by`. Neither can collide with a real
+   actor — those are all emails, so both lack an '@'. */
+export const PLACED_BY_LEAD = "by-lead";
+export const PLACED_BY_UNKNOWN = "unknown";
+/* Must match DURATION_BUCKETS in routers/bonvoice.py — the label IS the API value. */
+export const DURATION_OPTIONS = ["<1 min", "1-3 mins", "3-5 mins", "5+ mins"];
 export interface LogsParams {
   actor?: string; category?: string; method?: string; q?: string;
   status?: number; from?: string; to?: string; limit?: number; offset?: number;

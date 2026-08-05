@@ -209,6 +209,15 @@ export function usePlaceCall() {
   return useMutation({ mutationFn: (leadId: string) => api.placeCall(leadId) });
 }
 
+/* Local switcher only — see api.devUserList for why it bypasses the dev header. */
+export function useDevUserList(enabled: boolean) {
+  // finite staleTime + retries: the API is often still booting when the page first
+  // loads locally, and a permanently-cached failure is the whole bug this replaces
+  return useQuery({
+    queryKey: ["dev-user-list"], queryFn: api.devUserList, enabled,
+    staleTime: 30_000, retry: 3, retryDelay: 1_000, refetchOnWindowFocus: true,
+  });
+}
 export function useUsers() {
   return useQuery({ queryKey: ["users"], queryFn: api.users });
 }
@@ -249,6 +258,9 @@ export function useCallLog(params: import("./api").CallLogParams, enabled = true
     placeholderData: keepPreviousData,
     staleTime: 10_000,
   });
+}
+export function useCallLogActors() {
+  return useQuery({ queryKey: ["call-log-actors"], queryFn: api.callLogActors, staleTime: 60_000 });
 }
 export function useSyncCallLog() {
   const qc = useQueryClient();

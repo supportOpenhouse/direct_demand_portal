@@ -1,6 +1,8 @@
 /* 1:1 port of the prototype's <aside class="sidebar"> markup. */
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
+import { useDevUserList } from "../lib/queries";
+import { isDevBuild } from "../lib/api";
 import { useLeadCounts } from "../lib/queries";
 import {
   OpenhouseLogo,
@@ -179,11 +181,48 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
   );
 }
 
+/* Local-only identity switcher. The whole component collapses to the plain chip in a
+   production build — isDevBuild is compile-time, so the user list and the switching
+   code aren't in the deployed bundle at all. */
+function DevViewAs({ current, onPick, busy }: {
+  current: string | null; onPick: (e: string | null) => void; busy: boolean;
+}) {
+  const q = useDevUserList(isDevBuild);
+  const users = q.data?.items ?? [];
+  return (
+    <select
+      className="dev-viewas"
+      value={current ?? ""}
+      onClick={(e) => e.stopPropagation()}   // the chip itself is a sign-out button
+      onChange={(e) => onPick(e.target.value || null)}
+      // the server resolves the email against the users table, which is a Neon
+      // round trip — without this the old identity just sits there for a beat
+      disabled={busy}
+      title="Local only — view the app as another user. Each tab is independent."
+    >
+      <option value="">{busy ? "switching…" : "View as… (open admin)"}</option>
+      {/* say why it's empty rather than showing a lone placeholder that looks broken */}
+      {!users.length && (
+        <option value="" disabled>
+          {q.isLoading ? "loading users…" : q.isError ? "couldn't reach the API" : "no active users"}
+        </option>
+      )}
+      {users.filter((u) => u.active).map((u) => (
+        <option key={u.id} value={u.email}>{u.name || u.email} · {u.role}</option>
+      ))}
+    </select>
+  );
+}
+
 function UserChip() {
-  const { enabled, user, logout } = useAuth();
+  const { enabled, user, logout, devUser, viewAs, loading } = useAuth();
+  const switcher = isDevBuild
+    ? <DevViewAs current={devUser} onPick={viewAs} busy={!!devUser && loading} />
+    : null;
   if (enabled && user) {
     const init = (user.name || user.email).split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
     return (
+      <>
       <div className="user" onClick={logout} title="Sign out">
         {user.picture ? (
           <img className="av" src={user.picture} alt="" style={{ objectFit: "cover" }} />
@@ -198,9 +237,12 @@ function UserChip() {
         </div>
         <span className="role-chip" style={{ textTransform: "capitalize" }}>{user.role}</span>
       </div>
+      {switcher}
+      </>
     );
   }
   return (
+    <>
     <div className="user">
       <div className="av">AD</div>
       <div>
@@ -209,5 +251,7 @@ function UserChip() {
       </div>
       <span className="role-chip">Admin</span>
     </div>
+    {switcher}
+    </>
   );
 }

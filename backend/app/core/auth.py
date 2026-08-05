@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from ..config import get_settings
@@ -163,9 +163,41 @@ async def _read_user_state(user_id: str) -> dict | None:
     return state
 
 
-async def current_user(creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
+async def _dev_impersonated(email: str) -> dict | None:
+    """The users row for `email`, for the local "view as" switch. None if unknown."""
+    from sqlalchemy import text
+
+    from ..db import neon_engine
+
+    engine = neon_engine()
+    if engine is None:
+        return None
+    try:
+        async with engine.connect() as conn:
+            row = (await conn.execute(text(
+                "SELECT id, email, name, picture, role, assignment_name FROM users "
+                "WHERE lower(email) = lower(:e) AND active"), {"e": email})).mappings().first()
+    except Exception:
+        log.warning("dev impersonation lookup failed", exc_info=True)
+        return None
+    return {"id": str(row["id"]), "email": row["email"], "name": row["name"],
+            "picture": row["picture"], "role": row["role"],
+            "assignment_name": row["assignment_name"]} if row else None
+
+
+async def current_user(request: Request,
+                       creds: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> dict:
     settings = get_settings()
     if not settings.auth_enabled:
+        # Local-only "view as another user". Two independent gates, either of which
+        # alone kills it: auth must be OFF (in prod it is always ON — assert_prod_safe
+        # refuses to boot without GOOGLE_OAUTH_CLIENT_ID) and APP_ENV must not be prod.
+        # So this header can never be honoured by a production deploy.
+        who = request.headers.get("x-dev-user") if not settings.is_prod else None
+        if who:
+            impersonated = await _dev_impersonated(who)
+            if impersonated:
+                return impersonated
         return OPEN_USER
     if creds is None:
         raise HTTPException(status_code=401, detail="authentication required")

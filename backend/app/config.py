@@ -114,15 +114,23 @@ class Settings(BaseSettings):
     def bonvoice_base(self) -> str:
         """Usable base URL, whatever was configured.
 
-        Two ways this bites: an env var set to an empty string overrides the default
-        (httpx then rejects a path with no scheme), and the value ops hand out is a
-        bare host — "pbx.bonvoice.com" — which is equally unusable. Normalise both
-        rather than 500 on a config typo."""
+        Every Bonvoice endpoint we use — auth, autoCallBridging and callrecords —
+        is served by the `backend.` host. The bare host ops hand out
+        ("pbx.bonvoice.com") answers nginx 405 for all of them, which surfaced as a
+        502 on every click-to-call. So the prefix is derived here rather than trusted
+        from config: setting the bare host must not be able to break calling.
+
+        Also normalises a missing scheme, and an env var set to an empty string
+        overriding the default (httpx then rejects a path with no scheme)."""
         base = (self.BONVOICE_BASE_URL or "").strip().rstrip("/")
         if not base:
             return "https://backend.pbx.bonvoice.com"
         if not base.startswith(("http://", "https://")):
             base = "https://" + base
+        # pbx.bonvoice.com → backend.pbx.bonvoice.com; already-backend hosts and any
+        # unrelated host are left alone
+        if "//pbx." in base:
+            base = base.replace("//pbx.", "//backend.pbx.", 1)
         return base
 
     @property

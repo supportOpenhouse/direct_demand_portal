@@ -12,7 +12,7 @@ import asyncio
 
 import pytest
 
-from app.events import _subscribers, publish, rm_channel, subscribe
+from app.events import _subscribers, publish, pubsub_connect_kwargs, rm_channel, subscribe
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +37,19 @@ async def _drain(channel: str, count: int, timeout: float = 1.0) -> list[dict]:
             break
     await agen.aclose()
     return got
+
+
+def test_the_subscriber_connection_has_no_read_timeout():
+    """A subscriber's whole job is to sit idle waiting for an event, so it must not
+    reuse cache.py's shared client — that one sets socket_timeout=2, which turns every
+    quiet stretch into a read timeout. In production this killed the stream every two
+    seconds: the log filled with 'redis SUBSCRIBE failed' and every RM silently ran on
+    the polling fallback."""
+    kwargs = pubsub_connect_kwargs()
+
+    assert kwargs["socket_timeout"] is None
+    # a half-open connection must still be noticed, just not on a 2s read deadline
+    assert kwargs.get("health_check_interval")
 
 
 def test_rm_channel_is_case_and_whitespace_insensitive():

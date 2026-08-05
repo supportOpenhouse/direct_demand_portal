@@ -309,11 +309,10 @@ async def fetch_call_state(event_id: str) -> tuple[bool, bool, str | None] | Non
 
 
 def _records_base() -> str:
-    """The call-record API only answers on the `backend.` host — the bare pbx host
-    that click-to-call uses returns nginx's 405 for it. Derived rather than configured
-    so one BONVOICE_BASE_URL keeps working for both."""
-    base = get_settings().bonvoice_base
-    return base if "//backend." in base else base.replace("//", "//backend.", 1)
+    """Same host as everything else. Kept as a name because the call-record API used
+    to be the only endpoint on `backend.` — it turned out auth and click-to-call are
+    there too, so the derivation moved into Settings.bonvoice_base."""
+    return get_settings().bonvoice_base
 
 
 def _pbx_dt(value) -> datetime | None:

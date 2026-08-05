@@ -41,7 +41,8 @@ _MY_CAMPAIGNS = text("""
 # spoken to them before.
 _NOW_CALLING = text("""
     SELECT q.id, q.lead_id, q.dialed_at, q.attempts,
-           l.name, l.phone, l.society, l.city, l.configuration, l.budget,
+           l.name, l.phone, l.society, l.city, l.configuration,
+           l.budget_band AS budget,
            l.stage, l.miss_count, l.ever_connected
       FROM dial_queue q
       JOIN leads l ON l.id = q.lead_id
@@ -77,7 +78,8 @@ _COMPLETED_TODAY = text("""
 
 _UPCOMING = """
     SELECT q.id, q.lead_id, q.position,
-           l.name, l.society, l.city, l.configuration, l.budget, l.stage
+           l.name, l.society, l.city, l.configuration,
+           l.budget_band AS budget, l.stage
       FROM dial_queue q
       JOIN leads l ON l.id = q.lead_id
      WHERE q.campaign_id = :cid

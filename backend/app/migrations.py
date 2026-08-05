@@ -151,6 +151,14 @@ async def run_migrations(engine) -> None:
             await conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS ix_call_logs_campaign_id
                     ON call_logs (campaign_id)"""))
+
+            # Live Calls looks up "my calls today" on every page load and every stream
+            # nudge. dial_queue only has campaign-scoped indexes, and the query matches
+            # on lower(rm_email) — which no plain index can serve — so without this it
+            # sequentially scans a table that grows with every campaign call ever made.
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_dial_queue_rm_dialed
+                    ON dial_queue (lower(rm_email), dialed_at DESC)"""))
             await conn.execute(text("""
                 UPDATE call_logs c SET campaign_id = q.campaign_id
                   FROM dial_queue q

@@ -61,12 +61,12 @@ services:
       - key: GUPSHUP_APP_NAME
         sync: false               # Gupshup app bound to that number (sent as src.name)
       # --- Bonvoice PBX (click-to-call + call-log sync) ---
-      # REQUIRED: the in-code default is the `backend.` host, but auth and
-      # click-to-call answer on the bare host — leave this unset and those break.
-      # The call-records API is the opposite way round, so _records_base() derives
-      # `backend.` from whatever is set here. Set the bare host.
+      # Every Bonvoice endpoint (auth, autoCallBridging, callrecords) is on the
+      # `backend.` host — the bare pbx host answers nginx 405 for all of them, which
+      # shows up as a 502 on every click-to-call. Settings.bonvoice_base rewrites a
+      # bare host to `backend.` anyway, so this is belt-and-braces.
       - key: BONVOICE_BASE_URL
-        value: "https://pbx.bonvoice.com"
+        value: "https://backend.pbx.bonvoice.com"
       - key: BONVOICE_USERNAME
         sync: false
       - key: BONVOICE_PASSWORD

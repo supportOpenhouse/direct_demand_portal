@@ -18,3 +18,6 @@ def _no_redis_in_tests(monkeypatch):
     # the definition alone would leave events.py still talking to a real server.
     monkeypatch.setattr("app.cache.get_redis", lambda: None)
     monkeypatch.setattr("app.events.get_redis", lambda: None)
+    # Subscribers open a connection of their own — a subscriber must not inherit the
+    # shared client's 2s read timeout — so it needs neutralising separately.
+    monkeypatch.setattr("app.events._pubsub_client", lambda: None)

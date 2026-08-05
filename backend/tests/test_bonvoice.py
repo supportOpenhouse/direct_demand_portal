@@ -234,13 +234,16 @@ def test_call_refuses_when_unconfigured():
 
 def test_base_url_survives_blank_and_scheme_less_config(monkeypatch):
     """An env var set to "" overrides the default, and ops handed out a bare host
-    ("pbx.bonvoice.com"). Both produced httpx's "missing an 'http://' protocol"."""
+    ("pbx.bonvoice.com"). Both produced httpx's "missing an 'http://' protocol".
+
+    The bare host now also resolves to `backend.` — it answers nginx 405 for every
+    endpoint we call, so honouring it verbatim 502'd all click-to-call."""
     s = config.get_settings()
     for raw, expected in [
         ("", "https://backend.pbx.bonvoice.com"),
         ("   ", "https://backend.pbx.bonvoice.com"),
-        ("pbx.bonvoice.com", "https://pbx.bonvoice.com"),
-        ("pbx.bonvoice.com/", "https://pbx.bonvoice.com"),
+        ("pbx.bonvoice.com", "https://backend.pbx.bonvoice.com"),
+        ("pbx.bonvoice.com/", "https://backend.pbx.bonvoice.com"),
         ("https://backend.pbx.bonvoice.com/", "https://backend.pbx.bonvoice.com"),
         ("http://localhost:9000", "http://localhost:9000"),
     ]:
@@ -313,3 +316,16 @@ def test_placed_by_and_duration_filters_bind_and_stay_disjoint():
     for (_, hi), (lo, _) in zip(edges, edges[1:]):
         assert hi == lo, f"gap between buckets at {hi}s..{lo}s"
     assert edges[0][0] == 0 and edges[-1][1] is None  # covers 0 upward, open-ended
+
+
+def test_every_bonvoice_call_goes_to_the_backend_host():
+    """Auth, autoCallBridging and callrecords are ALL served by backend.pbx… — the
+    bare host answers nginx 405 for each, which surfaced as a 502 on every
+    click-to-call. Ops hand out the bare host, so the prefix is derived, not trusted."""
+    from app.config import Settings
+
+    for given in ("https://pbx.bonvoice.com", "pbx.bonvoice.com", "https://pbx.bonvoice.com/",
+                  "https://backend.pbx.bonvoice.com", ""):
+        assert Settings(BONVOICE_BASE_URL=given).bonvoice_base == "https://backend.pbx.bonvoice.com", given
+    # an unrelated host is left alone — this rewrite is for the known pbx host only
+    assert Settings(BONVOICE_BASE_URL="https://other.example.com").bonvoice_base == "https://other.example.com"

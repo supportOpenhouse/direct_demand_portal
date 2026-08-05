@@ -359,6 +359,11 @@ export function useMyCalls(streamHealthy: boolean) {
     queryKey: ["my-calls"],
     queryFn: api.myCalls,
     refetchInterval: streamHealthy ? false : 4_000,
+    // The sidebar badge mounts this on every page for every user, admins included.
+    // Without a staleTime each tab focus re-runs three Neon queries from Singapore
+    // for people who never dial; the page's own polling is unaffected because an
+    // explicit refetchInterval overrides staleness.
+    staleTime: 15_000,
   });
 }
 

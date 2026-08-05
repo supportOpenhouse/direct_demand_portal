@@ -178,6 +178,23 @@ def test_marking_records_who_marked_it_and_when():
     assert "call_result_by = :email" in src
 
 
+def test_every_lead_column_selected_actually_exists():
+    """These queries only ever run against a real Postgres, so a column that doesn't
+    exist is a 500 on the page and nowhere else — it can't be caught by reading the
+    SQL. `leads` has budget_band, not budget; that shipped and broke Live Calls
+    outright. Checking the selected names against the model closes the gap."""
+    from app.models import Lead
+
+    real = set(Lead.__table__.columns.keys())
+    selected = set()
+    for stmt in (live_calls._NOW_CALLING, live_calls._COMPLETED_TODAY,
+                 live_calls.upcoming_sql("assigned"), live_calls.upcoming_sql("round_robin")):
+        # `l` is the leads alias in every one of these queries
+        selected |= set(re.findall(r"\bl\.(\w+)", str(stmt)))
+
+    assert selected <= real, f"not columns on leads: {sorted(selected - real)}"
+
+
 def test_now_calling_is_scoped_to_the_caller():
     """The whole point of the page is "who am *I* on with". An unscoped query would
     show whichever RM the scheduler happened to dial most recently."""

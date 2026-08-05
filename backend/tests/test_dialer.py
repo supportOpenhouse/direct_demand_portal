@@ -121,26 +121,44 @@ def test_unowned_skips_are_tagged_with_the_shared_constant():
     assert UNOWNED_DETAIL not in skip_stmt  # bound, not inlined
 
 
+class _Result:
+    """Just enough of a SQLAlchemy Result for `.mappings().first()`. The release
+    statement RETURNs the freed row so Live Calls can be notified; returning None here
+    would send _release_dial_slot down its except branch and these tests would pass
+    without ever exercising the real path."""
+
+    def __init__(self, row):
+        self._row = row
+
+    def mappings(self):
+        return self
+
+    def first(self):
+        return self._row
+
+
 class _FakeConn:
-    def __init__(self, calls):
-        self.calls = calls
+    def __init__(self, calls, row):
+        self.calls, self._row = calls, row
 
     async def execute(self, stmt, params=None):
         self.calls.append((str(stmt), params))
+        return _Result(self._row)
 
 
 class _FakeEngine:
     """Records what the release would run, without a database."""
 
-    def __init__(self):
+    def __init__(self, row=None):
         self.calls = []
+        self._row = row
 
     def begin(self):
-        calls = self.calls
+        calls, row = self.calls, self._row
 
         class _Ctx:
             async def __aenter__(self_):
-                return _FakeConn(calls)
+                return _FakeConn(calls, row)
 
             async def __aexit__(self_, *exc):
                 return False
@@ -148,9 +166,9 @@ class _FakeEngine:
         return _Ctx()
 
 
-async def _release(body):
+async def _release(body, row={"id": "q1", "rm_email": "rm@x.com"}):
     from app.routers.bonvoice import _release_dial_slot
-    engine = _FakeEngine()
+    engine = _FakeEngine(row=row)
     await _release_dial_slot(engine, body)
     return engine.calls
 

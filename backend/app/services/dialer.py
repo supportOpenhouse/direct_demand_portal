@@ -24,6 +24,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 from ..db import neon_engine
+from ..events import publish, rm_channel
 
 log = logging.getLogger("dialer")
 
@@ -270,6 +271,19 @@ def _in_window(start: str, end: str) -> bool:
     return time(h1, m1) <= now <= time(h2, m2)
 
 
+# Mirrors _RELEASE_SLOT in routers/bonvoice.py, keyed by id rather than event_id.
+# RETURNING carries the RM back so the Live Calls event can be addressed.
+_POLL_CLOSE = text("""
+    UPDATE dial_queue
+       SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
+           ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
+           outcome  = COALESCE(:outcome, outcome),
+           answered = answered OR :answered
+     WHERE id = :id AND status = 'dialing'
+ RETURNING id, rm_email
+""")
+
+
 async def poll_open_calls(engine) -> None:
     """For calls that have been ringing a while with no callback, ask Bonvoice how they
     went and close them out.
@@ -304,18 +318,18 @@ async def poll_open_calls(engine) -> None:
         if not ended and not answered:
             continue
         async with engine.begin() as conn:
-            await conn.execute(
-                text("""UPDATE dial_queue
-                           SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
-                               ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
-                               outcome  = COALESCE(:outcome, outcome),
-                               answered = answered OR :answered
-                         WHERE id = :id AND status = 'dialing'"""),
+            closed = (await conn.execute(
+                _POLL_CLOSE,
                 {"id": row["id"], "ends": ended, "answered": answered, "outcome": status},
-            )
+            )).mappings().first()
         if ended:
             log.info("dialer: closed %s from the call log (answered=%s status=%s)",
                      row["event_id"], answered, status)
+            # This path exists because the callback never arrived. Without the event
+            # the RM's page would sit on "Ringing…" for a call that ended minutes ago.
+            if closed and closed["rm_email"]:
+                await publish(rm_channel(closed["rm_email"]),
+                              {"type": "call_ended", "queue_item_id": str(closed["id"])})
 
 
 async def tick_all() -> None:
@@ -493,6 +507,10 @@ async def _dial_next(engine, c: dict, rm_email: str, owned: bool) -> bool:
 
     log.info("dialer: campaign=%s rm=%s lead=%s event=%s", c["id"], rm_email,
              item["lead_id"], event_id)
+    # The handset is about to ring. This is the event the whole page exists for —
+    # without it the RM answers a call with no idea who is on the other end.
+    await publish(rm_channel(rm_email),
+                  {"type": "call_started", "queue_item_id": str(item["id"])})
     return True
 
 

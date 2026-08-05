@@ -56,6 +56,11 @@ _ADD_COLUMNS = [
     # which campaign placed a call — lets Previous Campaigns list every call it made,
     # retries included, after dial_queue has moved on to a new event_id
     ("call_logs", "campaign_id", "UUID"),
+    # Live Calls: what the RM said happened, as opposed to `outcome`, which is what
+    # the PBX reported. NULL means unmarked — that's the "needs result" badge.
+    ("dial_queue", "call_result", "TEXT"),
+    ("dial_queue", "call_result_at", "TIMESTAMPTZ"),
+    ("dial_queue", "call_result_by", "TEXT"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

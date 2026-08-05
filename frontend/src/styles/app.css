@@ -973,3 +973,50 @@ a.nav-item{text-decoration:none}
   font:inherit;font-size:11.5px;cursor:pointer;
 }
 .app.collapsed .dev-viewas{display:none}
+
+/* ── Live Calls ───────────────────────────────────────────────────────────────
+   The RM's view of the campaign dialling them. The Now-Calling card is the only
+   loud element on the page on purpose: it's read at a glance while a phone is
+   already ringing, so it has to win over everything around it. */
+.lc-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:18px}
+.lc-head h1{font-size:22px;margin:0 0 2px}
+.lc-muted{color:var(--muted);font-size:12.5px;margin:0}
+.lc-note{margin:0 0 8px}
+
+/* Which mechanism is actually running. Without it a quiet page looks identical
+   whether the stream is live or silently dead. */
+.lc-conn{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  font-family:"Spline Sans Mono";padding:3px 9px;border-radius:20px;white-space:nowrap}
+.lc-conn.live{background:var(--emerald-soft);color:var(--emerald)}
+.lc-conn.poll{background:var(--slate-soft,var(--panel-2));color:var(--muted)}
+
+.lc-card{border:1px solid var(--line);border-radius:14px;padding:20px;background:var(--panel);margin-bottom:20px}
+.lc-card.lc-idle{border-style:dashed;background:transparent;text-align:center;padding:28px 20px}
+.lc-card.lc-live{border-color:var(--emerald-soft);box-shadow:0 0 0 3px var(--emerald-soft)}
+
+.lc-eyebrow{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.lc-eyebrow.lc-pulse{color:var(--emerald);animation:lc-blink 1.6s ease-in-out infinite}
+@keyframes lc-blink{0%,100%{opacity:1}50%{opacity:.45}}
+/* Respect a reduced-motion preference — the colour already carries the meaning. */
+@media (prefers-reduced-motion:reduce){.lc-eyebrow.lc-pulse{animation:none}}
+
+.lc-name{font-size:26px;margin:0 0 4px;line-height:1.2}
+.lc-phone{font-family:"Spline Sans Mono";font-size:14px;color:var(--ink-2);margin-bottom:6px}
+.lc-details{font-size:13px;color:var(--ink-2);margin-bottom:10px}
+.lc-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px}
+
+.lc-section{margin-bottom:24px}
+.lc-section h3{font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
+
+.lc-queue,.lc-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.lc-queue li,.lc-list li{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+  padding:11px 14px;background:var(--panel);border-bottom:1px solid var(--line-2);font-size:13px}
+.lc-queue li:last-child,.lc-list li:last-child{border-bottom:none}
+.lc-qname{font-weight:600;min-width:150px}
+/* Push the actions to the trailing edge, whatever sits between them. */
+.lc-list li .cc{margin-left:auto}
+.lc-ok{margin-left:auto;color:var(--emerald);font-weight:600;font-size:12px}
+.lc-miss{margin-left:auto;color:var(--coral);font-weight:600;font-size:12px}
+.lc-pending{background:var(--gold-soft)!important}
+.lc-badge{font-size:10px;font-weight:700;font-family:"Spline Sans Mono";padding:2px 8px;
+  border-radius:20px;background:var(--gold);color:#fff;white-space:nowrap}

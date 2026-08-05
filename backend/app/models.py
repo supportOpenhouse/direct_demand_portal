@@ -473,6 +473,13 @@ class DialQueueItem(Base):
     detail: Mapped[str | None] = mapped_column(Text)  # why a dial failed, verbatim
     dialed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     ended_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    # What the RM said happened, from the Live Calls page. Distinct from `outcome`,
+    # which is the PBX's view (ANSWER / NOANSWER / 'no callback'): a call Bonvoice
+    # reports as answered can still be a wrong number, and only the RM knows that.
+    # NULL = not marked yet, which is what drives the "needs result" badge.
+    call_result: Mapped[str | None] = mapped_column(Text)  # 'connected' | 'missed'
+    call_result_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    call_result_by: Mapped[str | None] = mapped_column(Text)
 
     __table_args__ = (
         # one slot per lead per campaign — re-materialising a queue can't duplicate calls

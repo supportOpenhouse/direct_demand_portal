@@ -334,14 +334,31 @@ export function useRejectLead(id: string) {
 export function useCallResult() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, connected, reason, notes }:
-      { id: string; connected: boolean; reason?: string; notes?: string }) =>
-      api.callResult(id, connected, reason, notes),
+    mutationFn: ({ id, connected, reason, notes, queueItemId }:
+      { id: string; connected: boolean; reason?: string; notes?: string;
+        queueItemId?: string }) =>
+      api.callResult(id, connected, reason, notes, queueItemId),
     onSuccess: (_d, { id }) => {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["lead-notes", id] });  // a "No" writes a note
+      qc.invalidateQueries({ queryKey: ["my-calls"] });        // clears "needs result"
     },
+  });
+}
+
+/* Live Calls.
+
+   The SSE stream carries only a nudge; this query is what actually builds the page,
+   so live and fallback share one code path. When the stream is healthy we don't poll
+   at all; when it isn't — no Redis across a split scheduler process, a dropped
+   connection — this drops to a 4s interval and the page degrades to a few seconds of
+   latency rather than to nothing. */
+export function useMyCalls(streamHealthy: boolean) {
+  return useQuery({
+    queryKey: ["my-calls"],
+    queryFn: api.myCalls,
+    refetchInterval: streamHealthy ? false : 4_000,
   });
 }
 

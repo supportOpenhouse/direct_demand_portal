@@ -30,6 +30,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
+from ..events import publish, rm_channel
 from ..models import CallLog, Lead, User
 
 log = logging.getLogger("bonvoice")
@@ -567,6 +568,19 @@ def lead_id_from(params) -> UUID | None:
         return None
 
 
+# RETURNING carries the RM back so the Live Calls event can be addressed without a
+# second query — and only ever fires for the leg that actually closed the slot.
+_RELEASE_SLOT = text("""
+    UPDATE dial_queue
+       SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
+           ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
+           outcome  = COALESCE(:outcome, outcome),
+           answered = answered OR :answered
+     WHERE event_id = :eid AND status = 'dialing'
+ RETURNING id, rm_email
+""")
+
+
 async def _release_dial_slot(engine, body: dict) -> None:
     """Hangup frees the auto-dialer slot — that's what lets the next lead ring on this
     RM's phone.
@@ -589,17 +603,20 @@ async def _release_dial_slot(engine, body: dict) -> None:
     ends = call_type == CALL_HANGUP
     try:
         async with engine.begin() as conn:
-            await conn.execute(
-                text("""UPDATE dial_queue
-                           SET status   = CASE WHEN :ends THEN 'done' ELSE status END,
-                               ended_at = CASE WHEN :ends THEN now() ELSE ended_at END,
-                               outcome  = COALESCE(:outcome, outcome),
-                               answered = answered OR :answered
-                         WHERE event_id = :eid AND status = 'dialing'"""),
+            freed = (await conn.execute(
+                _RELEASE_SLOT,
                 {"eid": str(event_id), "outcome": status, "answered": answered, "ends": ends},
-            )
+            )).mappings().first()
     except Exception:  # noqa: BLE001 — the callback was already acked
         log.exception("bonvoice: failed to release dial slot for event %s", event_id)
+        return
+
+    # Tell the RM's Live Calls page the call is over, so the row moves to Completed
+    # and can be marked. Only on a real end: both legs report a hangup, and the
+    # WHERE on status='dialing' makes the second one match nothing.
+    if ends and freed and freed["rm_email"]:
+        await publish(rm_channel(freed["rm_email"]),
+                      {"type": "call_ended", "queue_item_id": str(freed["id"])})
 
 
 async def _persist(body: dict) -> None:

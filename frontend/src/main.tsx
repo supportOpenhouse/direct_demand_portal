@@ -16,6 +16,7 @@ import CallLog from "./pages/CallLog";
 import Chat from "./pages/Chat";
 import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
+import LiveCalls from "./pages/LiveCalls";
 import Stub from "./pages/Stub";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
@@ -28,6 +29,8 @@ const router = createBrowserRouter([
     element: <App />,
     children: [
       { index: true, element: <Dashboard /> },
+      // RM-facing half of the dialer — not under /dialer, which is admin-only
+      { path: "live-calls", element: <LiveCalls /> },
       { path: "leads/new", element: <NewLeads /> },
       { path: "leads/call-not-received", element: <Followup segment="call_not_received" /> },
       { path: "leads/followup", element: <Followup /> },

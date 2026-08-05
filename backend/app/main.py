@@ -19,7 +19,8 @@ from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
 from .routers import (
-    auth, bonvoice, dialer, gupshup, health, inventory, leads, logs, supply, users, visits,
+    auth, bonvoice, dialer, gupshup, health, inventory, leads, live_calls, logs, supply,
+    users, visits,
 )
 from .services.dialer import start_dialer, stop_dialer
 from .workers.scheduler import start_scheduler, stop_scheduler
@@ -70,6 +71,13 @@ async def lifespan(app: FastAPI):
         start_dialer()
     else:
         log.info("RUN_SCHEDULER=false — cron + startup syncs disabled on this instance")
+        if not settings.redis_configured:
+            # The dialer is in another process, so the events that drive Live Calls
+            # are published somewhere this instance can't hear. The page still works
+            # off its polling fallback; without this the silence looks like a bug.
+            log.warning("RUN_SCHEDULER=false and REDIS_URL unset — Live Calls cannot "
+                        "receive push events from the dialer process and will fall "
+                        "back to polling. Set REDIS_URL to enable the stream.")
 
     if settings.is_prod and not settings.redis_configured:
         log.warning("APP_ENV=prod but REDIS_URL unset — cache isn't shared and the cron "
@@ -178,3 +186,6 @@ app.include_router(logs.router, prefix="/v1")
 app.include_router(gupshup.router, prefix="/v1")
 app.include_router(bonvoice.router, prefix="/v1")
 app.include_router(dialer.router, prefix="/v1")
+# same /dialer prefix, but RM-scoped rather than admin-only — mounted after so the
+# admin routes keep their place in the table
+app.include_router(live_calls.router, prefix="/v1")

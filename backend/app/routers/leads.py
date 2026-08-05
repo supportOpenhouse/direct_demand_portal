@@ -395,6 +395,84 @@ class CallResult(BaseModel):
     connected: bool
     reason: str | None = None
     notes: str | None = None
+    # Set by the Live Calls page. Its presence is what marks this a campaign call:
+    # the row is proof the scheduler placed the call, which is why the spam cooldown
+    # below can be waived for it. Ownership is verified server-side before it counts.
+    queue_item_id: UUID | None = None
+
+
+# Is this queue row really this RM's, and really for this lead? The client sends the
+# id; whether it is theirs is never the client's call. Matching the lead as well stops
+# a valid id of one's own being used to stamp a result onto a different lead.
+_MY_QUEUE_ITEM = text("""
+    SELECT id FROM dial_queue
+     WHERE id = :qid AND lead_id = :lead AND lower(rm_email) = lower(:email)
+""")
+
+_STAMP_CALL_RESULT = text("""
+    UPDATE dial_queue
+       SET call_result = :result, call_result_at = now(), call_result_by = :email
+     WHERE id = :qid
+""")
+
+# The "No" path. `cur` snapshots the row BEFORE the update (a CTE sees the statement's
+# snapshot), which is what lets one statement both test the spam window and apply the
+# outcome. When blocked, every SET writes the column back to its own value and the note
+# is never inserted — so a spammed "No" leaves no trace and can't inflate miss_count.
+#
+# :skip_cooldown waives the window for campaign calls. The guard exists to stop an RM
+# hammering "No" without dialling; a campaign call was placed by the scheduler, not
+# chosen by the RM. Without the waiver, a campaign whose cooldown_minutes is under 120
+# redials inside the window and the RM's second result is silently thrown away.
+_CALL_RESULT_NO = text(f"""
+    WITH cur AS (
+        SELECT id, last_no_timestamp AS prev,
+               (NOT CAST(:skip_cooldown AS boolean)
+                AND last_no_timestamp IS NOT NULL
+                AND last_no_timestamp > now() - interval '{NO_COOLDOWN_HOURS} hours') AS blocked
+        FROM leads WHERE id = :id
+    ),
+    n AS (
+        -- FROM cur doubles as the existence guard: a stale lead id yields no
+        -- row, so the note is skipped and the UPDATE returns nothing (→ 404)
+        -- rather than blowing up on the note's foreign key
+        INSERT INTO lead_notes (id, lead_id, body, author, source, created_at)
+        SELECT :nid, :id, :note, :author, 'call', now() FROM cur WHERE NOT cur.blocked
+    )
+    UPDATE leads SET
+        miss_count = CASE WHEN cur.blocked THEN leads.miss_count
+                     WHEN CAST(:reject AS boolean) THEN leads.miss_count
+                     ELSE leads.miss_count + 1 END,
+        -- never reached → Call Not Received; already reached → Follow-up.
+        -- Qualified and beyond keep their stage: a missed callback on a
+        -- qualified lead must not drag it back down the funnel.
+        stage = CASE WHEN cur.blocked THEN leads.stage
+                     WHEN CAST(:reject AS boolean) THEN 'rejected'
+                     WHEN NOT leads.ever_connected AND leads.miss_count + 1 >= 10 THEN 'rnr'
+                     WHEN leads.stage IN ('qualified','visit_scheduled','won') THEN leads.stage
+                     WHEN NOT leads.ever_connected THEN 'call_not_received'
+                     ELSE 'follow_up' END,
+        follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
+                     WHEN CAST(:reject AS boolean)
+                          OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
+                     ELSE CAST(:due AS timestamptz) END,
+        follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since
+                     WHEN CAST(:reject AS boolean)
+                          OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
+                     ELSE COALESCE(leads.follow_up_since, now()) END,
+        reject_reason = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                     THEN CAST(:reason AS text) ELSE leads.reject_reason END,
+        reject_notes  = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                     THEN CAST(:note AS text) ELSE leads.reject_notes END,
+        rejected_at   = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
+                     THEN now() ELSE leads.rejected_at END,
+        last_no_timestamp = CASE WHEN cur.blocked THEN leads.last_no_timestamp
+                     ELSE now() END
+    FROM cur
+    WHERE leads.id = cur.id
+    RETURNING leads.miss_count, leads.stage, cur.blocked,
+              cur.prev + interval '{NO_COOLDOWN_HOURS} hours' AS retry_at
+""")
 
 
 @router.post("/leads/{lead_id}/call-result")
@@ -415,8 +493,21 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         if not note:
             raise HTTPException(status_code=422, detail={"fields": ["notes"], "message": "notes are required"})
     author = user.get("name") or user.get("email") or "You"
+    email = user.get("email") or ""
 
     async with engine.begin() as conn:
+        # Verify the queue row is this caller's before it earns the cooldown waiver.
+        # A forged or stale id simply falls back to the manual-call rules.
+        queue_item_id = None
+        if payload.queue_item_id is not None:
+            owned = (await conn.execute(_MY_QUEUE_ITEM, {
+                "qid": payload.queue_item_id, "lead": lead_id, "email": email,
+            })).mappings().first()
+            if owned is None:
+                raise HTTPException(
+                    status_code=403, detail="that call isn't yours to mark")
+            queue_item_id = owned["id"]
+
         if payload.connected:
             # We reached them, so New / Call Not Received no longer describes the lead —
             # move it to Follow-up. The caller usually opens the lead and confirms next,
@@ -427,6 +518,9 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
                 "THEN 'follow_up' ELSE stage END WHERE id = :id"), {"id": lead_id})
             if res.rowcount == 0:
                 raise HTTPException(status_code=404, detail="lead not found")
+            if queue_item_id is not None:
+                await conn.execute(_STAMP_CALL_RESULT, {
+                    "qid": queue_item_id, "result": "connected", "email": email})
             return {"status": "ok", "connected": True, "moved_to_rnr": False, "rejected": False}
 
         # One round trip: append the note and apply the outcome together. This runs on
@@ -436,63 +530,20 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         reject = MISS_REASONS[payload.reason] is None
         due = None if reject else _within_calling_hours(
             datetime.now(timezone.utc) + timedelta(hours=MISS_REASONS[payload.reason]))
-        # `cur` snapshots the row BEFORE the update (a CTE sees the statement's
-        # snapshot), which is what lets one statement both test the spam window and
-        # apply the outcome. When blocked, every SET below writes the column back to
-        # its own value and the note is never inserted — so a spammed "No" leaves no
-        # trace at all, and in particular can't inflate miss_count toward RNR.
-        res = await conn.execute(text(f"""
-            WITH cur AS (
-                SELECT id, last_no_timestamp AS prev,
-                       (last_no_timestamp IS NOT NULL
-                        AND last_no_timestamp > now() - interval '{NO_COOLDOWN_HOURS} hours') AS blocked
-                FROM leads WHERE id = :id
-            ),
-            n AS (
-                -- FROM cur doubles as the existence guard: a stale lead id yields no
-                -- row, so the note is skipped and the UPDATE returns nothing (→ 404)
-                -- rather than blowing up on the note's foreign key
-                INSERT INTO lead_notes (id, lead_id, body, author, source, created_at)
-                SELECT :nid, :id, :note, :author, 'call', now() FROM cur WHERE NOT cur.blocked
-            )
-            UPDATE leads SET
-                miss_count = CASE WHEN cur.blocked THEN leads.miss_count
-                             WHEN CAST(:reject AS boolean) THEN leads.miss_count
-                             ELSE leads.miss_count + 1 END,
-                -- never reached → Call Not Received; already reached → Follow-up.
-                -- Qualified and beyond keep their stage: a missed callback on a
-                -- qualified lead must not drag it back down the funnel.
-                stage = CASE WHEN cur.blocked THEN leads.stage
-                             WHEN CAST(:reject AS boolean) THEN 'rejected'
-                             WHEN NOT leads.ever_connected AND leads.miss_count + 1 >= 10 THEN 'rnr'
-                             WHEN leads.stage IN ('qualified','visit_scheduled','won') THEN leads.stage
-                             WHEN NOT leads.ever_connected THEN 'call_not_received'
-                             ELSE 'follow_up' END,
-                follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
-                             WHEN CAST(:reject AS boolean)
-                                  OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
-                             ELSE CAST(:due AS timestamptz) END,
-                follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since
-                             WHEN CAST(:reject AS boolean)
-                                  OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
-                             ELSE COALESCE(leads.follow_up_since, now()) END,
-                reject_reason = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                             THEN CAST(:reason AS text) ELSE leads.reject_reason END,
-                reject_notes  = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                             THEN CAST(:note AS text) ELSE leads.reject_notes END,
-                rejected_at   = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                             THEN now() ELSE leads.rejected_at END,
-                last_no_timestamp = CASE WHEN cur.blocked THEN leads.last_no_timestamp
-                             ELSE now() END
-            FROM cur
-            WHERE leads.id = cur.id
-            RETURNING leads.miss_count, leads.stage, cur.blocked,
-                      cur.prev + interval '{NO_COOLDOWN_HOURS} hours' AS retry_at
-        """), {"nid": uuid4(), "id": lead_id, "note": note, "author": author,
-               "reject": reject, "reason": payload.reason, "due": due})
+        res = await conn.execute(_CALL_RESULT_NO, {
+            "nid": uuid4(), "id": lead_id, "note": note, "author": author,
+            "reject": reject, "reason": payload.reason, "due": due,
+            # a verified campaign row waives the spam window; a manual call never does
+            "skip_cooldown": queue_item_id is not None,
+        })
         out = res.mappings().first()
         if out is None:
             raise HTTPException(status_code=404, detail="lead not found")
+        # Not when blocked: a refused "No" records nothing anywhere, so marking the
+        # queue row would clear the "needs result" badge for an outcome never saved.
+        if queue_item_id is not None and not out["blocked"]:
+            await conn.execute(_STAMP_CALL_RESULT, {
+                "qid": queue_item_id, "result": "missed", "email": email})
 
     if out["blocked"]:
         remaining = (out["retry_at"] - datetime.now(timezone.utc)).total_seconds() / 60

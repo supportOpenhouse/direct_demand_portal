@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { useDevUserList } from "../lib/queries";
 import { isDevBuild } from "../lib/api";
-import { useLeadCounts } from "../lib/queries";
+import { useLeadCounts, useMyCalls } from "../lib/queries";
 import {
   OpenhouseLogo,
   IconDashboard,
@@ -46,6 +46,20 @@ function NewCount() {
   );
 }
 
+/* Calls the RM took but never marked. Nothing else nags them — the page deliberately
+   never interrupts a live call — so this is the only prompt they get. Hidden at zero
+   so an idle RM doesn't carry a permanent badge. */
+function UnmarkedCount() {
+  const { data } = useMyCalls(true);  // no polling here; the page owns that
+  const n = (data?.completed || []).filter((c) => !c.call_result).length;
+  if (!n) return null;
+  return (
+    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--gold)", fontVariantNumeric: "tabular-nums" }}>
+      {n}
+    </span>
+  );
+}
+
 const IconLogs = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -70,6 +84,15 @@ const IconDialer = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
     <path d="M16 3h5v5" /><path d="M21 3l-6 6" />
+  </svg>
+);
+
+/* Handset with signal arcs — the RM's own phone ringing, which is what Live Calls
+   is about, as distinct from IconDialer's outbound arrow. */
+const IconLiveCall = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
+    <path d="M15.5 5.5a5 5 0 0 1 3 3" /><path d="M14.5 2a8.5 8.5 0 0 1 5.5 5.5" />
   </svg>
 );
 
@@ -105,6 +128,11 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <div className="nav-label">Workspace</div>
         <NavLink to="/" end className={navClass} title="Dashboard">
           <IconDashboard /> <span className="nav-t">Dashboard</span>
+        </NavLink>
+        {/* Workspace, not Admin: /dialer is the admin's control surface for rings on
+            other people's phones — this is the RM's view of their own. */}
+        <NavLink to="/live-calls" className={navClass} title="Live Calls">
+          <IconLiveCall /> <span className="nav-t">Live Calls</span> <UnmarkedCount />
         </NavLink>
         <NavLink to="/leads/new" className={navClass} title="New Leads">
           <IconPlus /> <span className="nav-t">New Leads</span> <NewCount />

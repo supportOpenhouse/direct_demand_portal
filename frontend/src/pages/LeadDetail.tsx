@@ -1,7 +1,7 @@
 /* Lead Detail — source-captured data + the Q1-Q6 call-confirm form (saves to
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   useLead, useConfirmLead, useRejectLead, useMatchPreview, formatPrice,
   useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate, useMarkPriority,
@@ -441,6 +441,8 @@ function MatchPanel({ title, tag, units, loading, leadId, leadPhone, leadName }:
 export default function LeadDetail() {
   const { id = "" } = useParams();
   const nav = useNavigate();
+  // Live Calls sends this in router state when "Yes" opens the lead in the same tab.
+  const fromLiveCalls = (useLocation().state as { from?: string } | null)?.from === "live-calls";
   const toast = useToast();
   const { data: lead, isLoading } = useLead(id);
   const confirm = useConfirmLead(id);
@@ -594,7 +596,15 @@ export default function LeadDetail() {
 
   return (
     <>
-      <div className="back" onClick={() => nav(-1)}>← Back</div>
+      {/* Arriving from Live Calls, "Back" has to be unambiguous: the RM is mid-shift
+          and the campaign is still dialling them. nav(-1) would do it, but naming the
+          destination is what makes it obvious they aren't leaving the queue behind.
+          Any other entry point is unchanged. */}
+      {fromLiveCalls ? (
+        <div className="back" onClick={() => nav("/live-calls")}>← Live Calls</div>
+      ) : (
+        <div className="back" onClick={() => nav(-1)}>← Back</div>
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
         <div className="lead-head">
           <div className="av">{initials(lead.name)}</div>

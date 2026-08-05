@@ -43,7 +43,14 @@ const istLabel = (d: Date) =>
     hour: "numeric", minute: "2-digit",
   });
 
-function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+/* Exported for the Live Calls page, which reaches the same "No" flow from a
+   completed campaign call rather than from a worklist row. `queueItemId` is what
+   tells the server this was a campaign call: it stamps the dial_queue row and waives
+   the 2h cooldown, since the scheduler chose to dial, not the RM. */
+export function MissReasonModal(
+  { leadId, queueItemId, onClose }:
+  { leadId: string; queueItemId?: string; onClose: () => void },
+) {
   const m = useCallResult();
   const toast = useToast();
   const [reason, setReason] = useState(MISS_REASONS[0].value);
@@ -55,7 +62,7 @@ function MissReasonModal({ leadId, onClose }: { leadId: string; onClose: () => v
   const submit = () => {
     if (!reason || !notes.trim()) { setErr(true); return; }
     m.mutate(
-      { id: leadId, connected: false, reason, notes: notes.trim() },
+      { id: leadId, connected: false, reason, notes: notes.trim(), queueItemId },
       {
         onSuccess: (d) => {
           // refused by the cooldown — nothing was recorded, so don't report an outcome

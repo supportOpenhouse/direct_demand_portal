@@ -1,4 +1,6 @@
-const API_URL = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
+// exported for the Live Calls SSE hook, which can't go through request(): it needs the
+// raw streaming Response rather than a parsed JSON body
+export const API_URL = (import.meta.env.VITE_API_URL as string) || "http://localhost:8000";
 export const GOOGLE_CLIENT_ID = (import.meta.env.VITE_GOOGLE_CLIENT_ID as string) || "";
 
 /* Local-only "view as another user".
@@ -94,6 +96,41 @@ export interface SupplyResponse {
   status: "ok" | "not_configured" | "unavailable";
   detail: string | null;
   items: SupplyItem[];
+}
+
+/* Live Calls — the RM's own view of the campaign dialling them. */
+
+export interface LiveCallLead {
+  id: string;        // dial_queue row id — what a disposition is stamped against
+  lead_id: string;
+  name: string | null;
+  phone?: string | null;
+  society: string | null;
+  city: string | null;
+  configuration?: string | null;
+  budget?: string | null;
+  stage?: string | null;
+  position?: number;
+  dialed_at?: string | null;
+  ended_at?: string | null;
+  attempts?: number;
+  answered?: boolean;
+  outcome?: string | null;      // what the PBX reported
+  call_result?: string | null;  // what the RM said — null renders "needs result"
+  call_result_at?: string | null;
+  miss_count?: number;
+  ever_connected?: boolean;
+}
+
+export interface MyCallsResponse {
+  campaign: { id: string; name: string; strategy: string;
+              window_start: string; window_end: string } | null;
+  // under round_robin/least_load the queue is a shared pool — the next lead in it may
+  // ring somebody else's phone, and the page has to say so rather than imply ownership
+  upcoming_is_shared: boolean;
+  now_calling: LiveCallLead | null;
+  upcoming: LiveCallLead[];
+  completed: LiveCallLead[];
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -345,13 +382,21 @@ export const api = {
     request<{ status: string; meta_new: number; listing_new: number }>("/v1/leads/sync", { method: "POST" }),
   confirmLead: (id: string, payload: ConfirmPayload) =>
     request<{ status: string }>(`/v1/leads/${id}/confirm`, { method: "POST", body: JSON.stringify(payload) }),
-  callResult: (id: string, connected: boolean, reason?: string, notes?: string) =>
+  // queueItemId marks this a campaign call placed by the auto-dialer. The server
+  // re-verifies the row is the caller's, then waives the 2h "No" cooldown for it —
+  // the scheduler chose to dial, not the RM, so the spam guard doesn't apply.
+  callResult: (id: string, connected: boolean, reason?: string, notes?: string,
+               queueItemId?: string) =>
     request<{ status: string; connected: boolean; moved_to_rnr: boolean; rejected: boolean;
               // a second "No" inside the 2h cooldown is refused: nothing is recorded,
               // miss_count is untouched, and retry_in_minutes says when it reopens
               blocked?: boolean; retry_in_minutes?: number;
               miss_count?: number; follow_up_at?: string | null }>(
-      `/v1/leads/${id}/call-result`, { method: "POST", body: JSON.stringify({ connected, reason, notes }) }),
+      `/v1/leads/${id}/call-result`, {
+        method: "POST",
+        body: JSON.stringify({ connected, reason, notes, queue_item_id: queueItemId ?? null }),
+      }),
+  myCalls: () => request<MyCallsResponse>("/v1/dialer/my-calls"),
   setFollowup: (id: string, followUpAt: string) =>
     request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
   leadCrmVisits: (id: string) => request<{ items: CrmVisitRow[] }>(`/v1/leads/${id}/crm-visits`),

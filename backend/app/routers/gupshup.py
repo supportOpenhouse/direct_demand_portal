@@ -411,8 +411,9 @@ class BulkLeadRequest(BaseModel):
 async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(current_user)):
     """Create spine leads from many WhatsApp conversations in one go.
 
-    Each lead inherits the conversation's owning RM — a WhatsApp lead that lands
-    unassigned is invisible to the RM already talking to that person.
+    Leads are created UNASSIGNED. The conversation's RM is still read here, but only
+    to enforce who may convert what — it is deliberately not copied onto the lead, so
+    lead ownership stays a separate decision made through the normal assign flow.
 
     The name is taken server-side from the latest inbound WhatsApp profile name
     rather than the client's list, so a stale browser can't stamp the wrong name on
@@ -468,8 +469,9 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             "origin_key": f"whatsapp:{p}", "source_category": "whatsapp", "source": "whatsapp",
             "name": (names.get(p) or "").strip() or display_phone(p),
             "phone": display_phone(p),
-            # the whole point: the conversation's RM owns the lead too
-            "assigned_to": contacts.get(p),
+            # explicit: the chat's RM is NOT carried over. Assignment is its own step,
+            # so these land in the unassigned pool like any other new lead.
+            "assigned_to": None,
             "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
             "source_meta": {"created_from": "whatsapp_bulk", "created_by": user.get("email")},
         } for p in phones10 if f"whatsapp:{p}" not in already]
@@ -478,11 +480,10 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             await conn.execute(
                 pg_insert(Lead).on_conflict_do_nothing(index_elements=["origin_key"]), rows)
 
-    unassigned = sum(1 for r in rows if not r["assigned_to"])
-    log.info("whatsapp: bulk-created %d leads (%d already existed, %d unassigned) by %s",
-             len(rows), len(already), unassigned, user.get("email"))
+    log.info("whatsapp: bulk-created %d unassigned leads (%d already existed) by %s",
+             len(rows), len(already), user.get("email"))
     return {"status": "ok", "created": len(rows), "skipped_existing": len(already),
-            "unassigned": unassigned, "requested": len(phones10)}
+            "requested": len(phones10)}
 
 
 class SendRequest(BaseModel):

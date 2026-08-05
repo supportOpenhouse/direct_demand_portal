@@ -296,11 +296,12 @@ export const api = {
       method: "POST", body: JSON.stringify({ phone, tag }),
     }),
   waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
-  /* Bulk: names and owning RM are resolved server-side, so the client only sends
-     which conversations to convert. Already-lead contacts are skipped, not duplicated. */
+  /* Bulk: names are resolved server-side, so the client only sends which
+     conversations to convert. Leads are created unassigned; already-lead contacts are
+     skipped, not duplicated. */
   waBulkCreateLeads: (phones: string[]) =>
     request<{ status: string; created: number; skipped_existing: number;
-              unassigned: number; requested: number }>("/v1/gupshup/leads/bulk", {
+              requested: number }>("/v1/gupshup/leads/bulk", {
       method: "POST", body: JSON.stringify({ phones }),
     }),
   waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>

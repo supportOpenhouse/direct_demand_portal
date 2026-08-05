@@ -110,9 +110,8 @@ export default function Chat() {
   const runBulk = () => bulkCreate.mutate([...picked], {
     onSuccess: (r) => {
       const skipped = r.skipped_existing ? ` · ${r.skipped_existing} already had one` : "";
-      // an unassigned lead is invisible to every RM's list, so say it out loud
-      const un = r.unassigned ? ` · ${r.unassigned} unassigned (no RM on the chat)` : "";
-      toast(`Created ${r.created} lead${r.created === 1 ? "" : "s"}${skipped}${un}`,
+      // they land unassigned by design — say so, or nobody goes looking for them
+      toast(`Created ${r.created} unassigned lead${r.created === 1 ? "" : "s"}${skipped}`,
             r.created ? "green" : "gold", r.created ? "✓" : "⚠");
       exitBulk();
     },

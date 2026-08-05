@@ -57,6 +57,36 @@ def test_lead_id_survives_both_callback_encodings():
     assert lead_id_from({"lead_id": "nonsense"}) is None
 
 
+def test_pulled_outgoing_records_keep_our_own_number():
+    """Bonvoice fills DisplayNumber only on incoming records. On outgoing ones it is
+    null and the RM's handset arrives in `Agent` — reading DisplayNumber alone left
+    every outgoing call in the log with no source_number (82 of 157 rows).
+
+    Both payloads below are real shapes from /crm/callrecords/."""
+    from app.routers.bonvoice import record_to_callback
+
+    outgoing = record_to_callback({
+        "Agent": "8003297088", "DisplayNumber": None, "Customer": "8595594789",
+        "StartTime": "2026-07-31 06:23:36 PM", "Status": "ANSWERED",
+        "CallDirection": "outgoing", "CallDuration": "3min 57sec", "callID": "x1",
+    })
+    assert outgoing["SourceNumber"] == "8003297088"     # us
+    assert outgoing["DestinationNumber"] == "8595594789"  # the lead
+
+    incoming = record_to_callback({
+        "Agent": None, "DisplayNumber": "8065453090", "Customer": "7217031734",
+        "StartTime": "2026-07-31 12:18:33 PM", "Status": "NOINPUT",
+        "CallDirection": "incoming", "CallDuration": "0 min 0sec", "callID": "x2",
+    })
+    assert incoming["SourceNumber"] == "7217031734"      # the lead
+    assert incoming["DestinationNumber"] == "8065453090"  # our DID
+
+    # `Agent` is a phone number on these records, never a status — falling back to it
+    # wrote '9958075070' into agent_status for 58 rows.
+    assert outgoing["AgentStatus"] is None
+    assert incoming["AgentStatus"] is None
+
+
 def test_call_log_filters_bind_every_value():
     """The clause is interpolated into the SQL, so anything user-supplied must arrive
     as a bind param — and an unfiltered list must not emit a dangling WHERE."""

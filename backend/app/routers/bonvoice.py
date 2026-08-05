@@ -381,9 +381,12 @@ def record_to_callback(rec: dict) -> dict:
     """
     _, answered, status = read_call_state([rec])
     customer = _field(rec, "Customer", "SourceNumber", "DestinationNumber")
-    did = _field(rec, "DisplayNumber", "did")
     direction = str(_field(rec, "CallDirection", "Direction", "direction") or "")
     inbound = direction.lower().startswith("in")
+    # Our side of the call. Bonvoice only fills DisplayNumber on *incoming* records;
+    # on outgoing ones it is null and the RM's handset is in `Agent` instead. Reading
+    # DisplayNumber alone left every outgoing row with source_number NULL.
+    did = _field(rec, "DisplayNumber", "did") or (None if inbound else _field(rec, "Agent", "agent"))
     start = _pbx_dt(_field(rec, "StartTime", "startTime", "start_time", "callDate"))
     secs = _duration_secs(_field(rec, "CallDuration", "Duration"))
     end = _pbx_dt(_field(rec, "EndTime", "endTime", "end_time"))
@@ -400,7 +403,9 @@ def record_to_callback(rec: dict) -> dict:
             "DestinationNumber": did if inbound else customer,
             "DisplayNumber": did,
             "Status": status or _field(rec, "Status", "callStatus", "disposition"),
-            "AgentStatus": _field(rec, "AgentStatus", "agentStatus", "Agent"),
+            # NOT `Agent`: on a pulled record that field is the RM's phone number, so
+            # falling back to it wrote phone numbers into the status column.
+            "AgentStatus": _field(rec, "AgentStatus", "agentStatus"),
             # synthesised: `answered` is OR-ed into the row, so a false here can never
             # unset what a live callback already recorded
             "callType": CALL_ANSWERED if answered else "",

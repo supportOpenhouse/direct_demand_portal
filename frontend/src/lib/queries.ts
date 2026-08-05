@@ -83,6 +83,18 @@ export function useCreateWaLead() {
   });
 }
 
+export function useBulkCreateWaLeads() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (phones: string[]) => api.waBulkCreateLeads(phones),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wa-messages"] });  // rows become lead-tagged
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useGupshupRecent() {
   return useQuery({ queryKey: ["gupshup-recent"], queryFn: api.gupshupRecent, refetchInterval: 10_000 });
 }

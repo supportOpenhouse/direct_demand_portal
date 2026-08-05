@@ -11,11 +11,13 @@ import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
-  useBackfillWaAssign, useSocietiesByCity, useGupshupRecent, formatDateTime,
+  useBackfillWaAssign, useSocietiesByCity, useGupshupRecent, useBulkCreateWaLeads,
+  formatDateTime,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
 import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
+import { useToast } from "../components/Toast";
 import { WhatsAppIcon } from "../components/icons";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -72,10 +74,15 @@ export default function Chat() {
   const isAdmin = !enabled || user?.role === "admin";
 
   const { data, isLoading, error } = useWaMessages();
+  const toast = useToast();
   const [active, setActive] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [creating, setCreating] = useState(false);
   const [marking, setMarking] = useState(false);
+  // bulk lead creation: off until the button is pressed, so the list stays a plain
+  // conversation list the rest of the time
+  const [bulk, setBulk] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
 
   // keep marking seen while the page is open, so the dot doesn't reappear behind you
   useEffect(() => { if (data) markWaSeen(); }, [data]);
@@ -86,6 +93,31 @@ export default function Chat() {
   const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
   const tag = thread ? data?.tags?.[thread.phone.slice(-10)] : undefined;
   const owner = thread ? data?.owners?.[thread.phone.slice(-10)] : undefined;
+
+  /* Only conversations without a lead can be converted — the endpoint skips the rest
+     anyway, but offering a checkbox that does nothing is worse than not offering it. */
+  const convertible = useMemo(
+    () => threads.filter((t) => !data?.leads?.[t.phone.slice(-10)]).map((t) => t.phone),
+    [threads, data],
+  );
+  const bulkCreate = useBulkCreateWaLeads();
+  const toggleOne = (phone: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    next.has(phone) ? next.delete(phone) : next.add(phone);
+    return next;
+  });
+  const exitBulk = () => { setBulk(false); setPicked(new Set()); };
+  const runBulk = () => bulkCreate.mutate([...picked], {
+    onSuccess: (r) => {
+      const skipped = r.skipped_existing ? ` · ${r.skipped_existing} already had one` : "";
+      // an unassigned lead is invisible to every RM's list, so say it out loud
+      const un = r.unassigned ? ` · ${r.unassigned} unassigned (no RM on the chat)` : "";
+      toast(`Created ${r.created} lead${r.created === 1 ? "" : "s"}${skipped}${un}`,
+            r.created ? "green" : "gold", r.created ? "✓" : "⚠");
+      exitBulk();
+    },
+    onError: (e: any) => toast(e.message, "gold", "⚠"),
+  });
 
   const sendEnabled = data?.send_enabled ?? false;
 
@@ -107,11 +139,37 @@ export default function Chat() {
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{threads.length}</b> conversation{threads.length === 1 ? "" : "s"}
         </p>
-        <div style={{ display: "flex", gap: 8 }}>
-          {isAdmin && <BackfillButton />}
-          <button className="btn ghost sm" onClick={() => setShowRaw((v) => !v)}>
-            {showRaw ? "Hide" : "Show"} raw callbacks
-          </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {bulk ? (
+            <>
+              <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                {picked.size} of {convertible.length} selected
+              </span>
+              <button className="btn ghost sm"
+                onClick={() => setPicked(picked.size === convertible.length
+                  ? new Set() : new Set(convertible))}>
+                {picked.size === convertible.length && convertible.length > 0 ? "Clear all" : "Select all"}
+              </button>
+              <button className="btn primary sm" disabled={!picked.size || bulkCreate.isPending}
+                onClick={runBulk}>
+                {bulkCreate.isPending ? "Creating…" : `Create ${picked.size} lead${picked.size === 1 ? "" : "s"}`}
+              </button>
+              <button className="btn ghost sm" onClick={exitBulk}>Cancel</button>
+            </>
+          ) : (
+            <>
+              <button className="btn sm" onClick={() => setBulk(true)} disabled={!convertible.length}
+                title={convertible.length
+                  ? "Turn conversations into leads in bulk"
+                  : "Every conversation already has a lead"}>
+                Create leads ({convertible.length})
+              </button>
+              {isAdmin && <BackfillButton />}
+              <button className="btn ghost sm" onClick={() => setShowRaw((v) => !v)}>
+                {showRaw ? "Hide" : "Show"} raw callbacks
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -142,12 +200,28 @@ export default function Chat() {
               const rowTag = data?.tags?.[t.phone.slice(-10)];
               const rowOwner = data?.owners?.[t.phone.slice(-10)];
               return (
+                <div key={t.phone} style={{
+                  display: "flex", alignItems: "center",
+                  borderTop: i ? "1px solid var(--line)" : undefined,
+                }}>
+                  {/* Checkbox sits OUTSIDE the row button — nesting a control inside a
+                      button is invalid, and clicking the box would also open the chat.
+                      Rows that already have a lead get a spacer, so nothing shifts. */}
+                  {bulk && (hasLead
+                    ? <span style={{ width: 30, flex: "none", textAlign: "center",
+                                     fontSize: 10, color: "var(--muted)" }} title="Already a lead">✓</span>
+                    : <input
+                        type="checkbox"
+                        checked={picked.has(t.phone)}
+                        onChange={() => toggleOne(t.phone)}
+                        aria-label={`Select ${t.name || t.phone}`}
+                        style={{ width: 30, flex: "none", accentColor: "var(--emerald)", cursor: "pointer" }}
+                      />)}
                 <button
-                  key={t.phone}
                   onClick={() => setActive(t.phone)}
                   style={{
                     display: "flex", gap: 10, width: "100%", textAlign: "left", padding: "11px 13px",
-                    border: 0, borderTop: i ? "1px solid var(--line)" : undefined, cursor: "pointer",
+                    border: 0, cursor: "pointer",
                     font: "inherit", alignItems: "center",
                     // Two independent signals, so they use two channels:
                     //   background = the mark (red rejected, blue everything else)
@@ -176,6 +250,7 @@ export default function Chat() {
                     </div>
                   </div>
                 </button>
+                </div>
               );
             })}
           </div>

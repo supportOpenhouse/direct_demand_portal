@@ -60,11 +60,25 @@ services:
         sync: false               # WABA number, country code included, digits only
       - key: GUPSHUP_APP_NAME
         sync: false               # Gupshup app bound to that number (sent as src.name)
-      # --- Bonvoice PBX (click-to-call) ---
+      # --- Bonvoice PBX (click-to-call + call-log sync) ---
+      # REQUIRED: the in-code default is the `backend.` host, but auth and
+      # click-to-call answer on the bare host — leave this unset and those break.
+      # The call-records API is the opposite way round, so _records_base() derives
+      # `backend.` from whatever is set here. Set the bare host.
+      - key: BONVOICE_BASE_URL
+        value: "https://pbx.bonvoice.com"
       - key: BONVOICE_USERNAME
         sync: false
       - key: BONVOICE_PASSWORD
         sync: false               # or set BONVOICE_TOKEN instead
+      - key: BONVOICE_TOKEN
+        sync: false               # pre-issued long-lived token; skips the login call
+      # Scheduled call-log pull (safety net for dropped webhook callbacks). Both have
+      # working defaults — set them only to change the cadence or the lookback.
+      - key: BONVOICE_SYNC_INTERVAL_MINUTES
+        value: "15"
+      - key: BONVOICE_SYNC_LOOKBACK_DAYS
+        value: "1"
       - key: BONVOICE_DID
         sync: false               # outgoing caller ID, e.g. 7946350641
       - key: BONVOICE_CHANNEL_ID

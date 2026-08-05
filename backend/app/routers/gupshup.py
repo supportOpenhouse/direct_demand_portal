@@ -23,7 +23,7 @@ from typing import Literal
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select, update
+from sqlalchemy import desc, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from urllib.parse import parse_qsl
 
@@ -400,6 +400,89 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
             select(Lead.id).where(Lead.origin_key == values["origin_key"])
         )).first()
     return {"status": "ok", "lead_id": str(row[0]) if row else None}
+
+
+class BulkLeadRequest(BaseModel):
+    # capped so one click can't fan out into an unbounded write
+    phones: list[str] = Field(min_length=1, max_length=500)
+
+
+@router.post("/gupshup/leads/bulk")
+async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(current_user)):
+    """Create spine leads from many WhatsApp conversations in one go.
+
+    Each lead inherits the conversation's owning RM — a WhatsApp lead that lands
+    unassigned is invisible to the RM already talking to that person.
+
+    The name is taken server-side from the latest inbound WhatsApp profile name
+    rather than the client's list, so a stale browser can't stamp the wrong name on
+    a lead. Idempotent on origin_key exactly like the single-lead endpoint, so
+    contacts that already have a lead are counted as skipped, never duplicated.
+    """
+    from ..services.leads_sync import TAT_HOURS, display_phone, norm_phone
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+
+    # dedupe: the same conversation can't be selected twice
+    phones10 = sorted({p10 for p10 in (norm_phone(p) for p in req.phones) if p10 and len(p10) == 10})
+    if not phones10:
+        raise HTTPException(status_code=400, detail="no valid phone numbers")
+
+    now = datetime.now(timezone.utc)
+    async with engine.begin() as conn:
+        contacts = {r["phone10"]: r["assigned_to"] for r in (await conn.execute(
+            text("SELECT phone10, assigned_to FROM wa_contacts WHERE phone10 = ANY(:ps)"),
+            {"ps": phones10},
+        )).mappings()}
+
+        # One ownership check for the whole batch instead of per phone. Same rule as
+        # _assert_owns: an RM may only act on their own conversations.
+        if user.get("role") == "rm":
+            aliases = assignment_aliases(user)
+            foreign = [p for p in phones10
+                       if not aliases or (contacts.get(p) or "").lower() not in aliases]
+            if foreign:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"{len(foreign)} of these conversations are assigned to someone else")
+
+        # newest inbound profile name per contact; DISTINCT ON needs the same leading
+        # ORDER BY key, hence phone10 first
+        names = {r["p10"]: r["name"] for r in (await conn.execute(
+            text("""SELECT DISTINCT ON (right(regexp_replace(phone, '\\D', '', 'g'), 10))
+                           right(regexp_replace(phone, '\\D', '', 'g'), 10) AS p10, name
+                      FROM wa_messages
+                     WHERE direction = 'inbound' AND name IS NOT NULL AND btrim(name) <> ''
+                       AND right(regexp_replace(phone, '\\D', '', 'g'), 10) = ANY(:ps)
+                     ORDER BY 1, created_at DESC"""),
+            {"ps": phones10},
+        )).mappings()}
+
+        keys = [f"whatsapp:{p}" for p in phones10]
+        already = {r[0] for r in (await conn.execute(
+            text("SELECT origin_key FROM leads WHERE origin_key = ANY(:ks)"), {"ks": keys})).all()}
+
+        rows = [{
+            "origin_key": f"whatsapp:{p}", "source_category": "whatsapp", "source": "whatsapp",
+            "name": (names.get(p) or "").strip() or display_phone(p),
+            "phone": display_phone(p),
+            # the whole point: the conversation's RM owns the lead too
+            "assigned_to": contacts.get(p),
+            "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
+            "source_meta": {"created_from": "whatsapp_bulk", "created_by": user.get("email")},
+        } for p in phones10 if f"whatsapp:{p}" not in already]
+
+        if rows:
+            await conn.execute(
+                pg_insert(Lead).on_conflict_do_nothing(index_elements=["origin_key"]), rows)
+
+    unassigned = sum(1 for r in rows if not r["assigned_to"])
+    log.info("whatsapp: bulk-created %d leads (%d already existed, %d unassigned) by %s",
+             len(rows), len(already), unassigned, user.get("email"))
+    return {"status": "ok", "created": len(rows), "skipped_existing": len(already),
+            "unassigned": unassigned, "requested": len(phones10)}
 
 
 class SendRequest(BaseModel):

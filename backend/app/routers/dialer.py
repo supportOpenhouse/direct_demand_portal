@@ -15,7 +15,7 @@ from ..core.auth import require_admin
 from ..db import neon_engine
 from ..services.dialer import (
     FIELDS, OPS, UNOWNED_DETAIL, aliases_for, assign_owners, compile_rules, count_matching,
-    materialize, windows_overlap,
+    materialize, window_has_passed, windows_overlap,
 )
 
 log = logging.getLogger("dialer")
@@ -60,6 +60,21 @@ async def _assert_no_rm_conflict(conn, rms: list[str], window_start: str, window
                 f"({r['window_start']}–{r['window_end']}). Pause that campaign, drop that RM, "
                 f"or pick a calling window that doesn't overlap."
             ))
+
+
+def _assert_window_not_over(window_start: str, window_end: str) -> None:
+    """Refuse to start a campaign whose calling window already closed today.
+
+    Nothing downstream reports this: the campaign reaches 'running', _in_window is
+    false all evening, and it dials nobody until tomorrow morning while looking
+    perfectly healthy on the dashboard.
+    """
+    if window_has_passed(window_start, window_end):
+        raise HTTPException(status_code=422, detail=(
+            f"that calling window ({window_start}–{window_end} IST) has already ended "
+            f"today — nothing would be dialled until tomorrow. Widen the window or "
+            f"save it as a draft and start it in the morning."
+        ))
 
 
 class Rules(BaseModel):
@@ -195,6 +210,7 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
         if unknown:
             raise HTTPException(status_code=400, detail=f"not an active RM: {unknown[0]}")
         if payload.start:  # a draft dials nothing, so it can't conflict yet
+            _assert_window_not_over(payload.window_start, payload.window_end)
             await _assert_no_rm_conflict(conn, payload.rms, payload.window_start, payload.window_end)
 
         cid = (await conn.execute(text("""
@@ -251,6 +267,9 @@ async def campaign_action(campaign_id: UUID, action: str, _: dict = Depends(requ
                 {"id": campaign_id})).mappings().first()
             if me is None:
                 raise HTTPException(status_code=404, detail="campaign not found")
+            # Same reasoning: a draft saved this morning must not be startable at 20:00
+            # into a window that closed at 19:00.
+            _assert_window_not_over(me["window_start"], me["window_end"])
             await _assert_no_rm_conflict(conn, [str(e) for e in (me["rms"] or [])],
                                          me["window_start"], me["window_end"],
                                          exclude_id=campaign_id)

@@ -165,6 +165,26 @@ const DEFAULTS = {
   cooldown: 180,  // 3h between retries
 };
 
+/* Mirrors window_has_passed() in backend/app/services/dialer.py — the server stays
+   authoritative, this only spares the round trip.
+
+   Calling hours are IST wall-clock, and the admin's browser may not be. Shifting the
+   clock into IST is what makes "already ended today" mean the same thing on both
+   sides. A malformed window isn't past: the backend reads that as "always on". */
+const IST_OFFSET_MIN = 330;  // Asia/Kolkata, no DST
+
+function windowHasPassed(start: string, end: string): boolean {
+  const mins = (hhmm: string) => {
+    const [h, m] = hhmm.split(":").map(Number);
+    return Number.isFinite(h) && Number.isFinite(m) ? h * 60 + m : null;
+  };
+  const from = mins(start), to = mins(end);
+  if (from === null || to === null) return false;
+  if (to < from) return false;  // inverted isn't "past", it's simply never open
+  const ist = new Date(Date.now() + IST_OFFSET_MIN * 60_000);
+  return ist.getUTCHours() * 60 + ist.getUTCMinutes() > to;
+}
+
 /* ── page ───────────────────────────────────────────────────────────────── */
 export default function Dialer() {
   const toast = useToast();
@@ -214,6 +234,12 @@ export default function Dialer() {
     if (!name.trim()) return toast("Give this campaign a name", "gold", "⚠");
     if (!rms.length) return toast("Pick at least one RM — they do the calling", "gold", "⚠");
     if (!matched) return toast("No leads match these rules", "gold", "⚠");
+    // The server refuses this too; catching it here saves a round trip and puts the
+    // reason next to the field that caused it.
+    if (windowHasPassed(win.start, win.end)) {
+      return toast(`${win.start}–${win.end} IST already ended today — nothing would be dialled`,
+        "gold", "⏰");
+    }
     createCampaign.mutate({
       name: name.trim(), rules: tree, rms, strategy,
       gap_seconds: gap, window_start: win.start, window_end: win.end,
@@ -333,6 +359,11 @@ export default function Dialer() {
                   <input type="time" className="dl-input" value={win.end}
                     onChange={(e) => setWin({ ...win, end: e.target.value })} />
                 </div>
+                {windowHasPassed(win.start, win.end) && (
+                  <em className="dl-hint" style={{ color: "var(--coral)" }}>
+                    ⏰ Already ended today — this campaign would dial nobody until tomorrow.
+                  </em>
+                )}
               </label>
               <label className="dl-field"><span>Max attempts / lead</span>
                 <input type="number" min={1} max={10} className="dl-input" value={attempts}

@@ -1020,3 +1020,38 @@ a.nav-item{text-decoration:none}
 .lc-pending{background:var(--gold-soft)!important}
 .lc-badge{font-size:10px;font-weight:700;font-family:"Spline Sans Mono";padding:2px 8px;
   border-radius:20px;background:var(--gold);color:#fff;white-space:nowrap}
+
+/* Live Calls — Topbar button. Sits left of WhatsApp; RMs only.
+   Three states, loudest last: idle (plain), queued (calls waiting), live (on a call
+   right now). The glow is the point — an RM whose handset just rang needs to find
+   this without hunting for it. */
+.btn.lc-btn{position:relative;display:inline-flex;align-items:center;gap:6px;transition:box-shadow .25s,border-color .25s,background .25s}
+.btn.lc-btn.queued{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
+.btn.lc-btn.live{
+  border-color:var(--emerald);color:#fff;background:var(--emerald);
+  animation:lc-glow 1.5s ease-in-out infinite;
+}
+@keyframes lc-glow{
+  0%,100%{box-shadow:0 0 0 0 rgba(5,150,105,.55)}
+  50%    {box-shadow:0 0 0 7px rgba(5,150,105,0)}
+}
+/* The colour and the count already carry the state; the pulse is decoration. */
+@media (prefers-reduced-motion:reduce){.btn.lc-btn.live{animation:none;box-shadow:0 0 0 3px var(--emerald-soft)}}
+
+/* Unmarked results. Nothing else nags — the page never interrupts a live call. */
+.lc-btn-count{
+  position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;
+  border-radius:20px;background:var(--gold);color:#fff;border:2px solid var(--panel);
+  font-size:10px;font-weight:700;font-family:"Spline Sans Mono";
+  display:grid;place-items:center;line-height:1;
+}
+
+/* "N calls incoming" — the headline number, above everything else on the page. */
+.lc-incoming{
+  display:flex;align-items:baseline;gap:6px;flex-wrap:wrap;
+  font-size:15px;color:var(--ink-2);margin-bottom:14px;padding:10px 14px;
+  border-radius:12px;background:var(--panel-2);border:1px solid var(--line);
+}
+.lc-incoming strong{font-size:24px;color:var(--ink);font-family:"Spline Sans Mono";line-height:1}
+.lc-incoming.live{background:var(--emerald-soft);border-color:var(--emerald)}
+.lc-incoming.live strong{color:var(--emerald)}

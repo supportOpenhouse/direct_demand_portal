@@ -237,3 +237,46 @@ def test_calling_window():
     assert _in_window("00:00", "23:59") is True
     assert _in_window("", "") is True          # unset window never blocks dialling
     assert _in_window("garbage", "19:00") is True
+
+
+# --- calling window must not already be over -------------------------------------
+
+
+def test_a_window_that_ended_earlier_today_is_rejected():
+    """_in_window is start <= now <= end with no midnight wrap, so a campaign started
+    at 18:40 with a 10:00–17:00 window sits at 'running' and dials nobody until
+    tomorrow. The admin gets no signal at all — the campaign just looks stuck."""
+    from datetime import time as _t
+
+    from app.services.dialer import window_has_passed
+
+    assert window_has_passed("10:00", "17:00", now=_t(18, 40)) is True
+
+
+def test_a_window_still_open_or_yet_to_open_is_allowed():
+    from datetime import time as _t
+
+    from app.services.dialer import window_has_passed
+
+    assert window_has_passed("10:00", "19:00", now=_t(18, 40)) is False  # still inside
+    assert window_has_passed("16:00", "19:00", now=_t(9, 0)) is False    # opens later
+
+
+def test_a_window_ending_exactly_now_is_not_yet_past():
+    """_in_window's bound is inclusive (now <= end), so this minute still dials."""
+    from datetime import time as _t
+
+    from app.services.dialer import window_has_passed
+
+    assert window_has_passed("10:00", "17:00", now=_t(17, 0)) is False
+
+
+def test_a_malformed_window_is_not_treated_as_past():
+    """_in_window reads a broken window as 'always on'. Rejecting it here instead
+    would block campaign creation on a value the dialer is happy to run."""
+    from datetime import time as _t
+
+    from app.services.dialer import window_has_passed
+
+    assert window_has_passed("", "", now=_t(18, 40)) is False
+    assert window_has_passed("garbage", "nonsense", now=_t(18, 40)) is False

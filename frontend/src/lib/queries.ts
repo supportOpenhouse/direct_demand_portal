@@ -354,10 +354,14 @@ export function useCallResult() {
    at all; when it isn't — no Redis across a split scheduler process, a dropped
    connection — this drops to a 4s interval and the page degrades to a few seconds of
    latency rather than to nothing. */
-export function useMyCalls(streamHealthy: boolean) {
+export function useMyCalls(streamHealthy: boolean, enabled = true) {
   return useQuery({
     queryKey: ["my-calls"],
     queryFn: api.myCalls,
+    // Off for non-RMs. The Topbar button has to call this hook unconditionally (hook
+    // order can't be conditional), so without this every admin would still run three
+    // Neon queries on every page for a button they never see.
+    enabled,
     refetchInterval: streamHealthy ? false : 4_000,
     // The sidebar badge mounts this on every page for every user, admins included.
     // Without a staleTime each tab focus re-runs three Neon queries from Singapore

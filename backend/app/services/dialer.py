@@ -260,6 +260,32 @@ def windows_overlap(a_start: str, a_end: str, b_start: str, b_end: str) -> bool:
     return a0 < b1 and b0 < a1
 
 
+def window_has_passed(start: str, end: str, now: time | None = None) -> bool:
+    """Is this calling window already over for today?
+
+    _in_window is `start <= now <= end` with no midnight wrap, so a campaign started
+    at 18:40 with a 10:00–17:00 window reaches 'running' and then dials nobody until
+    tomorrow morning. Nothing surfaces that — the campaign just looks stuck — so it is
+    refused at creation instead.
+
+    A malformed window is NOT past: _in_window reads it as "always on", and rejecting
+    here would block a campaign the dialer would happily run. `now` is injectable so
+    this is testable without freezing the clock.
+    """
+    try:
+        h1, m1 = (int(x) for x in str(start).split(":")[:2])
+        h2, m2 = (int(x) for x in str(end).split(":")[:2])
+        window_start, window_end = time(h1, m1), time(h2, m2)
+    except (ValueError, TypeError):
+        return False
+    current = now if now is not None else datetime.now(IST).time()
+    # Inverted windows are somebody else's problem — they're never "in the past",
+    # they're simply never open, and _in_window already reports that.
+    if window_end < window_start:
+        return False
+    return current > window_end
+
+
 def _in_window(start: str, end: str) -> bool:
     """Calling hours are IST wall-clock. A blank or malformed window means always on."""
     try:

@@ -10,9 +10,10 @@
    the previous hangup lands, and a modal thrown up at that moment would be fighting a
    live call. */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { LiveCallLead } from "../lib/api";
+import { useAuth } from "../components/AuthContext";
 import { useCallResult, useMyCalls } from "../lib/queries";
 import { useEventStream } from "../lib/useEventStream";
 import { MissReasonModal } from "../components/CallConnected";
@@ -140,19 +141,37 @@ function CompletedRow({ lead }: { lead: LiveCallLead }) {
 }
 
 export default function LiveCalls() {
+  // RM-only page. Admins schedule campaigns; they don't take the calls, so this is
+  // theirs to run, not to watch. Hiding the button isn't enough — the URL is
+  // guessable and the page would otherwise render empty and confusing.
+  const { enabled, user } = useAuth();
+  const isRm = enabled && user?.role === "rm";
+
   // The stream only nudges; useMyCalls does the fetching, and polls instead whenever
   // the stream isn't healthy. One code path either way.
   const qc = useQueryClient();
   const healthy = useEventStream("/v1/dialer/my-calls/stream",
     () => qc.invalidateQueries({ queryKey: ["my-calls"] }));
-  const { data, isLoading } = useMyCalls(healthy);
+  const { data, isLoading } = useMyCalls(healthy, isRm);
 
+  if (!isRm) return <Navigate to="/" replace />;
   if (isLoading) return <div className="page"><p className="lc-muted">Loading…</p></div>;
 
   const unmarked = (data?.completed || []).filter((c) => !c.call_result).length;
+  const incoming = data?.upcoming?.length || 0;
 
   return (
     <div className="page lc">
+      {/* The headline number, above everything: how many calls are still coming at
+          this RM. Under a shared pool it's the pool depth, not a personal promise. */}
+      <div className={"lc-incoming" + (data?.now_calling ? " live" : "")}>
+        <strong>{incoming}</strong>
+        {incoming === 1 ? " call incoming" : " calls incoming"}
+        {data?.upcoming_is_shared && incoming > 0 && (
+          <span className="lc-muted"> · shared pool</span>
+        )}
+      </div>
+
       <header className="lc-head">
         <div>
           <h1>Live Calls</h1>

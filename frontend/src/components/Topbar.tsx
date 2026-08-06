@@ -4,6 +4,7 @@ import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
 import { useAuth } from "./AuthContext";
 import { useMyCalls, useWaLatest } from "../lib/queries";
+import { isCallingRm } from "../lib/roles";
 import { readWaSeenAt } from "../lib/whatsapp";
 import GlobalSearch from "./GlobalSearch";
 
@@ -44,9 +45,10 @@ const IconLiveCall = () => (
    permanently dead chrome for them. Note the consequence: an admin who IS in a
    campaign's RM pool gets rung with no way to reach this page or mark the result. */
 function LiveCallsButton() {
-  // `!enabled` keeps the gate biting while impersonating, matching Sidebar.tsx
+  // `!enabled` keeps the gate biting while impersonating, matching Sidebar.tsx.
+  // test_rm counts: a test RM takes real calls and has to mark the results.
   const { enabled, user } = useAuth();
-  const isRm = enabled && user?.role === "rm";
+  const isRm = enabled && isCallingRm(user?.role);
   // Hook order can't depend on a condition, so always call it and gate on `enabled`.
   const { data } = useMyCalls(true, isRm);  // the page owns polling; this reads cache
 

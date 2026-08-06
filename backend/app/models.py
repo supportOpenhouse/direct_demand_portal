@@ -277,7 +277,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     name: Mapped[str | None] = mapped_column(Text)
     picture: Mapped[str | None] = mapped_column(Text)
-    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")  # admin | rm
+    # admin | rm | test_rm. test_rm is a calling RM used for dry runs: dialled by
+    # campaigns (tagged TEST in the picker) but never assigned a WhatsApp conversation.
+    role: Mapped[str] = mapped_column(Text, nullable=False, server_default="rm")
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)

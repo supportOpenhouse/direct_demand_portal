@@ -323,7 +323,12 @@ export default function Dialer() {
                     onClick={() => setRms(on ? rms.filter((e) => e !== r.email) : [...rms, r.email])}>
                     <span className="dl-avatar">{r.name[0]?.toUpperCase()}</span>
                     <span className="dl-rmmeta">
-                      <b>{r.name}</b>
+                      <b>
+                        {r.name}
+                        {/* A test RM rings a real handset — the admin has to see which
+                            of these is a dry run before they start dialling. */}
+                        {r.role === "test_rm" && <span className="dl-testtag">TEST</span>}
+                      </b>
                       <span>{r.has_phone ? r.email : "no mobile on file"}</span>
                     </span>
                   </button>

@@ -226,6 +226,21 @@ async def require_admin(user: dict = Depends(current_user)) -> dict:
     return user
 
 
+# Roles that take calls. `test_rm` is a real RM used for dry runs — dialled by
+# campaigns, tagged TEST in the picker, and never handed a WhatsApp conversation.
+#
+# This exists as one shared set because every restriction in the app is written
+# "is this person an RM?" and the else-branch is ADMIN — unrestricted. A calling role
+# missed at any one of those sites doesn't lose a feature, it gains the whole lead
+# table. Add a calling role here and every scope picks it up at once.
+CALLING_ROLES = frozenset({"rm", "test_rm"})
+
+
+def is_calling_rm(role: str | None) -> bool:
+    """True for any role that takes calls, i.e. anyone who must be row-scoped."""
+    return role in CALLING_ROLES
+
+
 def assignment_aliases(user: dict) -> list[str]:
     """Names this user is known by in the sheet's 'Assigned to' column — used to
     map leads to the user. Always derived from the user's name: matches on both the

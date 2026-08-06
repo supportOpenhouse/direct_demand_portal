@@ -62,6 +62,18 @@ async def _assert_no_rm_conflict(conn, rms: list[str], window_start: str, window
             ))
 
 
+# Who a campaign may dial. Calling roles only: the pool is who does the calling, and
+# Click2Call rings their own handset. Admins run campaigns; they aren't dialled by
+# them. `role` comes back so the picker can tag a test_rm as TEST — an admin building
+# a campaign needs to see at a glance whether they're aiming at a real handset.
+_CALLABLE_RMS = text("""
+    SELECT email, name, assignment_name, phone, role
+      FROM users
+     WHERE active AND role IN ('rm', 'test_rm')
+     ORDER BY name NULLS LAST, email
+""")
+
+
 def _assert_window_not_over(window_start: str, window_end: str) -> None:
     """Refuse to start a campaign whose calling window already closed today.
 
@@ -111,12 +123,7 @@ async def dialer_fields(_: dict = Depends(require_admin)):
                 f"WHERE {col} IS NOT NULL AND btrim({col}) <> '' ORDER BY 1 LIMIT 300"
             ))).mappings().all()
             options[key] = [r["v"] for r in rows]
-        rms = (await conn.execute(text(
-            # RMs only — the pool is who does the calling, and Click2Call rings
-            # their own handset. Admins run campaigns; they aren't dialled by them.
-            "SELECT email, name, assignment_name, phone FROM users "
-            "WHERE active AND role = 'rm' ORDER BY name NULLS LAST, email"
-        ))).mappings().all()
+        rms = (await conn.execute(_CALLABLE_RMS)).mappings().all()
     return {
         "fields": [
             {"key": k, "label": v["label"], "kind": v["kind"],
@@ -125,7 +132,7 @@ async def dialer_fields(_: dict = Depends(require_admin)):
         ],
         "rms": [
             {"email": r["email"], "name": r["name"] or r["assignment_name"] or r["email"],
-             "has_phone": bool(r["phone"])}
+             "has_phone": bool(r["phone"]), "role": r["role"]}
             for r in rms
         ],
     }
@@ -144,9 +151,7 @@ async def dialer_preview(payload: Rules, _: dict = Depends(require_admin)):
     if payload.strategy == "assigned" and payload.rms:
         wanted = {e.lower() for e in payload.rms}
         async with engine.connect() as conn:
-            users = (await conn.execute(text(
-                "SELECT email, name, assignment_name FROM users "
-                "WHERE active AND role = 'rm'"))).mappings().all()
+            users = (await conn.execute(_CALLABLE_RMS)).mappings().all()
         for u in users:
             if u["email"].lower() in wanted:
                 aliases += aliases_for(u["name"], u["assignment_name"])
@@ -200,11 +205,9 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
         raise HTTPException(status_code=400, detail="pick at least one RM to do the calling")
 
     async with engine.begin() as conn:
-        # role='rm' is enforced here, not just hidden in the picker — otherwise a
-        # hand-rolled POST could still queue calls to an admin's handset.
-        users = (await conn.execute(text(
-            "SELECT email, name, assignment_name FROM users "
-            "WHERE active AND role = 'rm'"))).mappings().all()
+        # The calling-role filter is enforced here, not just hidden in the picker —
+        # otherwise a hand-rolled POST could still queue calls to an admin's handset.
+        users = (await conn.execute(_CALLABLE_RMS)).mappings().all()
         known = {u["email"].lower(): u for u in users}
         unknown = [e for e in payload.rms if e.lower() not in known]
         if unknown:

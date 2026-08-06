@@ -30,7 +30,7 @@ from urllib.parse import parse_qsl
 from ..config import get_settings
 # RMs may work the conversations assigned to them; admins see everything. The raw
 # callback feed stays admin-only — it's a debugging surface, not a worklist.
-from ..core.auth import assignment_aliases, current_user, require_admin
+from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
 from ..db import neon_engine
 from ..models import Lead, WaContact, WaMessage
 
@@ -180,7 +180,7 @@ async def gupshup_recent():
 async def _assert_owns(conn, user: dict, phone10: str) -> None:
     """An RM may only act on conversations assigned to them. Admins are unrestricted.
     Without this, opening the page to RMs would let any of them message any customer."""
-    if user.get("role") != "rm":
+    if not is_calling_rm(user.get("role")):
         return
     aliases = assignment_aliases(user)
     owner = (await conn.execute(
@@ -195,8 +195,12 @@ def _thread_scope(user: dict):
 
     RMs get the ones assigned to them; admins get everything. Matching goes through
     the same first-name/full-name aliases used for leads, so an RM's WhatsApp threads
-    and their leads resolve identically."""
-    if user.get("role") != "rm":
+    and their leads resolve identically.
+
+    A test_rm is never *assigned* a conversation (see services/wa_assign.py), so in
+    practice this resolves to nothing — which is the intent. It still has to be scoped
+    rather than skipped: returning None here means "unrestricted"."""
+    if not is_calling_rm(user.get("role")):
         return None
     aliases = assignment_aliases(user)
     if not aliases:
@@ -440,7 +444,7 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
 
         # One ownership check for the whole batch instead of per phone. Same rule as
         # _assert_owns: an RM may only act on their own conversations.
-        if user.get("role") == "rm":
+        if is_calling_rm(user.get("role")):
             aliases = assignment_aliases(user)
             foreign = [p for p in phones10
                        if not aliases or (contacts.get(p) or "").lower() not in aliases]

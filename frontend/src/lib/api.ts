@@ -525,6 +525,7 @@ export interface DialerRM {
   email: string;
   name: string;
   has_phone: boolean;
+  role: string;  // 'rm' | 'test_rm' — test_rm is badged TEST in the picker
 }
 export interface DialerFields {
   fields: DialerField[];

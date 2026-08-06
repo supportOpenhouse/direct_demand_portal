@@ -1055,3 +1055,12 @@ a.nav-item{text-decoration:none}
 .lc-incoming strong{font-size:24px;color:var(--ink);font-family:"Spline Sans Mono";line-height:1}
 .lc-incoming.live{background:var(--emerald-soft);border-color:var(--emerald)}
 .lc-incoming.live strong{color:var(--emerald)}
+
+/* TEST tag on a test_rm in the dialer pool. A test RM rings a real handset, so the
+   admin has to spot a dry run before starting the campaign, not after. */
+.dl-testtag{
+  margin-left:6px;padding:1px 6px;border-radius:5px;
+  background:var(--amber-soft);color:var(--amber);
+  font-size:9.5px;font-weight:800;letter-spacing:.06em;
+  font-family:"Spline Sans Mono";vertical-align:middle;
+}

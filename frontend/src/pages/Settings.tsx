@@ -9,6 +9,7 @@ import { useAuth } from "../components/AuthContext";
 const ROLES = [
   { v: "admin", label: "Admin", desc: "All leads · manage users & source data" },
   { v: "rm", label: "Relationship Manager", desc: "Own assigned leads only" },
+  { v: "test_rm", label: "Test RM", desc: "Same as an RM, tagged TEST in the dialer · never assigned WhatsApp conversations" },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.label || r;
 const initials = (n: string | null, e: string) =>

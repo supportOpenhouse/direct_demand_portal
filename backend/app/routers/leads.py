@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..core.auth import assignment_aliases, current_user
+from ..core.auth import assignment_aliases, current_user, is_calling_rm
 from ..db import neon_engine
 from ..models import LeadConfirmedData, LeadNote, Visit
 from ..services.leads_sync import read_leads_state, run_leads_sync
@@ -109,8 +109,9 @@ def _role_scope(user: dict) -> tuple[str, dict]:
     """Row visibility by role, as a standalone boolean clause: admins see everything,
     RMs see only their own. Shared by the list and the counts endpoints so both scope
     identically."""
-    role = user.get("role")
-    if role == "rm":
+    # Every calling role is scoped, not just 'rm' — the else-branch below is "true",
+    # so a role missed here would see every lead in the system.
+    if is_calling_rm(user.get("role")):
         aliases = assignment_aliases(user)
         return ("lower(assigned_to) = ANY(:aliases)", {"aliases": aliases}) if aliases else ("false", {})
     return "true", {}

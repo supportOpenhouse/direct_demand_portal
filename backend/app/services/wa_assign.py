@@ -40,6 +40,9 @@ _LEAST_LOADED = text("""
     LEFT JOIN wa_contacts c
       ON lower(c.assigned_to) = lower(u.name)
      AND (c.tag IS NULL OR c.tag <> 'rejected')
+    -- Exactly 'rm', deliberately NOT core.auth.CALLING_ROLES: a test_rm is dialled by
+    -- campaigns but must never be handed a real customer conversation. A test account
+    -- silently owning a live WhatsApp thread is worse than leaving it unassigned.
     WHERE u.active AND u.role = 'rm' AND u.name IS NOT NULL AND btrim(u.name) <> ''
     GROUP BY u.name
     -- fewest conversations first; then longest since last assigned (never-assigned

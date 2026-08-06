@@ -14,6 +14,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { LiveCallLead } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
+import { isCallingRm } from "../lib/roles";
 import { useCallResult, useMyCalls } from "../lib/queries";
 import { useEventStream } from "../lib/useEventStream";
 import { MissReasonModal } from "../components/CallConnected";
@@ -145,7 +146,7 @@ export default function LiveCalls() {
   // theirs to run, not to watch. Hiding the button isn't enough — the URL is
   // guessable and the page would otherwise render empty and confusing.
   const { enabled, user } = useAuth();
-  const isRm = enabled && user?.role === "rm";
+  const isRm = enabled && isCallingRm(user?.role);
 
   // The stream only nudges; useMyCalls does the fetching, and polls instead whenever
   // the stream isn't healthy. One code path either way.

@@ -13,7 +13,10 @@ from ..models import User
 
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
 
-ROLES = {"admin", "rm"}
+# test_rm is an RM in every respect except that WhatsApp never assigns it a
+# conversation (services/wa_assign.py) and the dialer picker tags it TEST. Row scoping,
+# Live Calls and the worklists all treat it as `rm` via core.auth.is_calling_rm.
+ROLES = {"admin", "rm", "test_rm"}
 
 
 def _first_name(name: str | None) -> str | None:

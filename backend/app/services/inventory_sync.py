@@ -14,6 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..db import neon_engine
 from ..models import InventoryUnit, SyncState
+from .availability import apply_availability, live_statuses, uids_of
 from .normalize import normalize_city, normalize_config
 from .sheets import fetch_sheet_values, normalize_header, parse_price_lacs
 
@@ -155,6 +156,22 @@ def attach_photos(rows: list[dict], photos: dict[str, list[str]]) -> int:
     return matched
 
 
+async def stamp_availability(rows: list[dict]) -> int:
+    """Replace the sheet's listing_status with demand_details.availability_status
+    before these rows are written.
+
+    This is why it happens at sync time rather than only on the API: inventory_units
+    is read directly by the matching engine (_all_units in services/matching.py), so a
+    stale status there means recommending a flat that already sold. Unmatched rows keep
+    the sheet value.
+
+    Module-level indirection through `live_statuses` is deliberate — it's the seam the
+    test substitutes, and the lookup itself is best-effort, so a properties outage
+    leaves every row on its sheet status rather than failing the sync.
+    """
+    return apply_availability(rows, await live_statuses(uids_of(rows)))
+
+
 async def run_sync(trigger: str = "manual") -> dict:
     """Returns {status, rows?, detail?}. Never raises."""
     settings = get_settings()
@@ -175,6 +192,10 @@ async def run_sync(trigger: str = "manual") -> dict:
             log.info("photos joined: %d/%d rows", matched, len(rows))
         except Exception:  # photos are best-effort; never block the sync
             log.exception("photo fetch failed — syncing without images")
+        # Before the insert, so inventory_units.status lands as live availability
+        # rather than the sheet's listing_status.
+        live = await stamp_availability(rows)
+        log.info("availability applied: %d/%d rows", live, len(rows))
         engine = neon_engine()
         async with engine.begin() as conn:
             await conn.execute(delete(InventoryUnit))

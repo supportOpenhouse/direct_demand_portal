@@ -9,15 +9,24 @@ import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components
 import { useSort } from "../lib/useSort";
 import { waShare } from "../lib/whatsapp";
 
-/* Default card order: sellable stock first — Ready → Coming Soon → Booked →
-   anything else. Keyword match (case-insensitive) so raw sheet variants still
-   bucket correctly; equal ranks keep their sheet order (stable sort). */
+/* Default card order: sellable stock first.
+
+   Status is normally the live availability_status from demand_details (Available /
+   Booked / Sold / Dead), and falls back to the sheet's own listing_status (Ready /
+   Coming Soon) for units with no match — so both vocabularies have to rank here.
+   Without the live words this list sorted Available *below* Booked, which is exactly
+   backwards for the page people scan for sellable stock.
+
+   Keyword match (case-insensitive) so sheet variants still bucket correctly; equal
+   ranks keep their sheet order (stable sort). */
 function statusRank(s: string | null): number {
   const v = (s || "").toLowerCase();
-  if (v.includes("ready")) return 0;
+  if (v.includes("available") || v.includes("ready")) return 0;
   if (v.includes("coming")) return 1;
   if (v.includes("booked")) return 2;
-  return 3;
+  if (v.includes("sold")) return 3;
+  if (v.includes("dead")) return 4;
+  return 5;
 }
 
 function fmtArea(a: number | null): string | null {

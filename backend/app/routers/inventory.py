@@ -4,6 +4,7 @@ from sqlalchemy import select
 from ..core.auth import current_user
 from ..db import neon_engine
 from ..models import InventoryUnit
+from ..services.availability import resolve as resolve_availability
 from ..services.inventory_sync import read_state, run_sync
 
 router = APIRouter(tags=["inventory"], dependencies=[Depends(current_user)])
@@ -49,6 +50,12 @@ async def get_inventory():
             ]
     except Exception as e:  # table missing / conn error
         return {"status": "error", "last_synced_at": None, "detail": str(e), "items": []}
+
+    # The sync already wrote this into inventory_units.status; re-applying here covers
+    # the window since, because "is this still sellable" must not be a sync interval
+    # stale. Usually a no-op that confirms the stored value.
+    await resolve_availability(items)
+
     status = state.get("last_status") or ("ok" if items else "not_configured")
     return {
         "status": status,

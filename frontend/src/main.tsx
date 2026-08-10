@@ -18,12 +18,38 @@ import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
 import LiveCalls from "./pages/LiveCalls";
 import Stub from "./pages/Stub";
+import MobileApp, { MOBILE_NAV, MobileLeadDetail, MobileLeads } from "./MobileApp";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
 import { AuthProvider } from "./components/AuthContext";
 import "./styles/app.css";
 
-const router = createBrowserRouter([
+/* Which route table to build. The two views are different component trees, not a
+   restyle, so the choice is made once — and re-made by reloading when the viewport
+   actually crosses the threshold (resizing the window, or flipping on the browser's
+   device toolbar, which is how this gets tested). */
+const mq = window.matchMedia("(max-width: 768px)");
+const isMobile = mq.matches;
+mq.addEventListener("change", (e) => e.matches !== isMobile && window.location.reload());
+
+const mobileRoutes = [
+  {
+    path: "/",
+    element: <MobileApp />,
+    children: [
+      { index: true, element: <Dashboard /> },
+      ...MOBILE_NAV.filter((n) => n.seg).map((n) => ({
+        path: n.to.slice(1),
+        element: <MobileLeads segment={n.seg!} />,
+      })),
+      { path: "leads/:id", element: <MobileLeadDetail /> },
+      // everything the mobile view doesn't carry lands back on the dashboard
+      { path: "*", element: <Navigate to="/" replace /> },
+    ],
+  },
+];
+
+const desktopRoutes = [
   {
     path: "/",
     element: <App />,
@@ -56,7 +82,9 @@ const router = createBrowserRouter([
       { path: "chat", element: <Chat /> },
     ],
   },
-]);
+];
+
+const router = createBrowserRouter(isMobile ? mobileRoutes : desktopRoutes);
 
 const queryClient = new QueryClient();
 

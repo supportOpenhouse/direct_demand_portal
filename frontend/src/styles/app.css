@@ -407,6 +407,8 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 
 /* lead detail */
 .detail-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
+/* a column of cards inside the detail grid — dissolves into the flex list on mobile */
+.dcol{display:flex;flex-direction:column;gap:18px}
 .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);cursor:pointer;font-weight:600;font-size:13px;margin-bottom:14px}
 .back:hover{color:var(--ink)}
 .lead-head{display:flex;align-items:center;gap:14px;margin-bottom:6px}
@@ -1081,32 +1083,37 @@ a.nav-item{text-decoration:none}
 .m-search.open{width:100%}
 .m-search .gsearch{margin-left:0;width:100%}
 .m-search .gsearch .search{width:100%;padding:6px 10px}
-.m-search .gsearch-panel{width:calc(100vw - 24px);right:-48px}
+/* fixed, not absolute: the sliding box clips its overflow, which would otherwise
+   swallow the results dropdown whole */
+.m-search .gsearch-panel{position:fixed;top:60px;left:12px;right:12px;width:auto}
 .m-view{flex:1;overflow-y:auto;padding:14px}
 
-.m-drawer{position:fixed;top:0;bottom:0;left:0;width:75%;z-index:70;overflow-y:auto;
+/* the drawer reuses the desktop sidebar's dark .brand / .nav-item / .user chrome */
+.m-drawer{position:fixed;top:0;bottom:0;left:0;width:75%;z-index:70;display:flex;flex-direction:column;
   background:linear-gradient(180deg,#111a2b,var(--ink-sidebar));padding:18px 12px;
   transform:translateX(-100%);transition:transform .2s ease}
 .m-drawer.open{transform:none}
+.m-drawer .nav-item{padding:11px 12px;font-size:14px}
 .m-scrim{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:65}
-.m-nav-item{display:block;padding:12px 14px;border-radius:10px;color:#aab3c5;
-  text-decoration:none;font-weight:600;font-size:14px}
-.m-nav-item.active{background:var(--ink-sidebar-2);color:#fff}
 
 .m-list{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
-.m-row{display:flex;flex-direction:column;gap:3px;align-items:flex-start;text-align:left;
-  padding:13px 14px;border:0;border-bottom:1px solid var(--line-2);background:var(--panel);font:inherit;cursor:pointer}
+.m-row{display:flex;flex-direction:column;gap:5px;text-align:left;
+  padding:12px 14px;border:0;border-bottom:1px solid var(--line-2);background:var(--panel);font:inherit;cursor:pointer}
 .m-row:last-child{border-bottom:0}
-.m-nm{font-weight:600;font-size:14.5px;color:var(--ink)}
-.m-ph{font-size:12.5px;color:var(--muted);font-family:"Spline Sans Mono"}
+.m-row-line{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
+.m-nm{font-weight:600;font-size:14.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-ph{flex:none;font-size:12.5px;color:var(--muted);font-family:"Spline Sans Mono"}
+.m-soc{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-soc::before{content:"· "}
 
-.m-card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
-  box-shadow:var(--shadow);padding:14px;margin-bottom:14px}
-.m-dt{font-size:10.5px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
-.m-dd{font-size:14px;color:var(--ink);margin:2px 0 12px;word-break:break-word}
-.m-card > div:last-child .m-dd{margin-bottom:0}
+/* one column, and the confirm form last (the rest keep DOM order at order:0) */
+.m-detail{display:flex;flex-direction:column;gap:14px}
+.m-detail > .dcol{display:contents}
+.m-detail .m-last{order:1}
 
-/* the Dashboard is the desktop component — stack its grids and let wide tables scroll */
-.m-view .grid,.m-view .stat-row,.m-view .two,.m-view .detail-grid{grid-template-columns:1fr}
+/* desktop pages reused as-is on the phone: stack their grids, let wide tables scroll */
+.m-view .grid,.m-view .stat-row,.m-view .cards-3,.m-view .two{grid-template-columns:1fr}
+.m-view .section-head{flex-direction:column;align-items:flex-start;gap:10px}
+.m-view .lead-actions{width:100%}
 .m-view table{min-width:520px}

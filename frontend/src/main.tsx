@@ -18,7 +18,7 @@ import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
 import LiveCalls from "./pages/LiveCalls";
 import Stub from "./pages/Stub";
-import MobileApp, { MOBILE_NAV, MobileLeadDetail, MobileLeads } from "./MobileApp";
+import MobileApp, { MOBILE_NAV, MobileLeads } from "./MobileApp";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
 import { AuthProvider } from "./components/AuthContext";
@@ -42,7 +42,9 @@ const mobileRoutes = [
         path: n.to.slice(1),
         element: <MobileLeads segment={n.seg!} />,
       })),
-      { path: "leads/:id", element: <MobileLeadDetail /> },
+      // the real lead page — same edits, same saves, one column
+      { path: "leads/:id", element: <LeadDetail mobile /> },
+      { path: "inventory", element: <Inventory /> },
       // everything the mobile view doesn't carry lands back on the dashboard
       { path: "*", element: <Navigate to="/" replace /> },
     ],

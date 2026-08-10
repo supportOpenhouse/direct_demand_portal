@@ -438,7 +438,10 @@ function MatchPanel({ title, tag, units, loading, leadId, leadPhone, leadName }:
   );
 }
 
-export default function LeadDetail() {
+/* `mobile` — same page, same behaviour, one column. The card order the phone asks for
+   is the desktop set with the confirm form moved last, which is a layout concern, so
+   the two columns collapse to a flex list (see .m-detail) instead of forking the JSX. */
+export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
   const { id = "" } = useParams();
   const nav = useNavigate();
   // Live Calls sends this in router state when "Yes" opens the lead in the same tab.
@@ -620,7 +623,8 @@ export default function LeadDetail() {
           </div>
         </div>
         <div className="lead-actions">
-          <button className="btn ghost" onClick={() => setPlanner(true)}>📅 Plan visits</button>
+          {/* the planner is a wide drawer with a map — desktop only */}
+          {!mobile && <button className="btn ghost" onClick={() => setPlanner(true)}>📅 Plan visits</button>}
           <button className="btn wa" onClick={() => lead.phone ? waChat(lead.phone, `Hi ${lead.name || ""}, this is Openhouse Direct Demand.`) : toast("No phone number", "gold", "⚠")}>
             <WhatsAppIcon /> WhatsApp
           </button>
@@ -629,8 +633,8 @@ export default function LeadDetail() {
       {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} leadPhone={lead.phone} onClose={() => setPlanner(false)} />}
       {rejecting && <RejectModal id={id} name={lead.name} onClose={() => setRejecting(false)} />}
 
-      <div className="detail-grid">
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <div className={mobile ? "m-detail" : "detail-grid"}>
+        <div className="dcol">
           {/* SOURCE-CAPTURED — editable */}
           <SourceCard lead={lead} />
 
@@ -640,8 +644,8 @@ export default function LeadDetail() {
           {/* QUICK FOLLOW-UP SCHEDULER — the single (mandatory) follow-up input */}
           <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && !isPipeline && invalid.followup} current={lead.follow_up_at} />
 
-          {/* CONFIRMED call form */}
-          <div className="card panel-pad compact-form">
+          {/* CONFIRMED call form — last on mobile, per the requested card order */}
+          <div className={"card panel-pad compact-form" + (mobile ? " m-last" : "")}>
             <div className="panel-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
                 <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z" />
@@ -783,8 +787,8 @@ export default function LeadDetail() {
         </div>
 
         {/* RIGHT column — saved visit plan + live matched inventory + supply */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />
+        <div className="dcol">
+          {!mobile && <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />}
           <WaLeadCard phone={lead.phone} />
           <CallActivityCard leadId={lead.id} />
           <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />

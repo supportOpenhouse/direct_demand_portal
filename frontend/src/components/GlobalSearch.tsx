@@ -12,7 +12,10 @@ import { leadMatchesQuery } from "../lib/leads";
 
 const MAX_RESULTS = 8;
 
-export default function GlobalSearch() {
+/* `openLead` — mobile picks the lead itself rather than its worklist. On desktop the
+   tab + applied query is the useful landing (the row sits in a table you can act on);
+   on a phone there is no table worth landing in, so a hit opens the lead page. */
+export default function GlobalSearch({ openLead = false }: { openLead?: boolean }) {
   const { query, setQuery } = useSearch();
   const nav = useNavigate();
   const { pathname } = useLocation();
@@ -43,13 +46,14 @@ export default function GlobalSearch() {
     setFocused(false);
     nav(route);
   };
+  const routeFor = (r: (typeof results)[number]) => (openLead ? `/leads/${r.lead.id}` : r.segment.route);
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") return setFocused(false);
     if (!open || !results.length) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setActive((a) => Math.min(a + 1, results.length - 1)); }
     else if (e.key === "ArrowUp") { e.preventDefault(); setActive((a) => Math.max(a - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); go(results[active].segment.route); }
+    else if (e.key === "Enter") { e.preventDefault(); go(routeFor(results[active])); }
   };
 
   return (
@@ -77,7 +81,7 @@ export default function GlobalSearch() {
                   key={r.lead.id}
                   className={"gsearch-item" + (i === active ? " active" : "")}
                   onMouseEnter={() => setActive(i)}
-                  onClick={() => go(r.segment.route)}
+                  onClick={() => go(routeFor(r))}
                 >
                   <div className="gs-main">
                     <span className="gs-name">{r.lead.name || "Unknown lead"}</span>

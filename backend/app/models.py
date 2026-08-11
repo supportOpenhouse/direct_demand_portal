@@ -76,6 +76,24 @@ class SyncState(Base):
 # ============================================================
 
 
+class AppSetting(Base):
+    """Org-wide settings an admin sets once and everyone reads.
+
+    One row per key, and only keys in services/app_settings.DEFAULTS are accepted —
+    the write endpoint is browser-reachable, so an open key space would make it an
+    arbitrary-write primitive against a shared table. Absent row = the default.
+    """
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_by: Mapped[str | None] = mapped_column(Text)
+
+
 class MetaLead(Base):
     """Raw rows from the 'Meta Affordable_New' sheet (source = Meta)."""
 

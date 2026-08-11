@@ -98,6 +98,15 @@ export interface SupplyResponse {
   items: SupplyItem[];
 }
 
+/* Org-wide settings: an admin sets them on Settings & Access, everyone reads them.
+   Absent keys come back as their default, so this is always fully populated. */
+export interface AppSettings {
+  // Lead numbers in the New Leads / Follow-up / segment tables — for shared screens
+  // and screenshots. The number still reaches the browser and calling still works;
+  // this only stops it being rendered.
+  hide_lead_phones: boolean;
+}
+
 /* Live Calls — the RM's own view of the campaign dialling them. */
 
 export interface LiveCallLead {
@@ -397,6 +406,12 @@ export const api = {
         body: JSON.stringify({ connected, reason, notes, queue_item_id: queueItemId ?? null }),
       }),
   myCalls: () => request<MyCallsResponse>("/v1/dialer/my-calls"),
+  appSettings: () => request<AppSettings>("/v1/settings"),
+  // PATCH not PUT — CORS allow_methods in backend/app/main.py doesn't list PUT
+  setAppSetting: (key: keyof AppSettings, value: boolean) =>
+    request<Partial<AppSettings>>(`/v1/settings/${key}`, {
+      method: "PATCH", body: JSON.stringify({ value }),
+    }),
   setFollowup: (id: string, followUpAt: string) =>
     request<{ status: string }>(`/v1/leads/${id}/followup`, { method: "POST", body: JSON.stringify({ follow_up_at: followUpAt }) }),
   leadCrmVisits: (id: string) => request<{ items: CrmVisitRow[] }>(`/v1/leads/${id}/crm-visits`),

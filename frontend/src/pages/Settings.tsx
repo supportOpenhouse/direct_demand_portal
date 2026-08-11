@@ -1,7 +1,7 @@
 /* Settings & Access — user management. Only people added here can sign in, and
    each maps to their leads via the sheet's "Assigned to" name. */
 import { useState } from "react";
-import { useUsers, useUserMutations } from "../lib/queries";
+import { useAppSettings, useSetAppSetting, useUsers, useUserMutations } from "../lib/queries";
 import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
@@ -12,6 +12,58 @@ const ROLES = [
   { v: "test_rm", label: "Test RM", desc: "Same as an RM, tagged TEST in the dialer · never assigned WhatsApp conversations" },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.v === r)?.label || r;
+
+/* Org-wide privacy switches. Set here rather than per-browser because it's a PII
+   decision — one person makes it for everyone, and an RM can't quietly opt out. */
+function PrivacyPanel() {
+  const { data, isLoading } = useAppSettings();
+  const set = useSetAppSetting();
+  const toast = useToast();
+  const on = !!data?.hide_lead_phones;
+
+  const flip = () =>
+    set.mutate(
+      { key: "hide_lead_phones", value: !on },
+      {
+        onSuccess: () =>
+          toast(on ? "Lead numbers are visible again" : "Lead numbers hidden in tables",
+                on ? "blue" : "green", on ? "👁" : "🙈"),
+        onError: (e: any) => toast(e.message, "gold", "⚠"),
+      },
+    );
+
+  return (
+    <div className="card panel-pad" style={{ marginTop: 16 }}>
+      <div className="section-head">
+        <div>
+          <div className="panel-title" style={{ marginBottom: 2 }}>Privacy</div>
+          <p className="sec-sub" style={{ margin: 0 }}>Applies to everyone, not just you.</p>
+        </div>
+      </div>
+      <div className="set-row">
+        <div>
+          <div className="set-name">Hide lead phone numbers in tables</div>
+          <p className="set-desc">
+            Keeps numbers off New Leads, Call Not Received, Follow Up and the segment
+            lists — for shared screens, screenshots and demos. Calling, WhatsApp and the
+            lead detail page are unaffected.
+          </p>
+        </div>
+        {/* aria-checked + role make this a real switch to a screen reader; without
+            them it's an anonymous div that announces nothing. */}
+        {/* .switch (app.css) draws the knob with ::after — no child element needed */}
+        <button
+          role="switch"
+          aria-checked={on}
+          aria-label="Hide lead phone numbers in tables"
+          className={"switch" + (on ? " on" : "")}
+          disabled={isLoading || set.isPending}
+          onClick={flip}
+        />
+      </div>
+    </div>
+  );
+}
 const initials = (n: string | null, e: string) =>
   (n || e).split(/[ @]/).map((x) => x[0]).slice(0, 2).join("").toUpperCase();
 
@@ -326,6 +378,7 @@ export default function Settings() {
           data.items.map((u) => <UserRow key={u.id} u={u} allUsers={data.items} />)
         )}
       </div>
+      <PrivacyPanel />
       {adding && <AddUserForm onClose={() => setAdding(false)} />}
     </>
   );

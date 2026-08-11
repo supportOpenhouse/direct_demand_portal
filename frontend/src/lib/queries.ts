@@ -2,6 +2,30 @@ import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } f
 import { api, ConfirmPayload, MatchPreviewReq } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
+/* Org-wide settings.
+
+   Read by every lead table (to decide whether to render phone numbers), so it's
+   long-lived in cache rather than refetched per page. An admin flipping the switch
+   invalidates it for their own tab immediately; other tabs pick it up on their next
+   remount — a policy toggle doesn't need to be instant everywhere, and polling it
+   from every page would cost a request per navigation forever. */
+export function useAppSettings() {
+  return useQuery({
+    queryKey: ["app-settings"],
+    queryFn: api.appSettings,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useSetAppSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ key, value }: { key: "hide_lead_phones"; value: boolean }) =>
+      api.setAppSetting(key, value),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["app-settings"] }),
+  });
+}
+
 export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
 }

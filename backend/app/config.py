@@ -159,6 +159,10 @@ class Settings(BaseSettings):
     @property
     def initial_admins(self) -> set[str]:
         return {e.strip().lower() for e in self.INITIAL_ADMIN_EMAILS.split(",") if e.strip()}
+    # External analytics provider behind /v1/huvoa-nalytics. Unset = the endpoint
+    # reports not_configured rather than failing, so the page can be built first.
+    HUVO_ANALYTICS_URL: str = ""
+
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (

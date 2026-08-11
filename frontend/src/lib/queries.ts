@@ -4,16 +4,18 @@ import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
 
-   Read by every lead table (to decide whether to render phone numbers), so it's
-   long-lived in cache rather than refetched per page. An admin flipping the switch
-   invalidates it for their own tab immediately; other tabs pick it up on their next
-   remount — a policy toggle doesn't need to be instant everywhere, and polling it
-   from every page would cost a request per navigation forever. */
+   Read by every lead table to decide whether to render phone numbers. 30s stale, so
+   another user's open tab picks up a policy change when they next focus it (react-
+   query refetches stale queries on window focus) rather than only on a hard reload —
+   without paying a request per navigation forever. */
 export function useAppSettings() {
   return useQuery({
     queryKey: ["app-settings"],
     queryFn: api.appSettings,
-    staleTime: 5 * 60_000,
+    staleTime: 30_000,
+    // Keep the last known value while refetching: a hide-flag that flickers off
+    // mid-refetch would flash the numbers it exists to conceal.
+    placeholderData: keepPreviousData,
   });
 }
 

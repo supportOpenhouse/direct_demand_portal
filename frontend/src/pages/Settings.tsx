@@ -25,9 +25,16 @@ function PrivacyPanel() {
     set.mutate(
       { key: "hide_lead_phones", value: !on },
       {
-        onSuccess: () =>
-          toast(on ? "Lead numbers are visible again" : "Lead numbers hidden in tables",
-                on ? "blue" : "green", on ? "👁" : "🙈"),
+        onSuccess: () => {
+          toast(on ? "Lead numbers are visible again — reloading…"
+                   : "Lead numbers hidden in tables — reloading…",
+                on ? "blue" : "green", on ? "👁" : "🙈");
+          // Hard reload rather than a cache invalidation. This flag decides whether
+          // PII is on screen, so every list has to be rebuilt from scratch — a stale
+          // render left anywhere is the exact failure the setting exists to prevent.
+          // Delayed so the toast is readable before the page goes.
+          setTimeout(() => window.location.reload(), 900);
+        },
         onError: (e: any) => toast(e.message, "gold", "⚠"),
       },
     );

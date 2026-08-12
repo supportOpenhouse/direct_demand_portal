@@ -19,8 +19,8 @@ from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
 from .routers import (
-    app_settings, auth, bonvoice, dialer, external_analytics, gupshup, health, inventory,
-    leads, live_calls, logs, supply, users, visits,
+    app_settings, auth, bonvoice, dialer, external_analytics, gupshup, health, huvo,
+    inventory, leads, live_calls, logs, supply, users, visits,
 )
 from .services.dialer import start_dialer, stop_dialer
 from .workers.scheduler import start_scheduler, stop_scheduler
@@ -183,6 +183,7 @@ app.include_router(leads.router, prefix="/v1")
 app.include_router(users.router, prefix="/v1")
 app.include_router(app_settings.router, prefix="/v1")
 app.include_router(external_analytics.router, prefix="/v1")
+app.include_router(huvo.router, prefix="/v1")
 app.include_router(visits.router, prefix="/v1")
 app.include_router(logs.router, prefix="/v1")
 app.include_router(gupshup.router, prefix="/v1")

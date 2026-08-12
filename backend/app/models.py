@@ -76,6 +76,49 @@ class SyncState(Base):
 # ============================================================
 
 
+class HuvoCallUpdate(Base):
+    """One completed call as reported by Huvo's webhook.
+
+    Raw-first on purpose. Their analytics object is richer than any column set here —
+    lead_score, rsvp_status, interest_reason and purpose have nowhere to go — so the
+    whole envelope is kept in `payload` and the columns below are just what a list or
+    a report needs to filter and sort on. If the outcome mapping turns out wrong, it
+    can be re-derived rather than having been thrown away.
+
+    `lead_id` is resolved on arrival by matching from_number's last 10 digits, and is
+    nullable: a call can legitimately arrive for a number we hold no lead for.
+    Nothing here mutates the lead — see routers/huvo.py.
+    """
+
+    __tablename__ = "huvo_call_updates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # from_number + start_time, or a digest of the envelope when start_time is null.
+    # Unique because their contract has no delivery id and no retry policy, so the
+    # same payload can and will arrive twice.
+    dedupe_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    lead_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("leads.id", ondelete="SET NULL"), index=True
+    )
+    from_number: Mapped[str | None] = mapped_column(Text, index=True)
+    caller_name: Mapped[str | None] = mapped_column(Text)
+    call_outcome: Mapped[str | None] = mapped_column(Text, index=True)
+    is_interested: Mapped[str | None] = mapped_column(Text)
+    rsvp_status: Mapped[str | None] = mapped_column(Text)
+    lead_score: Mapped[float | None] = mapped_column(Numeric)
+    budget_lacs: Mapped[float | None] = mapped_column(Numeric)
+    summary: Mapped[str | None] = mapped_column(Text)
+    recording_url: Mapped[str | None] = mapped_column(Text)
+    duration_sec: Mapped[int | None] = mapped_column(Integer)
+    started_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    ended_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    received_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class AppSetting(Base):
     """Org-wide settings an admin sets once and everyone reads.
 

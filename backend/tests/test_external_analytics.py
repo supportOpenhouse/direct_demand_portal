@@ -14,7 +14,7 @@ from app.routers.external_analytics import PROVIDER_ENV, router
 def test_it_answers_on_the_agreed_path():
     """External consumers pin URLs, so the path is part of the contract."""
     paths = {r.path for r in router.routes}
-    assert "/huvoa-nalytics" in paths
+    assert "/huvo-analytics" in paths
 
 
 async def test_it_reports_not_configured_rather_than_failing():

@@ -1,4 +1,4 @@
-"""External analytics — served at /v1/huvoa-nalytics.
+"""External analytics — served at /v1/huvo-analytics.
 
 Scaffold for a page that doesn't exist yet. No provider is wired up, so this answers
 `not_configured` rather than failing: the frontend can be built against a real
@@ -30,7 +30,7 @@ router = APIRouter(tags=["analytics"])
 PROVIDER_ENV = "HUVO_ANALYTICS_URL"
 
 
-@router.get("/huvoa-nalytics")
+@router.get("/huvo-analytics")
 async def external_analytics(_: dict = Depends(current_user)) -> dict:
     """Analytics from the external provider.
 

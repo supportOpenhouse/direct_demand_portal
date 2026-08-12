@@ -159,9 +159,14 @@ class Settings(BaseSettings):
     @property
     def initial_admins(self) -> set[str]:
         return {e.strip().lower() for e in self.INITIAL_ADMIN_EMAILS.split(",") if e.strip()}
-    # External analytics provider behind /v1/huvoa-nalytics. Unset = the endpoint
+    # External analytics provider behind /v1/huvo-analytics. Unset = the endpoint
     # reports not_configured rather than failing, so the page can be built first.
     HUVO_ANALYTICS_URL: str = ""
+    # Shared secret on the Huvo call-update webhook, sent as ?token= (or X-Huvo-Token).
+    # Huvo send unauthenticated by default and issue no token of their own, so this is
+    # ours to generate and hand them. Unset = open in dev; in prod the endpoint refuses
+    # to serve rather than accept call outcomes for arbitrary numbers.
+    HUVO_WEBHOOK_SECRET: str = ""
 
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync

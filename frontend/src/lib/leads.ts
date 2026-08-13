@@ -1,3 +1,8 @@
+/* Cities we operate in. Shared because both create-lead forms (WhatsApp chat and
+   the Huvo call log) offer it — two copies would drift into offering different
+   cities on different pages. */
+export const CITIES = ["Ghaziabad", "Noida", "Gurgaon"];
+
 /* Source + plan-to-buy display helpers, matching the prototype's .src / .plan-chip classes. */
 import { matches } from "../components/SearchContext";
 import type { Lead } from "./api";

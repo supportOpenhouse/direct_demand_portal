@@ -27,6 +27,7 @@ const TITLES: Record<string, string> = {
   "/settings": "Settings & Access",
   "/logs": "Activity Logs",
   "/call-log": "Bonvoice Call Log",
+  "/huvo-calls": "Huvo Call Log",
   "/chat": "WhatsApp",
   "/live-calls": "Live Calls",
 };

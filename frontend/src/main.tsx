@@ -13,6 +13,7 @@ import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import CallLog from "./pages/CallLog";
+import HuvoCalls from "./pages/HuvoCalls";
 import Chat from "./pages/Chat";
 import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
@@ -81,6 +82,7 @@ const desktopRoutes = [
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
       { path: "call-log", element: <CallLog /> },
+      { path: "huvo-calls", element: <HuvoCalls /> },
       { path: "chat", element: <Chat /> },
     ],
   },

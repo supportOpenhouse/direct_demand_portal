@@ -25,3 +25,5 @@ service-account*.json
 # Spartan AI config (contains API keys)
 .spartan/ai.env
 graphify-out
+huvo_call_updates.csv
+leads-2026-08-13.csv

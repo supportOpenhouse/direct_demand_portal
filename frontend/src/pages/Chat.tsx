@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
+import { CITIES } from "../lib/leads";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
   useBackfillWaAssign, useSocietiesByCity, useGupshupRecent, useBulkCreateWaLeads,
@@ -21,7 +22,6 @@ import { useToast } from "../components/Toast";
 import { WhatsAppIcon } from "../components/icons";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
-const CITIES = ["Ghaziabad", "Noida", "Gurgaon"];
 // fixed panel height — both columns scroll inside this rather than running to the
 // bottom of the viewport, so the page keeps a normal, predictable shape
 const PANEL_H = 560;

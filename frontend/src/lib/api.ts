@@ -98,6 +98,37 @@ export interface SupplyResponse {
   items: SupplyItem[];
 }
 
+/* Huvo call log — one row per completed call their bot made, with the analytics it
+   produced. Distinct from the Bonvoice log, which records telephony legs. */
+export interface HuvoCall {
+  id: string;
+  from_number: string | null;
+  caller_name: string | null;
+  call_outcome: string | null;   // 16-value enum; null on rows recording no call
+  is_interested: string | null;  // yes | no | unsure
+  rsvp_status: string | null;
+  lead_score: number | null;     // 0–10
+  budget_lacs: number | null;    // converted from their budget_crores string
+  summary: string | null;
+  recording_url: string | null;
+  duration_sec: number | null;
+  started_at: string | null;
+  received_at: string;
+  lead_id: string | null;        // null = no lead for this number yet
+  lead_name: string | null;
+  lead_stage: string | null;
+}
+
+export interface HuvoCallQuery {
+  q?: string;
+  outcome?: string;
+  interested?: string;
+  linked?: string;               // "linked" | "unlinked"
+  duration?: string;             // a DURATION_OPTIONS label
+  limit?: number;
+  offset?: number;
+}
+
 /* Org-wide settings: an admin sets them on Settings & Access, everyone reads them.
    Absent keys come back as their default, so this is always fully populated. */
 export interface AppSettings {
@@ -406,6 +437,18 @@ export const api = {
         body: JSON.stringify({ connected, reason, notes, queue_item_id: queueItemId ?? null }),
       }),
   myCalls: () => request<MyCallsResponse>("/v1/dialer/my-calls"),
+  huvoCalls: (p: HuvoCallQuery) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
+    return request<{ items: HuvoCall[]; total: number }>(`/v1/huvo/calls?${qs.toString()}`);
+  },
+  huvoCallFilters: () =>
+    request<{ outcomes: string[]; interest: string[] }>("/v1/huvo/calls/outcomes"),
+  // Mirrors waCreateLead. Also back-links every Huvo call from this number, since the
+  // webhook only resolves lead_id at write time.
+  huvoCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
+    request<{ status: string; lead_id: string | null; calls_linked: number }>(
+      "/v1/huvo/leads", { method: "POST", body: JSON.stringify(payload) }),
   appSettings: () => request<AppSettings>("/v1/settings"),
   // PATCH not PUT — CORS allow_methods in backend/app/main.py doesn't list PUT
   setAppSetting: (key: keyof AppSettings, value: boolean) =>

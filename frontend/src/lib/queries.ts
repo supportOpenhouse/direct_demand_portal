@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ConfirmPayload, MatchPreviewReq } from "./api";
+import { api, ConfirmPayload, HuvoCallQuery, MatchPreviewReq } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -25,6 +25,39 @@ export function useSetAppSetting() {
     mutationFn: ({ key, value }: { key: "hide_lead_phones"; value: boolean }) =>
       api.setAppSetting(key, value),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["app-settings"] }),
+  });
+}
+
+/* Huvo call log. keepPreviousData so paging and filtering don't blank the table
+   between fetches — same as the Bonvoice log. */
+export function useHuvoCalls(p: HuvoCallQuery) {
+  return useQuery({
+    queryKey: ["huvo-calls", p],
+    queryFn: () => api.huvoCalls(p),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/* Dropdown options, derived server-side from what's actually in the table — the page
+   holds 50 rows, so building them from the current page would hide most values. */
+export function useHuvoCallFilters() {
+  return useQuery({
+    queryKey: ["huvo-call-filters"],
+    queryFn: api.huvoCallFilters,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useCreateHuvoLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.huvoCreateLead,
+    onSuccess: () => {
+      // the call rows now carry a lead_id, and the lead lists have a new row
+      qc.invalidateQueries({ queryKey: ["huvo-calls"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
   });
 }
 

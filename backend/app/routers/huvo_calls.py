@@ -100,10 +100,17 @@ async def huvo_calls(
         # Both counts in one round trip. unique_leads is distinct numbers, not rows:
         # Huvo calls the same person more than once, so "1415 calls" alone overstates
         # how many people are actually in the list.
+        # All three counts in one round trip. unlinked_unique is what the bulk-create
+        # button offers: distinct numbers matching the CURRENT FILTERS that have no
+        # lead — not what happens to be on this page, which is a different and much
+        # smaller number.
         counts = (await conn.execute(text(
-            f"SELECT count(*) AS total, count(DISTINCT h.from_number) AS uniq"
+            f"SELECT count(*) AS total,"
+            f"       count(DISTINCT h.from_number) AS uniq,"
+            f"       count(DISTINCT h.from_number) FILTER (WHERE h.lead_id IS NULL) AS unlinked"
             f"{_FROM}{clause}"), params)).mappings().first()
         total, unique_leads = counts["total"], counts["uniq"]
+        unlinked_unique = counts["unlinked"]
         rows = (await conn.execute(text(f"""
             SELECT h.id, h.from_number, h.caller_name, h.call_outcome, h.is_interested,
                    h.rsvp_status, h.lead_score, h.budget_lacs, h.summary,
@@ -122,7 +129,8 @@ async def huvo_calls(
              else v)
          for k, v in dict(r).items()}
         for r in rows
-    ], "total": total, "unique_leads": unique_leads}
+    ], "total": total, "unique_leads": unique_leads,
+        "unlinked_unique": unlinked_unique}
 
 
 @router.get("/huvo/calls/outcomes", dependencies=[Depends(require_admin)])
@@ -144,6 +152,67 @@ async def huvo_call_outcomes():
             "SELECT DISTINCT is_interested FROM huvo_call_updates "
             "WHERE is_interested IS NOT NULL ORDER BY 1"))).scalars().all()
     return {"outcomes": list(outcomes), "interest": list(interest)}
+
+
+@router.get("/leads/{lead_id}/huvo-calls")
+async def lead_huvo_calls(lead_id: UUID, _: dict = Depends(current_user)):
+    """Huvo's calls to one lead, newest first — the lead-detail card.
+
+    current_user, not admin: an RM looking at their own lead needs to see what the bot
+    already asked it. The Huvo Call Log page stays admin-only because that one is
+    every lead at once.
+
+    Includes payload so the card can show what the caller actually said — the fields
+    that matter most here (what they want, why they're interested) have no column.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(text("""
+            SELECT id, call_outcome, is_interested, rsvp_status, lead_score,
+                   budget_lacs, summary, recording_url, duration_sec,
+                   started_at, received_at, payload
+              FROM huvo_call_updates
+             WHERE lead_id = :id
+             ORDER BY COALESCE(started_at, received_at) DESC
+             LIMIT 50"""), {"id": lead_id})).mappings().all()
+    return {"items": [
+        {k: (v.isoformat() if isinstance(v, datetime)
+             else str(v) if isinstance(v, UUID)
+             else float(v) if hasattr(v, "quantize")
+             else v)
+         for k, v in dict(r).items()}
+        for r in rows
+    ]}
+
+
+# Registered AFTER /huvo/calls/outcomes on purpose: FastAPI matches in declaration
+# order, and a bare {call_id} here would swallow "outcomes" and 422 on it.
+@router.get("/huvo/calls/{call_id}", dependencies=[Depends(require_admin)])
+async def huvo_call_detail(call_id: UUID):
+    """One call, with the whole envelope.
+
+    `payload` is excluded from the list query because it's the largest column by far
+    and nothing in a table renders it — but it's the only place nine of Huvo's
+    analytics fields live (project_name, interest_reason, purpose, location,
+    type_of_property, the two schedule fields, follow_up_time, callback_owner), so
+    the detail view has to have it.
+    """
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(f"""
+            SELECT h.*, l.name AS lead_name, l.stage AS lead_stage
+            {_FROM} WHERE h.id = :id"""), {"id": call_id})).mappings().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="call not found")
+    return {k: (v.isoformat() if isinstance(v, datetime)
+                else str(v) if isinstance(v, UUID)
+                else float(v) if hasattr(v, "quantize")
+                else v)
+            for k, v in dict(row).items()}
 
 
 class HuvoLeadRequest(BaseModel):
@@ -205,8 +274,25 @@ async def huvo_create_lead(req: HuvoLeadRequest, user: dict = Depends(current_us
 
 
 class BulkHuvoLeadRequest(BaseModel):
+    """Either an explicit selection, or every unlinked call matching a filter.
+
+    Both modes exist because they answer different questions. Ticking boxes is right
+    for "these five"; but "all 845 unlinked" can't be expressed as a phone list the
+    browser sends — it would have to page through the whole table first, and the list
+    would be stale by the time it arrived. So for that, the filter travels instead and
+    the server resolves the set itself.
+    """
     # capped so one click can't fan out into an unbounded write
-    phones: list[str] = Field(min_length=1, max_length=500)
+    phones: list[str] | None = Field(default=None, max_length=500)
+
+    # ...or resolve the set server-side from the same filters the page is showing.
+    # `linked` is deliberately not accepted: this only ever creates leads for calls
+    # that have none, whatever the page's Lead filter happens to be set to.
+    all_matching: bool = False
+    q: str | None = None
+    outcome: str | None = None
+    interested: str | None = None
+    duration: str | None = None
 
 
 @router.post("/huvo/leads/bulk")
@@ -227,14 +313,24 @@ async def huvo_bulk_create_leads(req: BulkHuvoLeadRequest, user: dict = Depends(
     if engine is None:
         raise HTTPException(status_code=503, detail="database not configured")
 
-    # dedupe: the same person can appear on several calls in the selection
-    phones10 = sorted({p10 for p10 in (norm_phone(p) for p in req.phones)
-                       if p10 and len(p10) == 10})
-    if not phones10:
-        raise HTTPException(status_code=400, detail="no valid phone numbers")
-
     now = datetime.now(timezone.utc)
     async with engine.begin() as conn:
+        if req.all_matching:
+            # Resolved here, not in the browser: the same filters the page is showing,
+            # forced to the unlinked subset.
+            clause, params = calls_filters(
+                req.q, req.outcome, req.interested, LINKED_NO, req.duration)
+            phones10 = list((await conn.execute(text(
+                f"SELECT DISTINCT h.from_number{_FROM}{clause}"
+                f"{' AND' if clause else ' WHERE'} h.from_number IS NOT NULL"),
+                params)).scalars().all())
+        else:
+            # dedupe: the same person can appear on several calls in the selection
+            phones10 = sorted({p10 for p10 in (norm_phone(p) for p in (req.phones or []))
+                               if p10 and len(p10) == 10})
+        if not phones10:
+            raise HTTPException(status_code=400, detail="no calls to convert")
+
         # Best known name per number: the most recent call that actually carried one.
         # "Customer" is Huvo's placeholder for a caller it never identified — taking it
         # would name a lead "Customer" when an earlier call knew better.

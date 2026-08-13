@@ -15,6 +15,7 @@ import { AssignControl } from "../components/AssignControl";
 import { WhatsAppIcon } from "../components/icons";
 import WaLeadCard from "../components/WaLeadCard";
 import CallActivityCard from "../components/CallActivityCard";
+import HuvoCallCard from "../components/HuvoCallCard";
 import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
 import { openInMaps } from "../lib/maps";
@@ -791,6 +792,10 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
           {!mobile && <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />}
           <WaLeadCard phone={lead.phone} />
           <CallActivityCard leadId={lead.id} />
+          {/* Separate from Call activity: that card is the RM's own calls via Bonvoice,
+              this one is what Huvo's bot got out of the lead. Both render nothing when
+              empty, so a lead with neither shows neither. */}
+          <HuvoCallCard leadId={lead.id} />
           <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
           <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
         </div>

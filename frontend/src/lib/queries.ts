@@ -61,10 +61,31 @@ export function useCreateHuvoLead() {
   });
 }
 
+/* Fetched only while a row is open — the payload is heavy and nothing needs it until
+   someone actually asks for the detail. */
+/* Huvo's calls to one lead — the lead-detail card. Same staleness as the Bonvoice
+   equivalent; a bot call landing while someone reads the page is not urgent. */
+export function useLeadHuvoCalls(leadId: string) {
+  return useQuery({
+    queryKey: ["lead-huvo-calls", leadId],
+    queryFn: () => api.leadHuvoCalls(leadId),
+    staleTime: 30_000,
+  });
+}
+
+export function useHuvoCall(id: string | null) {
+  return useQuery({
+    queryKey: ["huvo-call", id],
+    queryFn: () => api.huvoCall(id as string),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+}
+
 export function useBulkCreateHuvoLeads() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (phones: string[]) => api.huvoBulkCreateLeads(phones),
+    mutationFn: (body: import("./api").HuvoBulkLeadReq) => api.huvoBulkCreateLeads(body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["huvo-calls"] });
       qc.invalidateQueries({ queryKey: ["leads"] });

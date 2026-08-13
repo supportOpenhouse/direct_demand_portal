@@ -1145,3 +1145,68 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 }
 .nav-item:hover .nav-img{opacity:1;filter:brightness(1.15)}
 .nav-item.active .nav-img{opacity:1;filter:brightness(1.35)}
+
+/* Huvo Call Log header.
+
+   The stock .section-head is a plain space-between with no flex sizing, so the filter
+   row pushed the count until it wrapped mid-phrase ("1,603 calls · 0 unique | leads").
+   Here the count is fixed and the controls take whatever is left — which changes when
+   the sidebar collapses, so the search field has to be fluid rather than a fixed
+   240px. */
+.hv-head{align-items:flex-start;gap:16px;margin-bottom:10px;flex-wrap:wrap}
+.hv-head > p{flex:0 0 auto;white-space:nowrap}
+
+.hv-filters{
+  display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;
+  flex:1 1 420px;min-width:0;   /* min-width:0 lets it actually shrink inside the flex row */
+}
+
+/* Grows into spare width, shrinks on a narrow viewport, never so far that the
+   placeholder is unreadable. Capped so it doesn't swallow the row on a wide screen. */
+.hv-search{margin-bottom:0;flex:1 1 200px;min-width:150px;max-width:340px}
+.hv-search input{width:100%;padding:7px 10px;font-size:12.5px}
+
+/* Below this the controls stop competing with the count and take the full row. */
+@media (max-width:1100px){
+  .hv-filters{flex-basis:100%;justify-content:flex-start}
+}
+
+/* Huvo call detail — the whole record for one call.
+
+   Wider than the standard modal: this is a read surface with ~30 fields, and at the
+   default width every label/value pair wrapped onto two lines. */
+.modal.hv-detail{max-width:760px;width:calc(100vw - 48px)}
+.modal.hv-detail .mb{max-height:70vh;overflow:auto}
+
+.hv-detail-num{
+  margin-left:10px;font-family:"Spline Sans Mono";font-size:12.5px;
+  font-weight:500;color:var(--muted);
+}
+
+.hv-sec{
+  display:flex;align-items:center;
+  font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line);
+}
+.hv-sec:first-child{margin-top:0}
+
+/* auto-fit rather than a fixed column count, so the grid reflows on a narrow window
+   instead of forcing the modal to scroll sideways */
+.hv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px 18px}
+.hv-field-l{font-size:11px;color:var(--muted);margin-bottom:1px}
+.hv-field-v{font-size:13px;color:var(--ink);word-break:break-word}
+.hv-field-v.muted{color:var(--muted)}
+
+.hv-summary{font-size:13px;line-height:1.55;color:var(--ink-2);margin:0;white-space:pre-wrap}
+
+.hv-raw{
+  font-family:"Spline Sans Mono";font-size:11px;line-height:1.5;
+  background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
+  padding:10px;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all;
+}
+.hv-key{margin-top:12px;font-family:"Spline Sans Mono";font-size:10.5px;color:var(--muted)}
+
+/* The row opens the detail; the checkbox, recording and lead controls inside it stop
+   propagation so they still do their own job. */
+.hv-row{cursor:pointer}
+.hv-row:hover{background:var(--panel-2)}

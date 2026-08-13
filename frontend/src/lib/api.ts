@@ -119,6 +119,27 @@ export interface HuvoCall {
   lead_stage: string | null;
 }
 
+export interface HuvoCallDetail extends HuvoCall {
+  dedupe_key: string;
+  ended_at: string | null;
+  follow_up_at: string | null;
+  payload: {
+    status?: string;
+    call_details?: Record<string, unknown>;
+    analytics_data?: Record<string, unknown>;
+    _import?: { source_file?: string; extra?: Record<string, string> };
+  };
+}
+
+export interface HuvoBulkLeadReq {
+  phones?: string[];        // an explicit tick-box selection
+  all_matching?: boolean;   // ...or every unlinked call matching the filters below
+  q?: string;
+  outcome?: string;
+  interested?: string;
+  duration?: string;
+}
+
 export interface HuvoCallQuery {
   q?: string;
   outcome?: string;
@@ -440,9 +461,15 @@ export const api = {
   huvoCalls: (p: HuvoCallQuery) => {
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
-    return request<{ items: HuvoCall[]; total: number; unique_leads: number }>(
-      `/v1/huvo/calls?${qs.toString()}`);
+    return request<{ items: HuvoCall[]; total: number; unique_leads?: number;
+                     unlinked_unique?: number }>(`/v1/huvo/calls?${qs.toString()}`);
   },
+  // payload is excluded from the list query (largest column, nothing renders it) but
+  // holds nine analytics fields with no column of their own — so the detail view has
+  // its own fetch rather than the row being expanded from what the table already has.
+  leadHuvoCalls: (leadId: string) =>
+    request<{ items: HuvoCallDetail[] }>(`/v1/leads/${leadId}/huvo-calls`),
+  huvoCall: (id: string) => request<HuvoCallDetail>(`/v1/huvo/calls/${id}`),
   huvoCallFilters: () =>
     request<{ outcomes: string[]; interest: string[] }>("/v1/huvo/calls/outcomes"),
   // Mirrors waCreateLead. Also back-links every Huvo call from this number, since the
@@ -450,10 +477,13 @@ export const api = {
   huvoCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
     request<{ status: string; lead_id: string | null; calls_linked: number }>(
       "/v1/huvo/leads", { method: "POST", body: JSON.stringify(payload) }),
-  // Names are taken server-side from the stored calls, so this sends only numbers.
-  huvoBulkCreateLeads: (phones: string[]) =>
+  /* Names are taken server-side from the stored calls, so this sends only numbers —
+     or, with all_matching, only the filters. The filter form exists because "all 845
+     unlinked" can't travel as a phone list: the browser would have to page the whole
+     table first, and the set would be stale by the time it arrived. */
+  huvoBulkCreateLeads: (body: HuvoBulkLeadReq) =>
     request<{ status: string; requested: number; created: number; calls_linked: number }>(
-      "/v1/huvo/leads/bulk", { method: "POST", body: JSON.stringify({ phones }) }),
+      "/v1/huvo/leads/bulk", { method: "POST", body: JSON.stringify(body) }),
   appSettings: () => request<AppSettings>("/v1/settings"),
   // PATCH not PUT — CORS allow_methods in backend/app/main.py doesn't list PUT
   setAppSetting: (key: keyof AppSettings, value: boolean) =>

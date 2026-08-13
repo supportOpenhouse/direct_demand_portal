@@ -13,8 +13,8 @@ import { Link } from "react-router-dom";
 import { HuvoCall, DURATION_OPTIONS } from "../lib/api";
 import { CITIES } from "../lib/leads";
 import {
-  useHuvoCalls, useHuvoCallFilters, useCreateHuvoLead, useBulkCreateHuvoLeads,
-  useSocietiesByCity, formatDateTime,
+  useHuvoCalls, useHuvoCall, useHuvoCallFilters, useCreateHuvoLead,
+  useBulkCreateHuvoLeads, useSocietiesByCity, formatDateTime,
 } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
@@ -135,6 +135,120 @@ function CreateLeadModal(
   );
 }
 
+
+/* One call, everything we hold about it.
+
+   The table shows eight columns; a call carries about thirty fields. Nine of Huvo's
+   analytics values have no database column at all and live only inside `payload`, so
+   this reads them from there rather than from the row the table already has. */
+function Field({ label, value }: { label: string; value: unknown }) {
+  const empty = value === null || value === undefined || value === "";
+  return (
+    <div className="hv-field">
+      <div className="hv-field-l">{label}</div>
+      <div className={"hv-field-v" + (empty ? " muted" : "")}>
+        {empty ? "—" : String(value)}
+      </div>
+    </div>
+  );
+}
+
+function CallDetail({ id, onClose }: { id: string; onClose: () => void }) {
+  const { data: c, isLoading } = useHuvoCall(id);
+  const [raw, setRaw] = useState(false);
+  const a = (c?.payload?.analytics_data ?? {}) as Record<string, unknown>;
+  const extra = c?.payload?._import?.extra ?? {};
+
+  return (
+    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal hv-detail" onClick={(e) => e.stopPropagation()}>
+        <div className="mh">
+          <h3>{c?.caller_name || "Call detail"}
+            {c?.from_number &&
+              <span className="hv-detail-num">{c.from_number}</span>}
+          </h3>
+          <div className="icon-btn" onClick={onClose}>✕</div>
+        </div>
+        <div className="mb">
+          {isLoading || !c ? (
+            <div className="empty" style={{ padding: 30 }}>Loading…</div>
+          ) : (
+            <>
+              <div className="hv-sec">The call</div>
+              <div className="hv-grid">
+                <Field label="Outcome" value={c.call_outcome && pretty(c.call_outcome)} />
+                <Field label="Interested" value={c.is_interested} />
+                <Field label="RSVP" value={c.rsvp_status && pretty(c.rsvp_status)} />
+                <Field label="Lead score" value={c.lead_score} />
+                <Field label="Duration" value={mmss(c.duration_sec)} />
+                <Field label="Answered by" value={a.callback_owner} />
+                <Field label="Started" value={formatDateTime(c.started_at)} />
+                <Field label="Ended" value={formatDateTime(c.ended_at)} />
+                <Field label="Received" value={formatDateTime(c.received_at)} />
+              </div>
+
+              <div className="hv-sec">What they want</div>
+              <div className="hv-grid">
+                <Field label="Project" value={a.project_name} />
+                <Field label="Location" value={a.location} />
+                <Field label="Property type" value={a.type_of_property} />
+                <Field label="Purpose" value={a.purpose} />
+                {/* both: the crores string is what Huvo said, the lacs is ours */}
+                <Field label="Budget (as stated)" value={a.budget_crores} />
+                <Field label="Budget (lacs)" value={c.budget_lacs} />
+                <Field label="Why interested" value={a.interest_reason} />
+              </div>
+
+              <div className="hv-sec">Scheduling</div>
+              <div className="hv-grid">
+                <Field label="Site visit" value={a.site_visit_schedule} />
+                <Field label="Outcome schedule" value={a.call_outcome_schedule} />
+                <Field label="Follow-up (as said)" value={a.follow_up_time} />
+                {/* Usually blank: Huvo sends prose like "two o'clock", and a follow-up
+                    is only stored when a real ISO timestamp came with it. */}
+                <Field label="Follow-up (parsed)" value={formatDateTime(c.follow_up_at)} />
+              </div>
+
+              {c.summary && <>
+                <div className="hv-sec">Summary</div>
+                <p className="hv-summary">{c.summary}</p>
+              </>}
+
+              {c.recording_url && <>
+                <div className="hv-sec">Recording</div>
+                <RecordingPlayer src={c.recording_url} />
+              </>}
+
+              {Object.keys(extra).length > 0 && <>
+                {/* Columns from the CSV export that aren't in Huvo's webhook schema —
+                    kept on import rather than dropped. */}
+                <div className="hv-sec">From the import</div>
+                <div className="hv-grid">
+                  {Object.entries(extra).map(([k, v]) => <Field key={k} label={k} value={v} />)}
+                </div>
+              </>}
+
+              <div className="hv-sec">
+                Raw
+                <button className="btn ghost sm" style={{ marginLeft: 8 }}
+                  onClick={() => setRaw((v) => !v)}>{raw ? "Hide" : "Show"}</button>
+              </div>
+              {raw && <pre className="hv-raw">{JSON.stringify(c.payload, null, 2)}</pre>}
+              <div className="hv-key">{c.dedupe_key}</div>
+            </>
+          )}
+        </div>
+        <div className="mf">
+          {c?.lead_id
+            ? <Link className="btn ghost" to={`/leads/${c.lead_id}`}>Open lead ↗</Link>
+            : <span style={{ fontSize: 12, color: "var(--muted)" }}>No lead for this number yet</span>}
+          <button className="btn" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function HuvoCalls() {
   const [q, setQ] = useState("");
   const [outcome, setOutcome] = useState("");
@@ -143,6 +257,7 @@ export default function HuvoCalls() {
   const [dur, setDur] = useState("");
   const [page, setPage] = useState(0);
   const [creating, setCreating] = useState<HuvoCall | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   // Bulk mode is opt-in so the table stays a reading surface by default; checkboxes
   // on every row would make scanning it harder for the commoner case.
   const [bulk, setBulk] = useState(false);
@@ -164,7 +279,10 @@ export default function HuvoCalls() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
-  const uniqueLeads = data?.unique_leads ?? 0;
+  // Undefined until the backend carrying these counts is deployed. Rendering "0
+  // unique leads" for 1,603 calls is worse than rendering nothing at all.
+  const uniqueLeads = data?.unique_leads;
+  const unlinkedTotal = data?.unlinked_unique;
 
   /* Selection is by phone number, not row id: several calls can share a number and
      they'd all produce the same one lead. Rows that already have a lead aren't
@@ -177,7 +295,17 @@ export default function HuvoCalls() {
     return next;
   });
   const exitBulk = () => { setBulk(false); setPicked(new Set()); };
-  const runBulk = () => bulkCreate.mutate(Array.from(picked), {
+  /* Everything unlinked under the current filters, not just this page. Falls back to
+     the page's own count on an older backend that doesn't send the total. */
+  const bulkTarget = unlinkedTotal ?? convertible.length;
+  const runBulk = () => bulkCreate.mutate(
+    // A selection means those exactly; no selection means "all of them", resolved
+    // server-side from the filters — 845 numbers can't travel in a request body.
+    picked.size
+      ? { phones: Array.from(picked) }
+      : { all_matching: true, q: dq || undefined, outcome: outcome || undefined,
+          interested: interested || undefined, duration: dur || undefined },
+    {
     onSuccess: (d) => {
       const skipped = d.requested - d.created;
       toast(`${d.created} lead${d.created === 1 ? "" : "s"} created`
@@ -194,16 +322,18 @@ export default function HuvoCalls() {
 
   return (
     <>
-      <div className="section-head" style={{ marginBottom: 10 }}>
+      <div className="section-head hv-head">
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> calls
-          {" · "}
           {/* Huvo calls the same person more than once, so the call count alone
               overstates how many people are actually in this list. */}
-          <b style={{ color: "var(--ink-2)" }}>{uniqueLeads.toLocaleString("en-IN")}</b> unique leads
+          {uniqueLeads !== undefined && <>
+            {" · "}
+            <b style={{ color: "var(--ink-2)" }}>{uniqueLeads.toLocaleString("en-IN")}</b> unique leads
+          </>}
           {isFetching ? " · updating…" : ""}
         </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div className="hv-filters">
           <FilterSelect label="Outcome" value={outcome} width={190}
             options={(filters?.outcomes ?? []).map((o: string) => ({ value: o, label: pretty(o) }))}
             onChange={(v) => reset(() => setOutcome(v))} />
@@ -213,10 +343,9 @@ export default function HuvoCalls() {
             onChange={(v) => reset(() => setLinked(v))} />
           <FilterSelect label="Duration" value={dur} options={DURATION_OPTIONS} width={140}
             onChange={(v) => reset(() => setDur(v))} />
-          <div className="field" style={{ marginBottom: 0, width: 240 }}>
+          <div className="field hv-search">
             <input value={q} placeholder="Search number / name / summary…"
-              onChange={(e) => reset(() => setQ(e.target.value))}
-              style={{ padding: "7px 10px", fontSize: 12.5 }} />
+              onChange={(e) => reset(() => setQ(e.target.value))} />
           </div>
           {anyFilter && (
             <button className="btn ghost sm" onClick={() => {
@@ -228,20 +357,23 @@ export default function HuvoCalls() {
             <>
               <button className="btn ghost sm" onClick={() =>
                 setPicked(picked.size === convertible.length ? new Set() : new Set(convertible))}>
-                {picked.size === convertible.length && convertible.length > 0 ? "Clear all" : "Select all"}
+                {picked.size === convertible.length && convertible.length > 0
+                  ? "Clear all" : `Select page (${convertible.length})`}
               </button>
-              <button className="btn primary sm" disabled={!picked.size || bulkCreate.isPending}
-                onClick={runBulk}>
-                {bulkCreate.isPending ? "Creating…" : `Create ${picked.size} lead${picked.size === 1 ? "" : "s"}`}
+              <button className="btn primary sm" disabled={!bulkTarget || bulkCreate.isPending}
+                onClick={runBulk}
+                title={picked.size ? "" : "Nothing ticked — creates leads for every unlinked call matching the filters"}>
+                {bulkCreate.isPending ? "Creating…"
+                  : `Create ${(picked.size || bulkTarget).toLocaleString("en-IN")} lead${(picked.size || bulkTarget) === 1 ? "" : "s"}`}
               </button>
               <button className="btn ghost sm" onClick={exitBulk}>Cancel</button>
             </>
           ) : (
-            <button className="btn sm" onClick={() => setBulk(true)} disabled={!convertible.length}
-              title={convertible.length
-                ? "Turn these calls into leads in bulk"
-                : "Every call on this page already has a lead"}>
-              Create leads ({convertible.length})
+            <button className="btn sm" onClick={() => setBulk(true)} disabled={!bulkTarget}
+              title={bulkTarget
+                ? "Turn unlinked calls into leads in bulk"
+                : "Every call matching these filters already has a lead"}>
+              Create leads ({bulkTarget.toLocaleString("en-IN")})
             </button>
           )}
         </div>
@@ -272,9 +404,9 @@ export default function HuvoCalls() {
                 </div></td></tr>
               ) : (
                 items.map((c) => (
-                  <tr key={c.id}>
+                  <tr key={c.id} className="hv-row" onClick={() => setOpenId(c.id)}>
                     {bulk && (
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         {/* keyed by number: two calls from one person are one lead */}
                         {!c.lead_id && c.from_number ? (
                           <input type="checkbox" checked={picked.has(c.from_number)}
@@ -312,12 +444,12 @@ export default function HuvoCalls() {
                       </div>
                     </td>
                     <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{mmss(c.duration_sec)}</td>
-                    <td>
+                    <td onClick={(e) => e.stopPropagation()}>
                       {c.recording_url
                         ? <RecordingPlayer src={c.recording_url} />
                         : <span style={{ color: "var(--muted)" }}>—</span>}
                     </td>
-                    <td style={{ fontSize: 12.5 }}>
+                    <td style={{ fontSize: 12.5 }} onClick={(e) => e.stopPropagation()}>
                       {c.lead_id ? (
                         <Link className="lead-link" to={`/leads/${c.lead_id}`}>
                           {c.lead_name || "View lead"}
@@ -352,6 +484,7 @@ export default function HuvoCalls() {
       </div>
 
       {creating && <CreateLeadModal call={creating} onClose={() => setCreating(null)} />}
+      {openId && <CallDetail id={openId} onClose={() => setOpenId(null)} />}
     </>
   );
 }

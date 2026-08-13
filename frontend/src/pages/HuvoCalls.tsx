@@ -323,16 +323,20 @@ export default function HuvoCalls() {
   return (
     <>
       <div className="section-head hv-head">
-        <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> calls
-          {/* Huvo calls the same person more than once, so the call count alone
-              overstates how many people are actually in this list. */}
-          {uniqueLeads !== undefined && <>
-            {" · "}
-            <b style={{ color: "var(--ink-2)" }}>{uniqueLeads.toLocaleString("en-IN")}</b> unique leads
-          </>}
-          {isFetching ? " · updating…" : ""}
-        </p>
+        <div className="hv-counts">
+          <div>
+            <b>{total.toLocaleString("en-IN")}</b> calls
+            {isFetching && <span className="hv-updating"> · updating…</span>}
+          </div>
+          {/* Under, not beside: Huvo calls the same person more than once, so this is
+              the number that says how many people are actually in the list. Inline
+              after a "·" it read as part of the same figure. */}
+          {uniqueLeads !== undefined && (
+            <div className="hv-counts-sub">
+              <b>{uniqueLeads.toLocaleString("en-IN")}</b> unique leads
+            </div>
+          )}
+        </div>
         <div className="hv-filters">
           <FilterSelect label="Outcome" value={outcome} width={190}
             options={(filters?.outcomes ?? []).map((o: string) => ({ value: o, label: pretty(o) }))}

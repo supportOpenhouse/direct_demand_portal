@@ -13,7 +13,8 @@ import { Link } from "react-router-dom";
 import { HuvoCall, DURATION_OPTIONS } from "../lib/api";
 import { CITIES } from "../lib/leads";
 import {
-  useHuvoCalls, useHuvoCallFilters, useCreateHuvoLead, useSocietiesByCity, formatDateTime,
+  useHuvoCalls, useHuvoCallFilters, useCreateHuvoLead, useBulkCreateHuvoLeads,
+  useSocietiesByCity, formatDateTime,
 } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
@@ -142,6 +143,12 @@ export default function HuvoCalls() {
   const [dur, setDur] = useState("");
   const [page, setPage] = useState(0);
   const [creating, setCreating] = useState<HuvoCall | null>(null);
+  // Bulk mode is opt-in so the table stays a reading surface by default; checkboxes
+  // on every row would make scanning it harder for the commoner case.
+  const [bulk, setBulk] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const bulkCreate = useBulkCreateHuvoLeads();
+  const toast = useToast();
   const dq = useDebounce(q, 300);
 
   const filters = useHuvoCallFilters().data;
@@ -157,6 +164,29 @@ export default function HuvoCalls() {
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
+  const uniqueLeads = data?.unique_leads ?? 0;
+
+  /* Selection is by phone number, not row id: several calls can share a number and
+     they'd all produce the same one lead. Rows that already have a lead aren't
+     selectable — there'd be nothing to create. */
+  const convertible = Array.from(new Set(
+    items.filter((c) => !c.lead_id && c.from_number).map((c) => c.from_number as string)));
+  const toggle = (phone: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    next.has(phone) ? next.delete(phone) : next.add(phone);
+    return next;
+  });
+  const exitBulk = () => { setBulk(false); setPicked(new Set()); };
+  const runBulk = () => bulkCreate.mutate(Array.from(picked), {
+    onSuccess: (d) => {
+      const skipped = d.requested - d.created;
+      toast(`${d.created} lead${d.created === 1 ? "" : "s"} created`
+            + (skipped ? ` · ${skipped} already existed` : "")
+            + ` · ${d.calls_linked} calls linked`, "green", "✓");
+      exitBulk();
+    },
+    onError: (e: any) => toast(e.message, "gold", "⚠"),
+  });
   const start = total === 0 ? 0 : page * PAGE + 1;
   const end = Math.min(total, (page + 1) * PAGE);
   const reset = (fn: () => void) => { fn(); setPage(0); };
@@ -167,6 +197,10 @@ export default function HuvoCalls() {
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> calls
+          {" · "}
+          {/* Huvo calls the same person more than once, so the call count alone
+              overstates how many people are actually in this list. */}
+          <b style={{ color: "var(--ink-2)" }}>{uniqueLeads.toLocaleString("en-IN")}</b> unique leads
           {isFetching ? " · updating…" : ""}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
@@ -189,6 +223,27 @@ export default function HuvoCalls() {
               setQ(""); setOutcome(""); setInterested(""); setLinked(""); setDur(""); setPage(0);
             }}>Clear</button>
           )}
+          <span style={{ width: 1, height: 22, background: "var(--line)" }} />
+          {bulk ? (
+            <>
+              <button className="btn ghost sm" onClick={() =>
+                setPicked(picked.size === convertible.length ? new Set() : new Set(convertible))}>
+                {picked.size === convertible.length && convertible.length > 0 ? "Clear all" : "Select all"}
+              </button>
+              <button className="btn primary sm" disabled={!picked.size || bulkCreate.isPending}
+                onClick={runBulk}>
+                {bulkCreate.isPending ? "Creating…" : `Create ${picked.size} lead${picked.size === 1 ? "" : "s"}`}
+              </button>
+              <button className="btn ghost sm" onClick={exitBulk}>Cancel</button>
+            </>
+          ) : (
+            <button className="btn sm" onClick={() => setBulk(true)} disabled={!convertible.length}
+              title={convertible.length
+                ? "Turn these calls into leads in bulk"
+                : "Every call on this page already has a lead"}>
+              Create leads ({convertible.length})
+            </button>
+          )}
         </div>
       </div>
 
@@ -197,6 +252,7 @@ export default function HuvoCalls() {
           <table>
             <thead>
               <tr>
+                {bulk && <th style={{ width: 34 }} />}
                 <th style={{ width: 150 }}>When</th>
                 <th style={{ width: 150 }}>Caller</th>
                 <th style={{ width: 170 }}>Outcome</th>
@@ -209,14 +265,23 @@ export default function HuvoCalls() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={8}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
+                <tr><td colSpan={bulk ? 9 : 8}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={8}><div className="empty" style={{ padding: 24 }}>
+                <tr><td colSpan={bulk ? 9 : 8}><div className="empty" style={{ padding: 24 }}>
                   {anyFilter ? "No calls match these filters." : "No Huvo calls yet."}
                 </div></td></tr>
               ) : (
                 items.map((c) => (
                   <tr key={c.id}>
+                    {bulk && (
+                      <td>
+                        {/* keyed by number: two calls from one person are one lead */}
+                        {!c.lead_id && c.from_number ? (
+                          <input type="checkbox" checked={picked.has(c.from_number)}
+                            onChange={() => toggle(c.from_number as string)} />
+                        ) : null}
+                      </td>
+                    )}
                     <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>
                       {formatDateTime(c.started_at) || formatDateTime(c.received_at) || "—"}
                     </td>

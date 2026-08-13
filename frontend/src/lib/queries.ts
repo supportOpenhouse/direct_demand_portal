@@ -61,6 +61,18 @@ export function useCreateHuvoLead() {
   });
 }
 
+export function useBulkCreateHuvoLeads() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (phones: string[]) => api.huvoBulkCreateLeads(phones),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["huvo-calls"] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useInventory() {
   return useQuery({ queryKey: ["inventory"], queryFn: api.inventory, staleTime: 60_000 });
 }

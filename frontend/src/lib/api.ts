@@ -440,7 +440,8 @@ export const api = {
   huvoCalls: (p: HuvoCallQuery) => {
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") qs.set(k, String(v)); });
-    return request<{ items: HuvoCall[]; total: number }>(`/v1/huvo/calls?${qs.toString()}`);
+    return request<{ items: HuvoCall[]; total: number; unique_leads: number }>(
+      `/v1/huvo/calls?${qs.toString()}`);
   },
   huvoCallFilters: () =>
     request<{ outcomes: string[]; interest: string[] }>("/v1/huvo/calls/outcomes"),
@@ -449,6 +450,10 @@ export const api = {
   huvoCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
     request<{ status: string; lead_id: string | null; calls_linked: number }>(
       "/v1/huvo/leads", { method: "POST", body: JSON.stringify(payload) }),
+  // Names are taken server-side from the stored calls, so this sends only numbers.
+  huvoBulkCreateLeads: (phones: string[]) =>
+    request<{ status: string; requested: number; created: number; calls_linked: number }>(
+      "/v1/huvo/leads/bulk", { method: "POST", body: JSON.stringify({ phones }) }),
   appSettings: () => request<AppSettings>("/v1/settings"),
   // PATCH not PUT — CORS allow_methods in backend/app/main.py doesn't list PUT
   setAppSetting: (key: keyof AppSettings, value: boolean) =>

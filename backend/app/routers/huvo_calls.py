@@ -97,8 +97,13 @@ async def huvo_calls(
         return {"items": [], "total": 0}
     clause, params = calls_filters(q, outcome, interested, linked, duration)
     async with engine.connect() as conn:
-        total = (await conn.execute(
-            text(f"SELECT count(*){_FROM}{clause}"), params)).scalar()
+        # Both counts in one round trip. unique_leads is distinct numbers, not rows:
+        # Huvo calls the same person more than once, so "1415 calls" alone overstates
+        # how many people are actually in the list.
+        counts = (await conn.execute(text(
+            f"SELECT count(*) AS total, count(DISTINCT h.from_number) AS uniq"
+            f"{_FROM}{clause}"), params)).mappings().first()
+        total, unique_leads = counts["total"], counts["uniq"]
         rows = (await conn.execute(text(f"""
             SELECT h.id, h.from_number, h.caller_name, h.call_outcome, h.is_interested,
                    h.rsvp_status, h.lead_score, h.budget_lacs, h.summary,
@@ -117,7 +122,7 @@ async def huvo_calls(
              else v)
          for k, v in dict(r).items()}
         for r in rows
-    ], "total": total}
+    ], "total": total, "unique_leads": unique_leads}
 
 
 @router.get("/huvo/calls/outcomes", dependencies=[Depends(require_admin)])
@@ -197,3 +202,79 @@ async def huvo_create_lead(req: HuvoLeadRequest, user: dict = Depends(current_us
     log.info("huvo: lead %s from call log by %s (%d calls linked)",
              lead_id, user.get("email"), linked)
     return {"status": "ok", "lead_id": str(lead_id) if lead_id else None, "calls_linked": linked}
+
+
+class BulkHuvoLeadRequest(BaseModel):
+    # capped so one click can't fan out into an unbounded write
+    phones: list[str] = Field(min_length=1, max_length=500)
+
+
+@router.post("/huvo/leads/bulk")
+async def huvo_bulk_create_leads(req: BulkHuvoLeadRequest, user: dict = Depends(current_user)):
+    """Create leads from many Huvo calls at once.
+
+    Names come from the stored calls, not from the client's list — a stale browser
+    can't stamp the wrong name on a lead. Leads are created UNASSIGNED, matching the
+    WhatsApp bulk flow: ownership stays a separate decision made through assign.
+
+    Idempotent on origin_key, so a number that already has a lead is counted as
+    skipped rather than duplicated — and its calls are still back-linked, which is the
+    whole point of running this over a filtered "No lead yet" list.
+    """
+    from ..services.leads_sync import TAT_HOURS, display_phone, norm_phone
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="database not configured")
+
+    # dedupe: the same person can appear on several calls in the selection
+    phones10 = sorted({p10 for p10 in (norm_phone(p) for p in req.phones)
+                       if p10 and len(p10) == 10})
+    if not phones10:
+        raise HTTPException(status_code=400, detail="no valid phone numbers")
+
+    now = datetime.now(timezone.utc)
+    async with engine.begin() as conn:
+        # Best known name per number: the most recent call that actually carried one.
+        # "Customer" is Huvo's placeholder for a caller it never identified — taking it
+        # would name a lead "Customer" when an earlier call knew better.
+        names = {r["from_number"]: r["caller_name"] for r in (await conn.execute(text("""
+            SELECT DISTINCT ON (from_number) from_number, caller_name
+              FROM huvo_call_updates
+             WHERE from_number = ANY(:ps) AND caller_name IS NOT NULL
+             ORDER BY from_number, (caller_name = 'Customer'), received_at DESC"""),
+            {"ps": phones10})).mappings().all()}
+
+        values = [{
+            "origin_key": f"huvo:{p}", "source_category": "huvo", "source": "huvo",
+            "name": names.get(p) or "Unknown caller", "phone": display_phone(p),
+            "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
+            "source_meta": {"created_from": "huvo_call_log_bulk",
+                            "created_by": user.get("email")},
+        } for p in phones10]
+        await conn.execute(
+            pg_insert(Lead).values(values).on_conflict_do_nothing(index_elements=["origin_key"])
+        )
+
+        # Link by phone, not origin_key: a number may already be a lead from a portal
+        # or WhatsApp, and THAT lead is the one these calls belong to.
+        linked = (await conn.execute(text("""
+            UPDATE huvo_call_updates h
+               SET lead_id = l.id
+              FROM (SELECT DISTINCT ON (right(regexp_replace(phone,'[^0-9]','','g'),10))
+                           right(regexp_replace(phone,'[^0-9]','','g'),10) AS p10, id
+                      FROM leads WHERE phone IS NOT NULL
+                     ORDER BY p10, (stage IN ('won','rejected','rnr')), created_at DESC) l
+             WHERE h.from_number = l.p10
+               AND h.from_number = ANY(:ps)
+               AND h.lead_id IS NULL"""), {"ps": phones10})).rowcount
+
+        created = (await conn.execute(text(
+            "SELECT count(*) FROM leads WHERE origin_key = ANY(:ks) "
+            "  AND source_meta->>'created_from' = 'huvo_call_log_bulk'"),
+            {"ks": [f"huvo:{p}" for p in phones10]})).scalar()
+
+    log.info("huvo: bulk %d numbers by %s — %d calls linked",
+             len(phones10), user.get("email"), linked)
+    return {"status": "ok", "requested": len(phones10),
+            "created": created, "calls_linked": linked}

@@ -169,14 +169,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         </NavLink>
         {isAdmin && (
           <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
-            <IconRnr /> <span className="nav-t">Bonvoice Call Log</span>
+            <img src="/bonvoice_icon.png" alt="" className="nav-img" />
+            <span className="nav-t">Bonvoice Call Log</span>
           </NavLink>
         )}
         {/* Its sibling: same shape of page, different provider. Bonvoice logs the
             telephony leg, Huvo logs what was said on it. */}
         {isAdmin && (
           <NavLink to="/huvo-calls" className={navClass} title="Huvo Call Log">
-            <IconFollowup /> <span className="nav-t">Huvo Call Log</span>
+            <img src="/huvo_icon.png" alt="" className="nav-img" />
+            <span className="nav-t">Huvo Call Log</span>
           </NavLink>
         )}
         {isAdmin && (

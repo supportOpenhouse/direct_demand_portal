@@ -1129,3 +1129,19 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .set-row{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;padding:14px 0}
 .set-name{font-weight:700;font-size:13.5px}
 .set-desc{margin:3px 0 0;font-size:12px;color:var(--muted);max-width:60ch;line-height:1.5}
+
+/* Vendor logos in the sidebar (Bonvoice / Huvo). Sized to match .nav-item svg so the
+   nav stays on one rhythm; object-fit because neither logo is square and stretching
+   them to a 17px box would distort both.
+
+   alt="" on purpose — the label next to it already names the page, so announcing the
+   logo would just repeat it to a screen reader.
+
+   The SVG icons brighten on hover/active via currentColor, which a PNG can't do; the
+   brightness filter keeps these tracking the text instead of staying flat grey. */
+.nav-item .nav-img{
+  width:17px;height:17px;flex:none;object-fit:contain;
+  opacity:.82;transition:opacity .15s,filter .15s;
+}
+.nav-item:hover .nav-img{opacity:1;filter:brightness(1.15)}
+.nav-item.active .nav-img{opacity:1;filter:brightness(1.35)}

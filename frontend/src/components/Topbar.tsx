@@ -12,8 +12,8 @@ const TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/leads/new": "New Leads",
   "/leads/call-not-received": "Call Not Received",
-  "/leads/followup": "Call back again",
-  "/leads/qualified": "Qualified Leads",
+  "/leads/followup": "Call Back Again",
+  "/leads/qualified": "Qualified Leads (Requirement Captured)",
   "/leads/pipeline": "Pipeline Leads",
   "/leads/converted": "Converted Leads",
   "/leads/rejected": "Rejected Leads",
@@ -86,10 +86,21 @@ export default function Topbar() {
   const title =
     TITLES[pathname] ||
     (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details" : "Dashboard");
+  // a "(…)" tail on a title is a clarifier, not part of the name — render it lighter
+  const paren = title.indexOf(" (");
 
   return (
     <div className="topbar">
-      <h1 id="page-title">{title}</h1>
+      <h1 id="page-title">
+        {paren === -1 ? title : (
+          <>
+            {title.slice(0, paren)}
+            <span style={{ fontWeight: 500, fontSize: "0.62em", color: "var(--muted)", marginLeft: 7, letterSpacing: 0 }}>
+              {title.slice(paren + 1)}
+            </span>
+          </>
+        )}
+      </h1>
       <GlobalSearch />
       <button className="btn orange" onClick={() => toast("Reminders arrive in a later phase", "gold", "⏰")}>
         <IconBell /> Reminders

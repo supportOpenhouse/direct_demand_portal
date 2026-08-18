@@ -51,7 +51,7 @@ export const initials = (n: string | null) =>
 const STAGE_LABEL: Record<string, string> = {
   new: "New",
   call_not_received: "Call Not Received",
-  follow_up: "Call back again",
+  follow_up: "Call Back Again",
   qualified: "Qualified",
   visit_scheduled: "Visit Scheduled",
   won: "Won",
@@ -77,7 +77,7 @@ export const stageClass = (s: string) => STAGE_CLASS[s] || "new";
 export const LEAD_SEGMENTS: { seg: string; route: string; label: string }[] = [
   { seg: "new", route: "/leads/new", label: "New Leads" },
   { seg: "call_not_received", route: "/leads/call-not-received", label: "Call Not Received" },
-  { seg: "followup", route: "/leads/followup", label: "Call back again" },
+  { seg: "followup", route: "/leads/followup", label: "Call Back Again" },
   { seg: "qualified", route: "/leads/qualified", label: "Qualified" },
   { seg: "pipeline", route: "/leads/pipeline", label: "Pipeline" },
   { seg: "converted", route: "/leads/converted", label: "Converted" },

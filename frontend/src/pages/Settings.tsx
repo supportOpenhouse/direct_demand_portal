@@ -51,7 +51,7 @@ function PrivacyPanel() {
         <div>
           <div className="set-name">Hide lead phone numbers in tables</div>
           <p className="set-desc">
-            Keeps numbers off New Leads, Call Not Received, Call back again and the segment
+            Keeps numbers off New Leads, Call Not Received, Call Back Again and the segment
             lists — for shared screens, screenshots and demos. Calling, WhatsApp and the
             lead detail page are unaffected.
           </p>

@@ -181,3 +181,42 @@ def test_an_unset_secret_is_open_in_dev(monkeypatch):
     monkeypatch.setattr(huvo, "_secret", lambda: "")
     monkeypatch.setattr(huvo, "_is_prod", lambda: False)
     huvo.check_token(None)  # must not raise
+
+
+# --- campaign name ----------------------------------------------------------
+
+def test_the_campaign_name_comes_from_call_details():
+    """Huvo started sending campaign_name in call_details. That's the authoritative
+    source — it's what the caller's own system recorded for the call."""
+    assert extract(ENVELOPE | {
+        "call_details": ENVELOPE["call_details"] | {"campaign_name": "1st Campaign"},
+    })["campaign_name"] == "1st Campaign"
+
+
+def test_the_csv_import_campaign_is_the_fallback():
+    """717 backfilled rows predate that field and carry the campaign only in the
+    import block. Without the fallback they'd all read as having no campaign."""
+    got = extract(ENVELOPE | {"_import": {"extra": {"Campaign": "1st Campaign"}}})
+    assert got["campaign_name"] == "1st Campaign"
+
+
+def test_call_details_wins_when_both_are_present():
+    """A re-imported row could carry both. The live field is the newer, better one."""
+    got = extract(ENVELOPE | {
+        "call_details": ENVELOPE["call_details"] | {"campaign_name": "Live"},
+        "_import": {"extra": {"Campaign": "Stale"}},
+    })
+    assert got["campaign_name"] == "Live"
+
+
+def test_a_blank_campaign_falls_through_rather_than_winning():
+    """An empty string is not an answer — it must not shadow the fallback."""
+    got = extract(ENVELOPE | {
+        "call_details": ENVELOPE["call_details"] | {"campaign_name": "  "},
+        "_import": {"extra": {"Campaign": "1st Campaign"}},
+    })
+    assert got["campaign_name"] == "1st Campaign"
+
+
+def test_no_campaign_anywhere_is_none():
+    assert extract(ENVELOPE)["campaign_name"] is None

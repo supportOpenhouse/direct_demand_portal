@@ -65,6 +65,27 @@ def _budget_lacs(raw: str | None) -> float | None:
         return None
 
 
+def campaign_of(envelope: dict) -> str | None:
+    """Which campaign placed this call.
+
+    Huvo now sends `campaign_name` inside call_details, and that is authoritative —
+    it's what their own system recorded for the call.
+
+    The fallback is the CSV import's `Campaign` column, kept under payload._import.
+    717 backfilled rows predate the live field and carry the campaign only there;
+    without the fallback every one of them would read as having no campaign.
+
+    A blank live value falls through rather than winning: an empty string is not an
+    answer, and letting it shadow a known campaign would lose information.
+    """
+    live = ((envelope.get("call_details") or {}).get("campaign_name") or "").strip()
+    if live:
+        return live
+    imported = (((envelope.get("_import") or {}).get("extra") or {})
+                .get("Campaign") or "").strip()
+    return imported or None
+
+
 def dedupe_key(envelope: dict) -> str:
     """A stable id for one call.
 
@@ -101,6 +122,7 @@ def extract(envelope: dict) -> dict:
 
     return {
         "dedupe_key": dedupe_key(envelope),
+        "campaign_name": campaign_of(envelope),
         "from_number": digits10(analytics.get("from_number")),
         "caller_name": analytics.get("name"),
         "call_outcome": analytics.get("call_outcome"),

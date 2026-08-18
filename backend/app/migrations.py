@@ -61,6 +61,9 @@ _ADD_COLUMNS = [
     ("dial_queue", "call_result", "TEXT"),
     ("dial_queue", "call_result_at", "TIMESTAMPTZ"),
     ("dial_queue", "call_result_by", "TEXT"),
+    # Huvo started sending campaign_name mid-flight; older rows carry it only in the
+    # payload, so the column is added and back-filled below.
+    ("huvo_call_updates", "campaign_name", "TEXT"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -151,6 +154,20 @@ async def run_migrations(engine) -> None:
             await conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS ix_call_logs_campaign_id
                     ON call_logs (campaign_id)"""))
+
+            # Back-fill the Huvo campaign for rows written before the column existed.
+            # Same precedence as services/huvo.campaign_of: the live call_details field
+            # first, the CSV import's Campaign column as the fallback. Only fills NULLs,
+            # so a value already resolved on write is never overwritten.
+            await conn.execute(text("""
+                UPDATE huvo_call_updates
+                   SET campaign_name = COALESCE(
+                         NULLIF(btrim(payload->'call_details'->>'campaign_name'), ''),
+                         NULLIF(btrim(payload->'_import'->'extra'->>'Campaign'), ''))
+                 WHERE campaign_name IS NULL"""))
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_huvo_call_updates_campaign
+                    ON huvo_call_updates (campaign_name)"""))
 
             # Live Calls looks up "my calls today" on every page load and every stream
             # nudge. dial_queue only has campaign-scoped indexes, and the query matches

@@ -102,6 +102,8 @@ export interface SupplyResponse {
    produced. Distinct from the Bonvoice log, which records telephony legs. */
 export interface HuvoCall {
   id: string;
+  // call_details.campaign_name, falling back to the CSV import's Campaign column
+  campaign_name: string | null;
   from_number: string | null;
   caller_name: string | null;
   call_outcome: string | null;   // 16-value enum; null on rows recording no call
@@ -118,6 +120,10 @@ export interface HuvoCall {
   lead_name: string | null;
   lead_stage: string | null;
 }
+
+/* Free-text campaign names mean "" can't stand for "no campaign" — it's the same as
+   "no filter". Must match NO_CAMPAIGN in backend/app/routers/huvo_calls.py. */
+export const NO_CAMPAIGN = "__none__";
 
 export interface HuvoCallDetail extends HuvoCall {
   dedupe_key: string;
@@ -138,12 +144,14 @@ export interface HuvoBulkLeadReq {
   outcome?: string;
   interested?: string;
   duration?: string;
+  campaign?: string;
 }
 
 export interface HuvoCallQuery {
   q?: string;
   outcome?: string;
   interested?: string;
+  campaign?: string;             // exact name, or NO_CAMPAIGN for "no campaign"
   linked?: string;               // "linked" | "unlinked"
   duration?: string;             // a DURATION_OPTIONS label
   limit?: number;
@@ -471,7 +479,7 @@ export const api = {
     request<{ items: HuvoCallDetail[] }>(`/v1/leads/${leadId}/huvo-calls`),
   huvoCall: (id: string) => request<HuvoCallDetail>(`/v1/huvo/calls/${id}`),
   huvoCallFilters: () =>
-    request<{ outcomes: string[]; interest: string[] }>("/v1/huvo/calls/outcomes"),
+    request<{ outcomes: string[]; interest: string[]; campaigns: string[] }>("/v1/huvo/calls/outcomes"),
   // Mirrors waCreateLead. Also back-links every Huvo call from this number, since the
   // webhook only resolves lead_id at write time.
   huvoCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>

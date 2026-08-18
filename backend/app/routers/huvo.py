@@ -77,11 +77,11 @@ _MATCH_LEAD = text("""
 
 _INSERT = text("""
     INSERT INTO huvo_call_updates
-           (id, dedupe_key, lead_id, from_number, caller_name, call_outcome,
+           (id, dedupe_key, lead_id, campaign_name, from_number, caller_name, call_outcome,
             is_interested, rsvp_status, lead_score, budget_lacs, summary,
             recording_url, duration_sec, started_at, ended_at, follow_up_at,
             payload, received_at)
-    VALUES (gen_random_uuid(), :dedupe_key, :lead_id, :from_number, :caller_name,
+    VALUES (gen_random_uuid(), :dedupe_key, :lead_id, :campaign_name, :from_number, :caller_name,
             :call_outcome, :is_interested, :rsvp_status, :lead_score, :budget_lacs,
             :summary, :recording_url, :duration_sec, :started_at, :ended_at,
             :follow_up_at, CAST(:payload AS jsonb), now())

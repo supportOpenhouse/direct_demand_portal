@@ -10,7 +10,7 @@
    every call from that number in the same click. */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { HuvoCall, DURATION_OPTIONS } from "../lib/api";
+import { HuvoCall, DURATION_OPTIONS, NO_CAMPAIGN } from "../lib/api";
 import { CITIES } from "../lib/leads";
 import {
   useHuvoCalls, useHuvoCall, useHuvoCallFilters, useCreateHuvoLead,
@@ -255,6 +255,7 @@ export default function HuvoCalls() {
   const [interested, setInterested] = useState("");
   const [linked, setLinked] = useState("");
   const [dur, setDur] = useState("");
+  const [campaign, setCampaign] = useState("");
   const [page, setPage] = useState(0);
   const [creating, setCreating] = useState<HuvoCall | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -273,6 +274,7 @@ export default function HuvoCalls() {
     interested: interested || undefined,
     linked: linked || undefined,
     duration: dur || undefined,
+    campaign: campaign || undefined,
     limit: PAGE,
     offset: page * PAGE,
   });
@@ -318,7 +320,7 @@ export default function HuvoCalls() {
   const start = total === 0 ? 0 : page * PAGE + 1;
   const end = Math.min(total, (page + 1) * PAGE);
   const reset = (fn: () => void) => { fn(); setPage(0); };
-  const anyFilter = q || outcome || interested || linked || dur;
+  const anyFilter = q || outcome || interested || linked || dur || campaign;
 
   return (
     <>
@@ -338,6 +340,13 @@ export default function HuvoCalls() {
           )}
         </div>
         <div className="hv-filters">
+          {/* First, matching the table's column order. "No campaign" is an explicit
+              option because 991 rows predate Huvo sending the field and would
+              otherwise be unreachable except by clearing every filter. */}
+          <FilterSelect label="Campaign" value={campaign} width={190}
+            options={[...(filters?.campaigns ?? []).map((c: string) => ({ value: c, label: c })),
+                      { value: NO_CAMPAIGN, label: "No campaign" }]}
+            onChange={(v) => reset(() => setCampaign(v))} />
           <FilterSelect label="Outcome" value={outcome} width={190}
             options={(filters?.outcomes ?? []).map((o: string) => ({ value: o, label: pretty(o) }))}
             onChange={(v) => reset(() => setOutcome(v))} />
@@ -353,7 +362,7 @@ export default function HuvoCalls() {
           </div>
           {anyFilter && (
             <button className="btn ghost sm" onClick={() => {
-              setQ(""); setOutcome(""); setInterested(""); setLinked(""); setDur(""); setPage(0);
+              setQ(""); setOutcome(""); setInterested(""); setLinked(""); setDur(""); setCampaign(""); setPage(0);
             }}>Clear</button>
           )}
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
@@ -389,6 +398,7 @@ export default function HuvoCalls() {
             <thead>
               <tr>
                 {bulk && <th style={{ width: 34 }} />}
+                <th style={{ width: 140 }}>Campaign</th>
                 <th style={{ width: 150 }}>When</th>
                 <th style={{ width: 150 }}>Caller</th>
                 <th style={{ width: 170 }}>Outcome</th>
@@ -401,9 +411,9 @@ export default function HuvoCalls() {
             </thead>
             <tbody>
               {isLoading ? (
-                <tr><td colSpan={bulk ? 9 : 8}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
+                <tr><td colSpan={bulk ? 10 : 9}><div className="empty" style={{ padding: 24 }}>Loading calls…</div></td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={bulk ? 9 : 8}><div className="empty" style={{ padding: 24 }}>
+                <tr><td colSpan={bulk ? 10 : 9}><div className="empty" style={{ padding: 24 }}>
                   {anyFilter ? "No calls match these filters." : "No Huvo calls yet."}
                 </div></td></tr>
               ) : (
@@ -418,6 +428,14 @@ export default function HuvoCalls() {
                         ) : null}
                       </td>
                     )}
+                    <td>
+                      {/* Older rows predate Huvo sending this, and it's back-filled
+                          from the import where it can be — so a blank is genuinely
+                          "unknown", not "no campaign". */}
+                      {c.campaign_name
+                        ? <span className="hv-campaign" title={c.campaign_name}>{c.campaign_name}</span>
+                        : <span style={{ color: "var(--muted)" }}>—</span>}
+                    </td>
                     <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>
                       {formatDateTime(c.started_at) || formatDateTime(c.received_at) || "—"}
                     </td>

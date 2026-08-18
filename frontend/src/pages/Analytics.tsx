@@ -8,13 +8,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
-import { useAllLeads, useSupply } from "../lib/queries";
+import { useAllLeads } from "../lib/queries";
 import { FilterSelect, uniqueValues } from "../components/Filters";
 import { srcLabel } from "../lib/leads";
 import { Lead } from "../lib/api";
 
 const SOURCE_COLOR: Record<string, string> = { meta: "#2563eb", "99acres": "#e85d2a", magicbricks: "#e63a73" };
 const sourceColor = (s: string) => SOURCE_COLOR[s] || "var(--slate)";
+// categorical palette for the city donut (assigned in byCity order, fixed)
+const CITY_COLORS = ["#4f46e5", "#0e8fa8", "#d68309", "#e11d48", "#059669", "#7c3aed", "#0891b2", "#64748b"];
+const TREND_RANGES: { v: number | "all"; label: string }[] = [
+  { v: 7, label: "7d" }, { v: 15, label: "15d" }, { v: 30, label: "30d" }, { v: "all", label: "All" },
+];
 const card = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)" } as const;
 const HOT_PLAN = "Within 30 days";
 
@@ -44,49 +49,14 @@ function Tile({ label, value, sub, accent, onClick }: { label: string; value: Re
   );
 }
 
-/** labelled progress meter — `value` of `total`, shown as a count + percent */
-function Meter({ label, value, total, color, suffix = "" }: { label: string; value: number; total: number; color: string; suffix?: string }) {
-  const pct = total ? Math.round((value / total) * 100) : 0;
-  return (
-    <div style={{ marginBottom: 13 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 5 }}>
-        <span style={{ fontWeight: 600 }}>{label}</span>
-        <span style={{ fontFamily: "'Spline Sans Mono'", color: "var(--muted)" }}>
-          <b style={{ color: "var(--ink)" }}>{value}</b>{suffix} · {pct}%
-        </span>
-      </div>
-      <div style={{ height: 9, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 6, transition: ".5s" }} />
-      </div>
-    </div>
-  );
-}
-
-/** one row of a "conversion" table — a magnitude bar for volume + a converted/total · % readout */
-function ConvRow({ label, chip, leads, converted, max, color }: { label: string; chip?: React.ReactNode; leads: number; converted: number; max: number; color: string }) {
-  const conv = leads ? Math.round((converted / leads) * 100) : 0;
-  return (
-    <div style={{ marginBottom: 11 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4, gap: 8 }}>
-        <span style={{ fontWeight: 600, display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>{chip}{label}</span>
-        <span style={{ color: "var(--muted)", whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>
-          <b style={{ color: "var(--ink)" }}>{converted}</b>/{leads} · {conv}%
-        </span>
-      </div>
-      <div style={{ height: 8, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
-        <div style={{ height: "100%", width: `${max ? (leads / max) * 100 : 0}%`, background: color, borderRadius: 6 }} />
-      </div>
-    </div>
-  );
-}
 
 function pct(n: number, d: number) { return d ? Math.round((n / d) * 100) : 0; }
 
 export default function Analytics() {
   const { leads, isLoading } = useAllLeads(true);
-  const { data: supply } = useSupply();
   const nav = useNavigate();
   const [city, setCity] = useState("");
+  const [trendDays, setTrendDays] = useState<number | "all">(30);
 
   const rows: Row[] = useMemo(
     () => leads.filter((r) => !r.lead.is_test && (!city || r.lead.city === city)).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
@@ -175,32 +145,39 @@ export default function Analytics() {
     });
     const reps = [...rmMap.entries()].map(([rm, v]) => ({ rm, ...v })).sort((a, b) => b.converted - a.converted || b.assigned - a.assigned);
 
-    // Inflow — last 30 days by received_at (unique leads)
-    const inflowMap = new Map<string, number>();
-    uniq.forEach((r) => { if (r.lead.received_at) { const k = new Date(r.lead.received_at).toISOString().slice(0, 10); inflowMap.set(k, (inflowMap.get(k) || 0) + 1); } });
-    const inflow: { label: string; c: number }[] = [];
-    const base = new Date();
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(base); d.setDate(base.getDate() - i);
-      inflow.push({ label: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), c: inflowMap.get(d.toISOString().slice(0, 10)) || 0 });
-    }
-
     return {
       total, nNew, nCnr, nFollowup, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
       tatBreached, tatWithin, tatTotal: newWithTat.length,
       fuOverdue, fuToday, withFu: fu.length, fuDue, cnrDue,
       attempted: attempted.length, connected, unassigned, immediate,
-      bySource, byCity, reps, inflow,
+      bySource, byCity, reps,
     };
   }, [rows]);
 
-  // supply pipeline snapshot (units by stage)
-  const supplyStages = useMemo(() => {
-    const items = supply?.items ?? [];
+  // Inflow by received_at over the selected window (own memo so switching the range
+  // doesn't recompute everything). "All" spans from the earliest lead to today.
+  const inflow = useMemo(() => {
     const map = new Map<string, number>();
-    items.forEach((s) => map.set(s.stage, (map.get(s.stage) || 0) + 1));
-    return { total: items.length, stages: [...map.entries()].map(([stage, c]) => ({ stage, c })).sort((a, b) => b.c - a.c) };
-  }, [supply]);
+    let earliest = Infinity;
+    rows.forEach((r) => {
+      if (!r.lead.received_at) return;
+      const d = new Date(r.lead.received_at);
+      map.set(d.toISOString().slice(0, 10), (map.get(d.toISOString().slice(0, 10)) || 0) + 1);
+      earliest = Math.min(earliest, d.getTime());
+    });
+    const base = new Date();
+    const startOf = (t: number) => { const x = new Date(t); return new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime(); };
+    const todayStart = startOf(base.getTime());
+    const days = trendDays === "all"
+      ? (earliest === Infinity ? 30 : Math.min(366, Math.round((todayStart - startOf(earliest)) / 86_400_000) + 1))
+      : trendDays;
+    const out: { label: string; c: number }[] = [];
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(base); d.setDate(base.getDate() - i);
+      out.push({ label: d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" }), c: map.get(d.toISOString().slice(0, 10)) || 0 });
+    }
+    return out;
+  }, [rows, trendDays]);
 
   if (isLoading && rows.length === 0) {
     return <div className="card"><div className="empty" style={{ padding: 48 }}>Loading analytics…</div></div>;
@@ -208,8 +185,7 @@ export default function Analytics() {
 
   const convRate = pct(m.nConverted, m.total);
   const srcData = m.bySource.map((s) => ({ ...s, label: srcLabel(s.k) }));
-  const cityMax = Math.max(...m.byCity.map((s) => s.leads), 1);
-  const supMax = Math.max(...supplyStages.stages.map((s) => s.c), 1);
+  const cityData = m.byCity.map((s, i) => ({ ...s, label: s.k, color: CITY_COLORS[i % CITY_COLORS.length] }));
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -237,35 +213,20 @@ export default function Analytics() {
         <Tile label="Unassigned" value={m.unassigned} sub="need an owner" accent="var(--gold)" onClick={() => nav("/leads/new")} />
       </div>
 
-      {/* funnel + SLA/contact */}
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-        <div style={card} className="panel-pad">
-          <div className="panel-title">🪜 Funnel & conversion</div>
-          <Meter label="New" value={m.nNew} total={Math.max(m.total, 1)} color="var(--blue)" />
-          <Meter label="In contact (CNR + follow-up)" value={m.nCnr + m.nFollowup} total={Math.max(m.total, 1)} color="var(--gold)" />
-          <Meter label="Qualified (incl. pipeline)" value={m.qualifiedPlus} total={Math.max(m.total, 1)} color="var(--cyan)" />
-          <Meter label="Converted (token)" value={m.nConverted} total={Math.max(m.total, 1)} color="var(--emerald)" />
-          <div className="note" style={{ marginTop: 6 }}>
-            {pct(m.nConverted, m.qualifiedPlus)}% of qualified leads convert · {m.nRejected + m.nRnr} lost (rejected + RNR).
-            {" "}Every lead sits in exactly one stage, so these bars add up to {m.total}.
-          </div>
-        </div>
-
-        <div style={card} className="panel-pad">
-          <div className="panel-title">⏱ SLA & contact</div>
-          <Meter label="New leads within TAT window" value={m.tatWithin} total={Math.max(m.tatTotal, 1)} color="var(--emerald)" />
-          <Meter label="Callbacks due today" value={m.fuToday} total={Math.max(m.withFu, 1)} color="var(--amber)" />
-          <Meter label="Call connect rate" value={m.connected} total={Math.max(m.attempted, 1)} color="var(--cyan)" />
-          <Meter label="RNR (never reached)" value={m.nRnr} total={Math.max(m.total, 1)} color="var(--coral)" />
-          <div className="note" style={{ marginTop: 6 }}>Connect rate = ever-connected / leads with a call attempt.</div>
-        </div>
-      </div>
-
       {/* inflow trend */}
       <div style={card} className="panel-pad">
-        <div className="panel-title">📈 Leads received · last 30 days</div>
+        <div className="panel-title" style={{ justifyContent: "space-between" }}>
+          <span>📈 Leads received · {trendDays === "all" ? "all time" : `last ${trendDays} days`}</span>
+          <div style={{ display: "flex", gap: 4 }}>
+            {TREND_RANGES.map((r) => (
+              <button key={String(r.v)} className={"btn sm " + (trendDays === r.v ? "" : "ghost")}
+                style={trendDays === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                onClick={() => setTrendDays(r.v)}>{r.label}</button>
+            ))}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={m.inflow} margin={{ left: -18, right: 8, top: 8 }}>
+          <AreaChart data={inflow} margin={{ left: -18, right: 8, top: 8 }}>
             <defs>
               <linearGradient id="ia" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#2563eb" stopOpacity={0.32} />
@@ -273,7 +234,7 @@ export default function Analytics() {
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} interval={4} tickLine={false} axisLine={false} />
+            <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} interval={Math.max(0, Math.floor(inflow.length / 8))} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} allowDecimals={false} />
             <Tooltip content={<ChartTooltip />} />
             <Area type="monotone" dataKey="c" name="Leads" stroke="#2563eb" strokeWidth={2.5} fill="url(#ia)" />
@@ -303,7 +264,7 @@ export default function Analytics() {
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: sourceColor(s.k), flex: "none" }} />
                     <span style={{ fontWeight: 600 }}>{s.label}</span>
                     <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
-                      <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conv
+                      <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conversion
                     </span>
                   </div>
                 ))}
@@ -312,11 +273,32 @@ export default function Analytics() {
           )}
         </div>
         <div style={card} className="panel-pad">
-          <div className="panel-title">🏙 Conversion by city</div>
-          {m.byCity.slice(0, 8).map((s) => (
-            <ConvRow key={s.k} label={s.k} leads={s.leads} converted={s.converted} max={cityMax} color="var(--indigo)" />
-          ))}
-          {m.byCity.length === 0 && <div className="empty" style={{ padding: 20 }}>No data.</div>}
+          <div className="panel-title">🏙 By city</div>
+          {cityData.length === 0 ? (
+            <div className="empty" style={{ padding: 20 }}>No data.</div>
+          ) : (
+            <>
+              <ResponsiveContainer width="100%" height={180}>
+                <PieChart>
+                  <Pie data={cityData} dataKey="leads" nameKey="label" innerRadius={50} outerRadius={78} paddingAngle={2} stroke="none">
+                    {cityData.map((s) => <Cell key={s.k} fill={s.color} />)}
+                  </Pie>
+                  <Tooltip content={<ChartTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
+                {cityData.map((s) => (
+                  <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
+                    <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "none" }} />
+                    <span style={{ fontWeight: 600 }}>{s.label}</span>
+                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
+                      <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conversion
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -364,26 +346,6 @@ export default function Analytics() {
           </div>
         )}
       </div>
-
-      {/* supply snapshot */}
-      {supplyStages.total > 0 && (
-        <div style={card} className="panel-pad">
-          <div className="panel-title">🏗 Supply pipeline · {supplyStages.total.toLocaleString("en-IN")} units</div>
-          <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: "2px 24px" }}>
-            {supplyStages.stages.map((s) => (
-              <div key={s.stage} style={{ marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
-                  <span style={{ fontWeight: 600 }}>{s.stage}</span>
-                  <span style={{ fontFamily: "'Spline Sans Mono'", color: "var(--muted)" }}>{s.c}</span>
-                </div>
-                <div style={{ height: 7, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${(s.c / supMax) * 100}%`, background: "var(--cyan)", borderRadius: 6 }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

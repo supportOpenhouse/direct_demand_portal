@@ -55,7 +55,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   // Both carry visits, so both get the ★ hot column + visit-status filter.
   const hasVisits = segment === "pipeline" || segment === "revisit";
   const isPipeline = segment === "revisit"; // the Pipeline Leads tab — the only one with ★ hot marking
-  const showStage = !rejected && segment !== "qualified"; // Qualified drops the Stage column
+  // Qualified & Converted drop the Stage column — every row would read the same ("Qualified"/"Won")
+  const showStage = !rejected && segment !== "qualified" && segment !== "converted";
   const bookLabel = segment === "qualified" ? "Book Visit" : hasVisits ? "Book Revisit" : "Visits";
   const { data, isLoading } = useLeads(segment);
   const nav = useNavigate();

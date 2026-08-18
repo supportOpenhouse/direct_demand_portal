@@ -64,15 +64,15 @@ export default function NewLeads() {
   };
 
   const all = data?.items ?? [];
-  const filtered = all.filter(
-    (l) =>
-      (!source || l.source === source) &&
-      matchesOption(l.city, city) &&
-      (!plan || l.plan_to_buy === plan) &&
-      matchesOption(l.assigned_to, owner) &&
-      inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
-      leadMatchesQuery(query, l)
-  );
+  // faceted counts: each dropdown counts leads passing all the OTHER filters (skip its own)
+  const pass = (l: Lead, skip?: string) =>
+    (skip === "source" || !source || l.source === source) &&
+    (skip === "city" || matchesOption(l.city, city)) &&
+    (!plan || l.plan_to_buy === plan) &&
+    (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
+    inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
+    leadMatchesQuery(query, l);
+  const filtered = all.filter((l) => pass(l));
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     city: (l) => l.city,
@@ -109,13 +109,13 @@ export default function NewLeads() {
             </button>
           )}
           <FilterSelect label="Source" value={source}
-            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
-            onChange={onSource} width={130} />
-          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
+            options={countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel)}
+            onChange={onSource} width={150} />
+          <FilterSelect label="City" value={city} options={countedOptions(all.filter((l) => pass(l, "city")), (l) => l.city, "No City")} onChange={setCity} width={150} />
           {showPlan && (
             <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
           )}
-          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           <DateFilter preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || plan || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>

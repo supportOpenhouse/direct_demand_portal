@@ -12,7 +12,7 @@ import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
-import { FilterSelect, uniqueValues, countedOptions, matchesOption, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
+import { FilterSelect, countedOptions, matchesOption, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -52,14 +52,14 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   const [dateTo, setDateTo] = useState("");
 
   const all = data?.items ?? [];
-  const filtered = all.filter(
-    (l) =>
-      (!source || l.source === source) &&
-      matchesOption(l.city, city) &&
-      matchesOption(l.assigned_to, owner) &&
-      inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
-      leadMatchesQuery(query, l)
-  );
+  // faceted counts: each dropdown counts leads passing all the OTHER filters (skip its own)
+  const pass = (l: Lead, skip?: string) =>
+    (skip === "source" || !source || l.source === source) &&
+    (skip === "city" || matchesOption(l.city, city)) &&
+    (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
+    inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
+    leadMatchesQuery(query, l);
+  const filtered = all.filter((l) => pass(l));
   /* Default order mirrors the row highlights, most-actionable first:
        0 green    — moved into Follow-up today
        1 blue     — follow-up due today
@@ -108,10 +108,10 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source}
-            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
-            onChange={setSource} width={130} />
-          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
-          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
+            options={countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel)}
+            onChange={setSource} width={150} />
+          <FilterSelect label="City" value={city} options={countedOptions(all.filter((l) => pass(l, "city")), (l) => l.city, "No City")} onChange={setCity} width={150} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           <DateFilter label="Due" preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>

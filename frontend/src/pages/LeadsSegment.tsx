@@ -7,7 +7,7 @@ import { useLeads, formatDate, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, stageClass, stageLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
-import { FilterSelect, uniqueValues, countedOptions, matchesOption } from "../components/Filters";
+import { FilterSelect, countedOptions, matchesOption } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -68,15 +68,17 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const [planner, setPlanner] = useState<Lead | null>(null);
 
   const all = data?.items ?? [];
-  const filtered = all.filter(
-    (l) =>
-      (!source || l.source === source) &&
-      matchesOption(l.city, city) &&
-      matchesOption(l.assigned_to, owner) &&
-      (!hotOnly || l.is_hot) &&
-      (!visitStatus || l.visit_status === visitStatus) &&
-      leadMatchesQuery(query, l)
-  );
+  // `pass(l, skip)` applies every filter except `skip`. Each dropdown's counts are
+  // computed over the leads passing all the OTHER filters (faceted), so they react to
+  // the current selection; `filtered` (skip nothing) drives the table + header count.
+  const pass = (l: Lead, skip?: string) =>
+    (skip === "source" || !source || l.source === source) &&
+    (skip === "city" || matchesOption(l.city, city)) &&
+    (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
+    (!hotOnly || l.is_hot) &&
+    (!visitStatus || l.visit_status === visitStatus) &&
+    leadMatchesQuery(query, l);
+  const filtered = all.filter((l) => pass(l));
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     stage: (l) => stageLabel(l.stage),
@@ -99,10 +101,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source}
-            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
-            onChange={setSource} width={130} />
-          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
-          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
+            options={countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel)}
+            onChange={setSource} width={150} />
+          <FilterSelect label="City" value={city} options={countedOptions(all.filter((l) => pass(l, "city")), (l) => l.city, "No City")} onChange={setCity} width={150} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           {hasVisits && (
             <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
           )}

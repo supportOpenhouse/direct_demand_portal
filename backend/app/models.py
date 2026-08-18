@@ -326,7 +326,13 @@ class CrmVisit(Base):
     buyer_feedback: Mapped[str | None] = mapped_column(Text)
     sales_feedback: Mapped[str | None] = mapped_column(Text)
     synced_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
-    booked_by: Mapped[str | None] = mapped_column(Text)
+    booked_by: Mapped[str | None] = mapped_column(Text)  # email of whoever clicked Book
+    # what we actually SENT to the booking API, preserved so a visit is self-describing
+    smid: Mapped[int | None] = mapped_column(Integer)             # accompanying RM's SalesManager id
+    rm_accompanying: Mapped[str | None] = mapped_column(Text)     # accompanying RM's name
+    buyer_name: Mapped[str | None] = mapped_column(Text)
+    buyer_mobile: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

@@ -240,7 +240,9 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
         row_num = r.pop("_row", None)
         phone = norm_phone(r.get("contactno"))
         name = clean_name(r.get("name"))
-        if not phone or not name:
+        # phone is the identity + dedup key, so a phoneless row can't be stored; but a
+        # missing NAME must NOT drop the lead — keep it (name stays null, like Meta does).
+        if not phone:
             continue
         if row_num:
             synced.append(row_num)

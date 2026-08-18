@@ -267,6 +267,7 @@ export interface Lead {
   is_hot: boolean;              // starred as a hot lead
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
   visit_date: string | null;    // its scheduled date
+  visit_society: string | null; // society of the latest booked visit (shown on the chip)
   visit_count: number;          // visits booked on the Openhouse app
   latest_note: string | null;   // newest note/remark, for the inline notes column
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
@@ -720,6 +721,12 @@ export interface CrmVisitRow {
   buyer_feedback: string | null;
   sales_feedback: string | null;
   booked_by: string | null;
+  // what we sent to the booking API, stored per visit
+  smid: number | null;
+  rm_accompanying: string | null;
+  buyer_name: string | null;
+  buyer_mobile: string | null;
+  source: string | null;
 }
 
 export interface LeadNote {
@@ -841,7 +848,8 @@ export interface BookRequest {
   selected_date: string;
   selected_time: string;
   source: string;
-  sales_manager_id?: number | null;  // the RM accompanying, not the caller
+  rm_accompanying?: string | null;   // accompanying RM name — server resolves their smid
+  sales_manager_id?: number | null;  // legacy fallback if no name is sent
   lead_id?: string | null;   // links the booking to a lead → drives the Pipeline tab
   visits: BookVisitIn[];
 }

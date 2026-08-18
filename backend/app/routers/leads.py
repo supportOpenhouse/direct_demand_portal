@@ -100,6 +100,7 @@ def _lead_row(r) -> dict:
         # latest booked visit (Pipeline status chip) — only present on the list query
         "visit_status": r.get("visit_status"),
         "visit_date": r.get("visit_sel_date"),
+        "visit_society": r.get("visit_society"),
         "visit_count": int(r.get("visit_count") or 0),
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
@@ -116,7 +117,16 @@ def _role_scope(user: dict) -> tuple[str, dict]:
     # so a role missed here would see every lead in the system.
     if is_calling_rm(user.get("role")):
         aliases = assignment_aliases(user)
-        return ("lower(assigned_to) = ANY(:aliases)", {"aliases": aliases}) if aliases else ("false", {})
+        if not aliases:
+            return ("false", {})
+        # own leads PLUS any lead the RM is the accompanying RM on a booked visit for —
+        # so they can see the pipeline leads they're actually going out on.
+        return (
+            "(lower(assigned_to) = ANY(:aliases) OR EXISTS ("
+            "SELECT 1 FROM crm_visits v WHERE v.lead_id = leads.id "
+            "AND lower(v.rm_accompanying) = ANY(:aliases)))",
+            {"aliases": aliases},
+        )
     return "true", {}
 
 
@@ -142,6 +152,7 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                     "(SELECT count(*) FROM lead_notes WHERE lead_id = leads.id) AS note_count, "
                     "(SELECT status FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_status, "
                     "(SELECT selected_date FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_sel_date, "
+                    "(SELECT society FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_society, "
                     "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count "
                     f"FROM leads WHERE {predicate} ORDER BY is_test DESC, {order}"
                 ),
@@ -600,7 +611,8 @@ async def lead_crm_visits(lead_id: UUID):
     async with engine.connect() as conn:
         rows = (await conn.execute(text(
             "SELECT visit_id, home_id, society, city, selected_date, selected_time, status, "
-            "visit_date, buyer_feedback, sales_feedback, booked_by FROM crm_visits "
+            "visit_date, buyer_feedback, sales_feedback, booked_by, "
+            "smid, rm_accompanying, buyer_name, buyer_mobile, source FROM crm_visits "
             "WHERE lead_id = :id ORDER BY selected_date DESC NULLS LAST, visit_id DESC"
         ), {"id": lead_id})).mappings().all()
     return {"items": [dict(r) for r in rows]}

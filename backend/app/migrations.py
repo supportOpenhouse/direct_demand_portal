@@ -64,6 +64,13 @@ _ADD_COLUMNS = [
     # Huvo started sending campaign_name mid-flight; older rows carry it only in the
     # payload, so the column is added and back-filled below.
     ("huvo_call_updates", "campaign_name", "TEXT"),
+    # crm_visits now stores what we actually sent to the booking API (smid of the
+    # accompanying RM + their name + buyer/source), so a visit is self-describing.
+    ("crm_visits", "smid", "INTEGER"),
+    ("crm_visits", "rm_accompanying", "TEXT"),
+    ("crm_visits", "buyer_name", "TEXT"),
+    ("crm_visits", "buyer_mobile", "TEXT"),
+    ("crm_visits", "source", "TEXT"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)

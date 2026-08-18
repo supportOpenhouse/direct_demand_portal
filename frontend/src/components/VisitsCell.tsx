@@ -13,8 +13,8 @@ const STAGE_CLS: Record<string, string> = { upcoming: "visit", completed: "won",
 const cls = (s: string | null) => `stage ${(s && STAGE_CLS[s]) || "visit"}`;
 
 export function VisitsCell({
-  leadId, status, date, count,
-}: { leadId: string; status: string | null; date: string | null; count: number }) {
+  leadId, status, date, society, count,
+}: { leadId: string; status: string | null; date: string | null; society: string | null; count: number }) {
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useLeadCrmVisits(leadId, open);
   const visits = data?.items ?? [];
@@ -26,6 +26,8 @@ export function VisitsCell({
       {!open ? (
         <>
           <span className={cls(status)}>{LABEL[status] || status}</span>
+          {/* the society being visited — shown even for a single visit, not only in the cascade */}
+          {society && <div className="vl-society" style={{ marginTop: 3 }}>{society}</div>}
           {date && <div className="vc-date">{date}</div>}
           {count > 1 && (
             <button className="note-toggle" onClick={() => setOpen(true)}>▾ all {count} visits</button>
@@ -43,7 +45,7 @@ export function VisitsCell({
                   <span className="vl-society">{v.society || "—"}</span>
                   <span className="vl-sub">
                     {v.selected_date || "—"}{v.selected_time ? ` · ${v.selected_time}` : ""} · #{v.visit_id}
-                    {v.booked_by ? ` · ${v.booked_by}` : ""}
+                    {v.rm_accompanying ? ` · with ${v.rm_accompanying}` : ""}
                   </span>
                 </div>
               </div>

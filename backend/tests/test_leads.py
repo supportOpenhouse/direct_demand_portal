@@ -102,7 +102,6 @@ def test_build_listing_maps_source_and_property():
         {"name": "Pooja Chhibber", "contactno": "91-9971652700", "source": "99acre",
          "city": "Noida", "property": "Supertech Cape Town", "type": "Individual",
          "assigned_to": "Dheeraj", "remarks": "RNR", "remarks_2": ""},
-        {"name": "", "contactno": "91-9000000000"},  # skipped (no name)
     ]
     ingest, spine, synced = build_listing(rows)
     assert len(ingest) == 1 and len(spine) == 1
@@ -110,6 +109,19 @@ def test_build_listing_maps_source_and_property():
     assert spine[0]["society"] == "Supertech Cape Town"
     assert spine[0]["city"] == "Noida"
     assert spine[0]["origin_key"] == "listing:9971652700"
+
+
+def test_build_listing_keeps_nameless_rows_but_drops_phoneless():
+    """A missing name must NOT drop the lead (phone is the identity); only a missing
+    phone can — there'd be no dedup key / origin_key to store it under."""
+    rows = [
+        {"name": "", "contactno": "91-9000000000"},        # no name, HAS phone → kept
+        {"name": "Ghost", "contactno": ""},                 # no phone → dropped
+    ]
+    ingest, spine, synced = build_listing(rows)
+    assert len(ingest) == 1 and len(spine) == 1
+    assert spine[0]["name"] is None                         # name stays null, lead kept
+    assert spine[0]["origin_key"] == "listing:9000000000"
 
 
 # --- calling-hours clamp on auto follow-ups ----------------------------------

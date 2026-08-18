@@ -71,14 +71,17 @@ export function BookVisitsDrawer({
   const cpFor = (city: string | null) => (city && cfg.data?.city_cp?.[city]) || null;
   const cities = Array.from(new Set(units.map((u) => u.city || "Unknown")));
   const canBook = !!cfg.data?.can_book;
-  const canReview = !!slot && !!date && buyersOk && canBook;
+  // the visit is attributed to the accompanying RM, so they must have an Openhouse SMID
+  const rmMissingSmid = !!rmAccompanying && salesManagerId == null;
+  const canReview = !!slot && !!date && buyersOk && canBook && !rmMissingSmid;
 
   const visits = units.map((u) => ({ unit: u, buyer: buyerFor(u) }));
 
   const confirm = () => {
     setBooking(true);
     api.bookVisits({
-      sales_manager_id: salesManagerId ?? null,
+      rm_accompanying: rmAccompanying ?? null,  // server resolves this RM's smid (authoritative)
+      sales_manager_id: salesManagerId ?? null, // legacy fallback
       selected_date: date.date,
       selected_time: slot,
       source: cfg.data?.default_source || "direct",
@@ -137,6 +140,9 @@ export function BookVisitsDrawer({
               )}
               {cfg.data && cfg.data.configured && !cfg.data.smid && (
                 <div className="bv-danger"><b>⚠ You're not set up to book.</b> Ask an admin to add your Openhouse SMID in Settings.</div>
+              )}
+              {rmMissingSmid && (
+                <div className="bv-danger"><b>⚠ {rmAccompanying} has no Openhouse SMID.</b> The visit is booked under the accompanying RM, so pick one with an SMID (or ask an admin to add theirs).</div>
               )}
 
               {/* Channel Partner — derived per unit city (Gurgaon → CP 708, Noida/Ghaziabad → CP 1367) */}

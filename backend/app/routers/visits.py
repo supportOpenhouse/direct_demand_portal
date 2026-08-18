@@ -30,6 +30,19 @@ async def _user_smid(user: dict) -> int | None:
     return row[0] if row and row[0] is not None else None
 
 
+async def _smid_for_name(name: str | None) -> int | None:
+    """The Openhouse SMID of the RM with this name (active, mapped). Used to resolve the
+    accompanying RM's smid server-side so the booking is always attributed to them."""
+    engine = neon_engine()
+    if engine is None or not name or not name.strip():
+        return None
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(
+            "SELECT smid FROM users WHERE lower(name) = lower(:n) AND active AND smid IS NOT NULL LIMIT 1"),
+            {"n": name.strip()})).first()
+    return row[0] if row else None
+
+
 @router.post("/visits/sync")
 async def sync_visit_status():
     """Pull the latest status (upcoming | completed | cancelled) for every visit we booked."""
@@ -83,7 +96,9 @@ class BookRequest(BaseModel):
     selected_date: str
     selected_time: str
     source: str = DEFAULT_SOURCE
-    # SMID of the RM accompanying the visit; omitted → the caller's own
+    # the RM accompanying the visit — the booking is attributed to THEM. The name is
+    # authoritative (server resolves their smid); sales_manager_id is a legacy fallback.
+    rm_accompanying: str | None = None
     sales_manager_id: int | None = None
     lead_id: UUID | None = None   # links the booking to a lead → drives the Pipeline tab
     visits: list[BookVisitIn]
@@ -104,15 +119,34 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
         if not v.buyer_name.strip() or len(v.buyer_mobile.strip()) < 5:
             raise HTTPException(status_code=400, detail="Each visit needs a buyer name and at least 5 mobile digits")
 
-    # sales_manager_id is the RM ACCOMPANYING the visit, not the lead's RM and not
-    # necessarily whoever clicked Book — the planner sends it explicitly. Falling back
-    # to the caller keeps older clients working.
-    smid = req.sales_manager_id or await _user_smid(user)
-    if smid is None:
-        raise HTTPException(status_code=403, detail="You're not set up to book visits — ask an admin to add your Openhouse SMID in Settings.")
+    # The smid sent to Core MUST be the accompanying RM's — resolve it authoritatively
+    # from their name so the visit is always attributed to them (never to whoever clicked
+    # Book). No SMID for that RM → we can't book, rather than silently mis-attribute.
+    if req.rm_accompanying:
+        smid = await _smid_for_name(req.rm_accompanying)
+        if smid is None:
+            raise HTTPException(status_code=403,
+                detail=f"{req.rm_accompanying} has no Openhouse SMID — ask an admin to add it in Settings before booking.")
+    else:
+        smid = req.sales_manager_id  # legacy client that sends only the id
+        if smid is None:
+            raise HTTPException(status_code=403, detail="Pick an accompanying RM who has an Openhouse SMID before booking.")
 
-    log.info("book: user=%s smid=%s (accompanying) n=%s date=%s slot=%s",
-             user.get("email"), smid, len(req.visits), req.selected_date, req.selected_time)
+    # A revisit can't be booked while a prior visit is still pending — the previous one
+    # must be marked complete (via the ops-sheet sync) first.
+    if req.lead_id:
+        engine = neon_engine()
+        if engine is not None:
+            async with engine.connect() as conn:
+                pending = (await conn.execute(text(
+                    "SELECT count(*) FROM crm_visits WHERE lead_id = :id AND status = 'upcoming'"),
+                    {"id": req.lead_id})).scalar()
+            if pending:
+                raise HTTPException(status_code=409,
+                    detail="This lead has a visit that isn't marked complete yet — complete it before booking a revisit.")
+
+    log.info("book: user=%s smid=%s (accompanying=%s) n=%s date=%s slot=%s",
+             user.get("email"), smid, req.rm_accompanying, len(req.visits), req.selected_date, req.selected_time)
     results = await book_visits(smid, req.selected_date, req.selected_time, req.source, [v.model_dump() for v in req.visits])
     booked = sum(1 for r in results if r["ok"])
 
@@ -120,16 +154,20 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
     # can update its status. Fail-soft: a storage hiccup must not lose the booking result.
     if req.lead_id:
         by_home = {v.home_id: v for v in req.visits}
-        rows = [
-            {
+        rows = []
+        for r in results:
+            if not (r.get("ok") and r.get("visit_id")):
+                continue
+            bh = by_home.get(r["home_id"])
+            rows.append({
                 "lead_id": req.lead_id, "visit_id": r["visit_id"], "home_id": r["home_id"],
-                "society": (by_home.get(r["home_id"]).society if by_home.get(r["home_id"]) else None),
-                "city": (by_home.get(r["home_id"]).city if by_home.get(r["home_id"]) else None),
+                "society": bh.society if bh else None, "city": bh.city if bh else None,
+                "buyer_name": bh.buyer_name if bh else None,
+                "buyer_mobile": bh.buyer_mobile if bh else None,
                 "selected_date": req.selected_date, "selected_time": req.selected_time,
+                "source": req.source, "smid": smid, "rm_accompanying": req.rm_accompanying,
                 "status": "upcoming", "booked_by": user.get("email"),
-            }
-            for r in results if r.get("ok") and r.get("visit_id")
-        ]
+            })
         if rows:
             try:
                 engine = neon_engine()

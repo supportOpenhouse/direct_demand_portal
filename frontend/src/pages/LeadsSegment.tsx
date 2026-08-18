@@ -83,7 +83,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   );
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
-    source: (l) => srcLabel(l.source),
     stage: (l) => stageLabel(l.stage),
     tat: (l) => (l.tat_deadline ? Date.parse(l.tat_deadline) : null),
     society: (l) => l.society,
@@ -139,7 +138,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               </th>
               {pipeline && <th style={{ width: 34 }} title="Hot">★</th>}
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
               {rejected ? (
                 <>
                   <SortTh label="Reason" sortKey="reason" activeKey={sortKey} dir={dir} onSort={onSort} />
@@ -160,9 +158,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={pipeline ? 10 : 9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={pipeline ? 9 : 8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={pipeline ? 10 : 9}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={pipeline ? 9 : 8}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -177,7 +175,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
                         <div className="nm">
-                          {l.name}
+                          {l.name}{" "}
+                          <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>({srcLabel(l.source)})</span>
                           {l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}
                           {/* RNR keeps its own stage but shares the Rejected page */}
                           {rejected && l.stage === "rnr" && (
@@ -191,7 +190,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       </div>
                     </div>
                   </td>
-                  <td><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
                   {rejected ? (
                     <>
                       <td><span className="stage lost">{l.reject_reason || "—"}</span></td>

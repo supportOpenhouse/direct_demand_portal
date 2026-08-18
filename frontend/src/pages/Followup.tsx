@@ -133,7 +133,6 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
               <th>Call connected?</th>
               <SortTh label="Follow-up due" sortKey="due" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Misses" sortKey="misses" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <th>Stage</th>
               <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th>Notes</th>
@@ -141,9 +140,9 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? "No callbacks scheduled right now. 🎉" : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -161,7 +160,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                     <div className="who">
                       <CallButton leadId={l.id} disabled={!l.phone} />
                       <div>
-                        <div className="nm">{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
+                        <div className="nm">{l.name}{" "}<span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>({srcLabel(l.source)})</span>{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
                         <LeadPhone phone={l.phone} missCount={l.miss_count} />
                       </div>
                     </div>
@@ -172,11 +171,6 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                     {l.miss_count > 0
                       ? <span className={"miss-chip" + (l.miss_count >= 5 ? " hot" : "")}>{l.miss_count} miss</span>
                       : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>}
-                  </td>
-                  <td>
-                    {l.confirmed
-                      ? <span className="stage won">Qualified</span>
-                      : <span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span>}
                   </td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>

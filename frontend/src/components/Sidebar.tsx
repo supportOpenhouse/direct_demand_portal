@@ -113,8 +113,8 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/leads/call-not-received" className={navClass} title="Call Not Received">
           <IconRnr /> <span className="nav-t">Call Not Received</span> <Pct seg="call_not_received" />
         </NavLink>
-        <NavLink to="/leads/followup" className={navClass} title="Follow Up">
-          <IconFollowup /> <span className="nav-t">Follow Up</span> <Pct seg="followup" />
+        <NavLink to="/leads/followup" className={navClass} title="Call back again">
+          <IconFollowup /> <span className="nav-t">Call back again</span> <Pct seg="followup" />
         </NavLink>
         <NavLink to="/leads/qualified" className={navClass} title="Qualified Leads">
           <IconQualified /> <span className="nav-t">Qualified Leads</span> <Pct seg="qualified" />

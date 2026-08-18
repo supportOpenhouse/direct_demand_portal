@@ -12,7 +12,7 @@ const TITLES: Record<string, string> = {
   "/": "Dashboard",
   "/leads/new": "New Leads",
   "/leads/call-not-received": "Call Not Received",
-  "/leads/followup": "Follow Up",
+  "/leads/followup": "Call back again",
   "/leads/qualified": "Qualified Leads",
   "/leads/pipeline": "Pipeline Leads",
   "/leads/converted": "Converted Leads",

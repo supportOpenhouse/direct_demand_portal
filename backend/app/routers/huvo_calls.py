@@ -31,6 +31,10 @@ router = APIRouter(tags=["huvo"])
 LINKED_YES = "linked"
 LINKED_NO = "unlinked"
 
+# Campaign names are free text from Huvo, so "" can't mean "no campaign" — it's
+# indistinguishable from "no filter". This sentinel can't collide with a real name.
+NO_CAMPAIGN = "__none__"
+
 # Same labels and boundaries as the Bonvoice log's buckets. A bucket that meant
 # something different on this page than that one would be a quiet trap.
 DURATION_BUCKETS: dict[str, tuple[int, int | None]] = {
@@ -43,7 +47,7 @@ DURATION_BUCKETS: dict[str, tuple[int, int | None]] = {
 _FROM = " FROM huvo_call_updates h LEFT JOIN leads l ON l.id = h.lead_id"
 
 
-def calls_filters(q, outcome, interested, linked, duration) -> tuple[str, dict]:
+def calls_filters(q, outcome, interested, linked, duration, campaign=None) -> tuple[str, dict]:
     """WHERE clause + bound params. Every value is bound; the search box is free text
     from a browser and this reaches SQL."""
     where, params = [], {}
@@ -52,7 +56,8 @@ def calls_filters(q, outcome, interested, linked, duration) -> tuple[str, dict]:
         # summary is included because it's the only place the conversation itself is
         # recorded — searching it is how you find "the one about the Whitefield 2BHK"
         where.append("(h.from_number ILIKE :q OR h.caller_name ILIKE :q "
-                     "OR h.summary ILIKE :q OR l.name ILIKE :q)")
+                     "OR h.summary ILIKE :q OR l.name ILIKE :q "
+                     "OR h.campaign_name ILIKE :q)")
         params["q"] = f"%{q.strip()}%"
 
     if outcome:
@@ -69,6 +74,13 @@ def calls_filters(q, outcome, interested, linked, duration) -> tuple[str, dict]:
         where.append("h.lead_id IS NOT NULL")
     elif linked == LINKED_NO:
         where.append("h.lead_id IS NULL")
+
+    # Equality, not LIKE: two campaigns sharing a prefix would otherwise fold into one.
+    if campaign == NO_CAMPAIGN:
+        where.append("h.campaign_name IS NULL")
+    elif campaign:
+        where.append("h.campaign_name = :campaign")
+        params["campaign"] = campaign
 
     if duration in DURATION_BUCKETS:
         lo, hi = DURATION_BUCKETS[duration]
@@ -88,6 +100,7 @@ async def huvo_calls(
     interested: str | None = Query(None),
     linked: str | None = Query(None),
     duration: str | None = Query(None),
+    campaign: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -95,7 +108,7 @@ async def huvo_calls(
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
-    clause, params = calls_filters(q, outcome, interested, linked, duration)
+    clause, params = calls_filters(q, outcome, interested, linked, duration, campaign)
     async with engine.connect() as conn:
         # Both counts in one round trip. unique_leads is distinct numbers, not rows:
         # Huvo calls the same person more than once, so "1415 calls" alone overstates
@@ -112,7 +125,7 @@ async def huvo_calls(
         total, unique_leads = counts["total"], counts["uniq"]
         unlinked_unique = counts["unlinked"]
         rows = (await conn.execute(text(f"""
-            SELECT h.id, h.from_number, h.caller_name, h.call_outcome, h.is_interested,
+            SELECT h.id, h.campaign_name, h.from_number, h.caller_name, h.call_outcome, h.is_interested,
                    h.rsvp_status, h.lead_score, h.budget_lacs, h.summary,
                    h.recording_url, h.duration_sec, h.started_at, h.received_at,
                    h.lead_id, l.name AS lead_name, l.stage AS lead_stage
@@ -143,7 +156,7 @@ async def huvo_call_outcomes():
     """
     engine = neon_engine()
     if engine is None:
-        return {"outcomes": [], "interest": []}
+        return {"outcomes": [], "interest": [], "campaigns": []}
     async with engine.connect() as conn:
         outcomes = (await conn.execute(text(
             "SELECT DISTINCT call_outcome FROM huvo_call_updates "
@@ -151,7 +164,11 @@ async def huvo_call_outcomes():
         interest = (await conn.execute(text(
             "SELECT DISTINCT is_interested FROM huvo_call_updates "
             "WHERE is_interested IS NOT NULL ORDER BY 1"))).scalars().all()
-    return {"outcomes": list(outcomes), "interest": list(interest)}
+        campaigns = (await conn.execute(text(
+            "SELECT DISTINCT campaign_name FROM huvo_call_updates "
+            "WHERE campaign_name IS NOT NULL ORDER BY 1"))).scalars().all()
+    return {"outcomes": list(outcomes), "interest": list(interest),
+            "campaigns": list(campaigns)}
 
 
 @router.get("/leads/{lead_id}/huvo-calls")
@@ -170,7 +187,7 @@ async def lead_huvo_calls(lead_id: UUID, _: dict = Depends(current_user)):
         return {"items": []}
     async with engine.connect() as conn:
         rows = (await conn.execute(text("""
-            SELECT id, call_outcome, is_interested, rsvp_status, lead_score,
+            SELECT id, campaign_name, call_outcome, is_interested, rsvp_status, lead_score,
                    budget_lacs, summary, recording_url, duration_sec,
                    started_at, received_at, payload
               FROM huvo_call_updates
@@ -293,6 +310,7 @@ class BulkHuvoLeadRequest(BaseModel):
     outcome: str | None = None
     interested: str | None = None
     duration: str | None = None
+    campaign: str | None = None
 
 
 @router.post("/huvo/leads/bulk")
@@ -319,7 +337,7 @@ async def huvo_bulk_create_leads(req: BulkHuvoLeadRequest, user: dict = Depends(
             # Resolved here, not in the browser: the same filters the page is showing,
             # forced to the unlinked subset.
             clause, params = calls_filters(
-                req.q, req.outcome, req.interested, LINKED_NO, req.duration)
+                req.q, req.outcome, req.interested, LINKED_NO, req.duration, req.campaign)
             phones10 = list((await conn.execute(text(
                 f"SELECT DISTINCT h.from_number{_FROM}{clause}"
                 f"{' AND' if clause else ' WHERE'} h.from_number IS NOT NULL"),

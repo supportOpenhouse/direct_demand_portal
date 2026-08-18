@@ -1217,3 +1217,13 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
    propagation so they still do their own job. */
 .hv-row{cursor:pointer}
 .hv-row:hover{background:var(--panel-2)}
+
+/* Huvo campaign cell. Names are free text from Huvo's side ("CNR_till July 31st"),
+   so it's clamped to one line with the full value on hover rather than allowed to
+   set the column width. */
+.hv-campaign{
+  display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+  white-space:nowrap;vertical-align:bottom;
+  font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:6px;
+  background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line);
+}

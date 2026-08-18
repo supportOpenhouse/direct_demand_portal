@@ -101,6 +101,9 @@ class HuvoCallUpdate(Base):
         UUID(as_uuid=True), ForeignKey("leads.id", ondelete="SET NULL"), index=True
     )
     from_number: Mapped[str | None] = mapped_column(Text, index=True)
+    # Which Huvo campaign placed the call. Sourced from call_details.campaign_name,
+    # falling back to the CSV import's Campaign column — see services/huvo.campaign_of.
+    campaign_name: Mapped[str | None] = mapped_column(Text, index=True)
     caller_name: Mapped[str | None] = mapped_column(Text)
     call_outcome: Mapped[str | None] = mapped_column(Text, index=True)
     is_interested: Mapped[str | None] = mapped_column(Text)

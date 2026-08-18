@@ -468,6 +468,47 @@ async def attach_lead_and_actor(mapped: list[dict]) -> int:
     return linked
 
 
+_RM_PHONES = text("SELECT phone FROM users WHERE active AND phone IS NOT NULL")
+
+
+def is_ours(rec: dict, rm_phones: set[str], did: str) -> bool:
+    """Did this call belong to us?
+
+    The account returns records that aren't this app's. The proper key is the DID, but
+    the records arriving right now don't carry one — so ownership is inferred from the
+    two fields that ARE populated, one per direction:
+
+      * `Agent` holds the RM's own handset on an OUTGOING record (Click2Call rings it
+        first), so a match means one of our people placed the call;
+      * `DestinationNumber` is what was dialled on an INCOMING one, which for us is
+        the DID.
+
+    Both are checked against both sets rather than switched on CallDirection, because
+    direction isn't reliably reported and a missed match silently drops a real call.
+
+    Fails closed: with no RM phones and no DID nothing is claimed. Importing every
+    record would be worse than importing none — the log is meant to be this team's
+    calls, and an unowned row is indistinguishable from a real one once stored.
+
+    ponytail: swap this whole function for a DID equality once the records carry it.
+    """
+    ours = {p for p in ({_digits(x) for x in rm_phones} | {_digits(did)}) if p}
+    if not ours:
+        return False
+    return bool({_digits(rec.get("Agent")), _digits(rec.get("DestinationNumber"))} & ours)
+
+
+async def _our_numbers() -> tuple[set[str], str]:
+    """Active RMs' handsets plus the configured DID."""
+    did = (get_settings().BONVOICE_DID or "").strip()
+    engine = neon_engine()
+    if engine is None:
+        return set(), did
+    async with engine.connect() as conn:
+        phones = set((await conn.execute(_RM_PHONES)).scalars().all())
+    return phones, did
+
+
 async def sync_calls(date_from: str, date_to: str, agent: str | None = None) -> dict:
     """Pull Bonvoice's own call records for a date range and upsert them.
 
@@ -477,15 +518,22 @@ async def sync_calls(date_from: str, date_to: str, agent: str | None = None) -> 
     identically.
     """
     records = await fetch_call_records(date_from, date_to, agent)
-    mapped = [m for m in (record_to_callback(r) for r in records) if m["callID"]]
+    # Ownership is judged on the RAW record: record_to_callback rewrites Agent and
+    # DestinationNumber into our source/destination shape, after which neither field
+    # means what is_ours is looking for.
+    rm_phones, did = await _our_numbers()
+    mine = [r for r in records if is_ours(r, rm_phones, did)]
+    skipped = len(records) - len(mine)
+    mapped = [m for m in (record_to_callback(r) for r in mine) if m["callID"]]
     linked = await attach_lead_and_actor(mapped)
     # ponytail: one upsert per record, sequentially. A day is ~30 round trips on the
     # 15-min job — batch it if the window ever widens.
     for m in mapped:
         await _persist(m)
-    log.info("bonvoice: synced %s/%s call records (%s linked to leads) for %s..%s",
-             len(mapped), len(records), linked, date_from, date_to)
-    return {"fetched": len(records), "stored": len(mapped), "linked": linked}
+    log.info("bonvoice: synced %s/%s call records (%s linked to leads, %s not ours) "
+             "for %s..%s", len(mapped), len(records), linked, skipped, date_from, date_to)
+    return {"fetched": len(records), "stored": len(mapped), "linked": linked,
+            "skipped_not_ours": skipped}
 
 
 async def run_call_log_sync(trigger: str = "scheduler") -> None:

@@ -331,7 +331,10 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
             await conn.execute(
                 text(
                     "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
-                    f"stage = CASE WHEN stage IN {_TERMINAL} THEN stage ELSE 'qualified' END, "
+                    # forward-only: a lead already at visit_scheduled (or beyond) must not
+                    # drop back to qualified when the qualify form is re-submitted
+                    f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN ('qualified','visit_scheduled') "
+                    "THEN stage ELSE 'qualified' END, "
                     "tat_deadline = NULL, follow_up_at = :t, "
                     "follow_up_since = COALESCE(follow_up_since, now()), "
                     "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"

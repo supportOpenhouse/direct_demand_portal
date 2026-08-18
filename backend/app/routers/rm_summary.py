@@ -54,11 +54,13 @@ EXTRA_LABELS = {
 }
 
 SYSTEM_PROMPT = (
-    "You are a sales operations analyst for a real-estate demand team. You write terse, "
-    "manager-facing performance notes about a single Relationship Manager (RM). "
-    "Use ONLY the numbers provided — never invent metrics, names, or trends you cannot "
-    "derive from them. Be specific and quantitative (cite the actual figures and simple "
-    "rates you compute from them). No preamble, no headings, no bullet symbols."
+    "You are a sales-operations coach for a real-estate demand team. You write terse, "
+    "manager-facing, ACTIONABLE performance notes about a single Relationship Manager (RM) "
+    "— the reader wants to know how the RM is doing and exactly what to do to improve their "
+    "numbers. Use ONLY the numbers provided; never invent metrics, names, or trends you "
+    "cannot derive from them. Be specific and quantitative — cite the actual figures and the "
+    "simple rates you compute from them, and tie every recommendation to a figure and a "
+    "concrete target."
 )
 
 
@@ -116,10 +118,19 @@ def _build_user_prompt(req: RMSummaryReq) -> str:
                 lines.append(f"  - {label}: {val_s}")
     lines.append("")
     lines.append(
-        "Write 3–4 sentences: (1) overall volume and where this RM sits in the funnel, "
-        "(2) one clear strength, (3) one concern or bottleneck (e.g. weak qualification "
-        "rate, poor call connect rate, many overdue callbacks, high rejection), and "
-        "(4) one concrete, actionable next step. Ground every claim in the figures above."
+        "Respond in exactly two labelled parts, and nothing else:\n\n"
+        "Assessment: 2–3 sentences rating how this RM is performing — name their clearest "
+        "strength and the funnel stage where they leak most, each backed by a figure or a "
+        "rate you compute (e.g. connect rate, qualification rate, conversion rate, overdue-"
+        "callback share).\n\n"
+        "Actions to improve:\n"
+        "- 3 to 4 prioritised, concrete steps to lift their numbers, ordered by impact. Each "
+        "step must reference the metric it targets, its current figure, and a specific target "
+        "or tactic (e.g. 'Only 112 of 778 leads reached qualification (14%) — rework the "
+        "first-call pitch to push qualification rate above 25%'). Make them things a manager "
+        "could hold the RM accountable to this week.\n\n"
+        "Use only the figures above. Do not add any heading other than 'Assessment:' and "
+        "'Actions to improve:'. Start action lines with '- '."
     )
     return "\n".join(lines)
 
@@ -147,7 +158,7 @@ async def rm_summary(req: RMSummaryReq, _: dict = Depends(current_user)) -> RMSu
 
     payload = {
         "model": model,
-        "max_tokens": 320,
+        "max_tokens": 600,
         "system": SYSTEM_PROMPT,
         "messages": [{"role": "user", "content": _build_user_prompt(req)}],
     }

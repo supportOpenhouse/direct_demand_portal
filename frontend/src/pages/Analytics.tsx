@@ -384,7 +384,7 @@ export default function Analytics() {
                             </div>
                           )}
                           {sm?.status === "done" && (
-                            <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--ink-2)", maxWidth: 900 }}>{sm.text}</div>
+                            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>{sm.text}</div>
                           )}
                         </td>
                       </tr>

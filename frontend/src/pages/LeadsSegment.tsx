@@ -197,7 +197,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     <>
                       {showStage && (
                         <td>{l.visit_status
-                          ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} society={l.visit_society} count={l.visit_count} />
+                          ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} society={l.visit_society} rm={l.visit_rm} count={l.visit_count} />
                           : <span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span>}</td>
                       )}
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>

@@ -13,8 +13,8 @@ const STAGE_CLS: Record<string, string> = { upcoming: "visit", completed: "won",
 const cls = (s: string | null) => `stage ${(s && STAGE_CLS[s]) || "visit"}`;
 
 export function VisitsCell({
-  leadId, status, date, society, count,
-}: { leadId: string; status: string | null; date: string | null; society: string | null; count: number }) {
+  leadId, status, date, society, rm, count,
+}: { leadId: string; status: string | null; date: string | null; society: string | null; rm: string | null; count: number }) {
   const [open, setOpen] = useState(false);
   const { data, isLoading } = useLeadCrmVisits(leadId, open);
   const visits = data?.items ?? [];
@@ -29,6 +29,8 @@ export function VisitsCell({
           {/* the society being visited — shown even for a single visit, not only in the cascade */}
           {society && <div className="vl-society" style={{ marginTop: 3 }}>{society}</div>}
           {date && <div className="vc-date">{date}</div>}
+          {/* accompanying RM (the lead's own RM is the Assigned-to column) */}
+          {rm && <div className="vc-date" style={{ color: "var(--muted)" }}>with {rm}</div>}
           {count > 1 && (
             <button className="note-toggle" onClick={() => setOpen(true)}>▾ all {count} visits</button>
           )}

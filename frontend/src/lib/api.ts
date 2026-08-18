@@ -268,6 +268,7 @@ export interface Lead {
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
   visit_date: string | null;    // its scheduled date
   visit_society: string | null; // society of the latest booked visit (shown on the chip)
+  visit_rm: string | null;      // accompanying RM on the latest booked visit
   visit_count: number;          // visits booked on the Openhouse app
   latest_note: string | null;   // newest note/remark, for the inline notes column
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)

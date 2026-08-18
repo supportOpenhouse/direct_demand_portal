@@ -101,6 +101,7 @@ def _lead_row(r) -> dict:
         "visit_status": r.get("visit_status"),
         "visit_date": r.get("visit_sel_date"),
         "visit_society": r.get("visit_society"),
+        "visit_rm": r.get("visit_rm"),
         "visit_count": int(r.get("visit_count") or 0),
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
@@ -153,6 +154,7 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                     "(SELECT status FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_status, "
                     "(SELECT selected_date FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_sel_date, "
                     "(SELECT society FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_society, "
+                    "(SELECT rm_accompanying FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_rm, "
                     "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count "
                     f"FROM leads WHERE {predicate} ORDER BY is_test DESC, {order}"
                 ),

@@ -247,9 +247,15 @@ a.btn{text-decoration:none} /* .btn on a react-router <Link> */
    it used to overflow the card and spill onto the page background. Scrolling the
    table inside this wrapper keeps it inside the card's rounded box; the card's own
    headings and filters stay put because only the table is wrapped. */
-.table-wrap{overflow-x:auto;border-radius:inherit}
+/* The wrapper scrolls both ways (x for wide tables, y so the header can freeze). It's
+   height-capped to the viewport so the body scrolls inside it while the sticky header
+   below stays pinned. Short tables render at natural height — the cap only bites when
+   there are enough rows to scroll. */
+.table-wrap{overflow:auto;border-radius:inherit;max-height:calc(100vh - 200px)}
 table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line)}
+/* frozen header: pinned to the top of the scrolling wrapper, opaque so rows pass under it */
+.table-wrap thead th{position:sticky;top:0;z-index:2;background:var(--panel)}
 td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:0}
 tr.lead-row{cursor:pointer;transition:.1s}

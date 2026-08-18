@@ -157,7 +157,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                 </>
               )}
               <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>
           </thead>

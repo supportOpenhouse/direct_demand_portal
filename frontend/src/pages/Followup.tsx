@@ -134,7 +134,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
               <SortTh label="Follow-up due" sortKey="due" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Misses" sortKey="misses" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Assigned" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th>Notes</th>
             </tr>
           </thead>

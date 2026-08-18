@@ -63,6 +63,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   // "pipeline" = Visited Leads (visit booked); "revisit" = Pipeline Leads (revisit booked).
   // Both carry visits, so both get the ★ hot column + visit-status filter.
   const hasVisits = segment === "pipeline" || segment === "revisit";
+  const isPipeline = segment === "revisit"; // the Pipeline Leads tab — the only one with ★ hot marking
   const showStage = !rejected && segment !== "qualified"; // Qualified drops the Stage column
   const bookLabel = segment === "qualified" ? "Book Visit" : hasVisits ? "Book Revisit" : "Visits";
   const { data, isLoading } = useLeads(segment);
@@ -110,18 +111,18 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
           <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
-          {hasVisits &&(
-            <>
-              <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
-              <button
-                className={"btn sm " + (hotOnly ? "" : "ghost")}
-                style={hotOnly ? { background: "var(--coral)", color: "#fff" } : undefined}
-                onClick={() => setHotOnly((v) => !v)}
-                title="Show only leads starred as hot"
-              >
-                ★ Hot only{hotOnly ? ` (${filtered.length})` : ""}
-              </button>
-            </>
+          {hasVisits && (
+            <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
+          )}
+          {isPipeline && (
+            <button
+              className={"btn sm " + (hotOnly ? "" : "ghost")}
+              style={hotOnly ? { background: "var(--coral)", color: "#fff" } : undefined}
+              onClick={() => setHotOnly((v) => !v)}
+              title="Show only leads starred as hot"
+            >
+              ★ Hot only{hotOnly ? ` (${filtered.length})` : ""}
+            </button>
           )}
           {(source || city || owner || hotOnly || visitStatus) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setHotOnly(false); setVisitStatus(""); }}>Clear</button>
@@ -140,7 +141,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               <th style={{ width: 30 }}>
                 <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
               </th>
-              {hasVisits &&<th style={{ width: 34 }} title="Hot">★</th>}
+              {isPipeline && <th style={{ width: 34 }} title="Hot">★</th>}
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               {rejected ? (
                 <>
@@ -162,9 +163,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={5 + (hasVisits ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={5 + (hasVisits ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -173,7 +174,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
                   </td>
-                  {hasVisits &&<td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
+                  {isPipeline && <td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
                   <td>
                     <div className="who">
                       <CallButton leadId={l.id} disabled={!l.phone} />

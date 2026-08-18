@@ -108,10 +108,10 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source}
-            options={countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel)}
+            options={countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel, source)}
             onChange={setSource} width={150} />
-          <FilterSelect label="City" value={city} options={countedOptions(all.filter((l) => pass(l, "city")), (l) => l.city, "No City")} onChange={setCity} width={150} />
-          <FilterSelect label="Owner" value={owner} options={countedOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
+          <FilterSelect label="City" value={city} options={countedOptions(all.filter((l) => pass(l, "city")), (l) => l.city, "No City", undefined, city)} onChange={setCity} width={150} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to, "Unassigned", undefined, owner)} onChange={setOwner} width={160} />
           <DateFilter label="Due" preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>

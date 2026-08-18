@@ -13,8 +13,6 @@ import {
   IconCheckCircle,
   IconHome,
   IconBox,
-  IconBars,
-  IconStar,
   IconSettings,
   IconReject,
 } from "./icons";
@@ -137,12 +135,6 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         </NavLink>
         <NavLink to="/supply" className={navClass} title="Supply Pipeline">
           <IconBox /> <span className="nav-t">Supply Pipeline</span>
-        </NavLink>
-        <NavLink to="/societies" className={navClass} title="Society Insights">
-          <IconBars /> <span className="nav-t">Society Insights</span>
-        </NavLink>
-        <NavLink to="/goldmine" className={navClass} title="Gold Mine">
-          <IconStar /> <span className="nav-t">Gold Mine</span>
         </NavLink>
         <div className="nav-label">Admin</div>
         {isAdmin && (

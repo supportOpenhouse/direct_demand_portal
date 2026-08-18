@@ -77,8 +77,6 @@ const desktopRoutes = [
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "supply", element: <Supply /> },
-      { path: "societies", element: <Stub title="Society Insights" /> },
-      { path: "goldmine", element: <Stub title="Gold Mine" /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
       { path: "call-log", element: <CallLog /> },

@@ -50,7 +50,6 @@ export default function Supply() {
   const { query } = useSearch();
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
-  const [stage, setStage] = useState("");
   const [city, setCity] = useState("");
   const [config, setConfig] = useState("");
   const [budMin, setBudMin] = useState("");
@@ -60,7 +59,6 @@ export default function Supply() {
   const base = all
     .filter(
       (s) =>
-        (!stage || s.stage === stage) &&
         (!city || s.city === city) &&
         (!config || s.configuration === config) &&
         inBudget(s.oh_price_lacs, budMin, budMax) &&
@@ -77,30 +75,20 @@ export default function Supply() {
     config: (s) => s.configuration,
     area: (s) => s.area_sqft,
     price: (s) => s.oh_price_lacs,
-    stage: (s) => STAGE_ORDER.indexOf(s.stage),
   });
-
-  const countOf = (st: string) => all.filter((s) => s.stage === st).length;
 
   return (
     <>
       <div className="section-head">
         <div />
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="field" style={{ marginBottom: 0, width: 200 }}>
-            <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ padding: "7px 10px", fontSize: 12.5 }}>
-              <option value="">Stage: All ({all.length})</option>
-              {STAGE_ORDER.map((st) => <option key={st} value={st}>{st} ({countOf(st)})</option>)}
-            </select>
-          </div>
           <FilterSelect label="City" value={city} options={uniqueValues(all, (s) => s.city)} onChange={setCity} width={130} />
           <FilterSelect label="Config" value={config} options={uniqueValues(all, (s) => s.configuration)} onChange={setConfig} width={130} />
           {isAdmin && <BudgetRange min={budMin} max={budMax} onMin={setBudMin} onMax={setBudMax} />}
-          {(stage || city || config || budMin || budMax) && (
+          {(city || config || budMin || budMax) && (
             <button
               className="btn ghost sm"
               onClick={() => {
-                setStage("");
                 setCity("");
                 setConfig("");
                 setBudMin("");
@@ -144,7 +132,6 @@ export default function Supply() {
                 {isAdmin && (
                   <SortTh label="OH Price" sortKey="price" activeKey={sortKey} dir={dir} onSort={onSort} />
                 )}
-                <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
               </tr>
             </thead>
             <tbody>
@@ -160,9 +147,6 @@ export default function Supply() {
                   </td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{unitText(s, isAdmin)}</td>
                   {isAdmin && <td><PriceCell s={s} /></td>}
-                  <td>
-                    <span className={`sup-stage ${s.stage_key}`}>{s.stage}</span>
-                  </td>
                 </tr>
               ))}
             </tbody>

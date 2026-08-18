@@ -52,7 +52,7 @@ export function SortTh({
   dir: Dir;
   onSort: (k: string) => void;
   style?: React.CSSProperties;
-  align?: "left" | "right";
+  align?: "left" | "right" | "center";
 }) {
   const active = activeKey === sortKey;
   return (

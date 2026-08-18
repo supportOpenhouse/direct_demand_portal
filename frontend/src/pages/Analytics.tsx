@@ -26,14 +26,14 @@ const HOT_PLAN = "Within 30 days";
 
 // RM performance: one column per lead stage/segment, in funnel order (matches the tabs)
 const STAGE_COLS: { seg: string; label: string }[] = [
-  { seg: "new", label: "New" },
+  { seg: "new", label: "New Leads" },
   { seg: "call_not_received", label: "Call Not Received" },
   { seg: "followup", label: "Call Back Again" },
-  { seg: "qualified", label: "Qualified" },
-  { seg: "pipeline", label: "Visited" },
-  { seg: "revisit", label: "Pipeline" },
-  { seg: "converted", label: "Converted" },
-  { seg: "rejected", label: "Rejected" },
+  { seg: "qualified", label: "Qualified Leads" },
+  { seg: "pipeline", label: "Visited Leads" },
+  { seg: "revisit", label: "Pipeline Leads" },
+  { seg: "converted", label: "Converted Leads" },
+  { seg: "rejected", label: "Rejected Leads" },
 ];
 const REP_RANGES: { v: string; label: string }[] = [
   { v: "today", label: "Today" },
@@ -41,13 +41,17 @@ const REP_RANGES: { v: string; label: string }[] = [
   { v: "7d", label: "Last 7 days" },
   { v: "15d", label: "Last 15 days" },
   { v: "month", label: "This Month" },
+  { v: "all", label: "All" },
   { v: "custom", label: "Custom" },
 ];
 
 const startOfDay = (t: number) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+// parse a "YYYY-MM-DD" date-input value into local midnight (avoids the UTC-parse off-by-one)
+const localDay = (s: string) => { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d).getTime(); };
 
 /** Is a lead's received_at inside the RM-table's selected range (day-granular, inclusive)? */
 function inRepRange(iso: string | null, preset: string, from: string, to: string): boolean {
+  if (preset === "all") return true;
   if (!iso) return false;
   const DAY = 86_400_000;
   const day = startOfDay(new Date(iso).getTime());
@@ -60,8 +64,8 @@ function inRepRange(iso: string | null, preset: string, from: string, to: string
     case "15d": return day >= today - 14 * DAY;
     case "month": return new Date(iso).getMonth() === now.getMonth() && new Date(iso).getFullYear() === now.getFullYear();
     case "custom": {
-      const lo = from ? startOfDay(new Date(from).getTime()) : null;
-      const hi = to ? startOfDay(new Date(to).getTime()) : null;
+      const lo = from ? localDay(from) : null;
+      const hi = to ? localDay(to) : null;
       return (lo == null || day >= lo) && (hi == null || day <= hi);
     }
     default: return true;
@@ -98,6 +102,14 @@ function Tile({ label, value, sub, accent, onClick }: { label: string; value: Re
 
 
 function pct(n: number, d: number) { return d ? Math.round((n / d) * 100) : 0; }
+
+// treat placeholder city values ("-", "NA", blank, …) as "no city" so they don't
+// show up as a real slice/row — returns the cleaned city, or null when it's junk
+const CITY_PLACEHOLDERS = new Set(["", "-", "--", "—", ".", "na", "n/a", "null", "none", "nil"]);
+function cleanCity(c: string | null | undefined): string | null {
+  const v = (c ?? "").trim();
+  return v && !CITY_PLACEHOLDERS.has(v.toLowerCase()) ? v : null;
+}
 
 export default function Analytics() {
   const { leads, isLoading } = useAllLeads(true);
@@ -179,7 +191,9 @@ export default function Analytics() {
       return [...map.entries()].map(([k, v]) => ({ k, ...v })).sort((a, b) => b.leads - a.leads);
     };
     const bySource = groupConv((l) => l.source);
-    const byCity = groupConv((l) => l.city);
+    // blank / junk cities ("-", "NA", …) collapse into one "No City" bucket so the
+    // slices still sum to the overall total instead of silently dropping those leads
+    const byCity = groupConv((l) => cleanCity(l.city) ?? "No City");
 
     return {
       total, nNew, nCnr, nFollowup, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
@@ -293,9 +307,9 @@ export default function Analytics() {
             <thead>
               <tr>
                 <SortTh label="Assigned To" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
-                <SortTh label="Total" sortKey="total" activeKey={sortKey} dir={dir} onSort={onSort} align="right" style={{ width: 92, whiteSpace: "normal", verticalAlign: "bottom" }} />
+                <SortTh label="Total Leads" sortKey="total" activeKey={sortKey} dir={dir} onSort={onSort} align="center" style={{ width: 96, whiteSpace: "normal", verticalAlign: "bottom" }} />
                 {STAGE_COLS.map((c) => (
-                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="right" style={{ width: 92, whiteSpace: "normal", verticalAlign: "bottom" }} />
+                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="center" style={{ width: 96, whiteSpace: "normal", verticalAlign: "bottom" }} />
                 ))}
               </tr>
             </thead>
@@ -303,11 +317,11 @@ export default function Analytics() {
               {repList.map((r) => (
                 <tr key={r.rm}>
                   <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.rm}</td>
-                  <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", fontWeight: 700, whiteSpace: "nowrap" }}>{r.total as number}</td>
+                  <td style={{ textAlign: "center", fontFamily: "'Spline Sans Mono'", fontWeight: 700, whiteSpace: "nowrap" }}>{r.total as number}</td>
                   {STAGE_COLS.map((c) => {
                     const n = r[c.seg] as number;
                     return (
-                      <td key={c.seg} style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
+                      <td key={c.seg} style={{ textAlign: "center", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
                         {n}{" "}<span style={{ color: "var(--muted)" }}>({pct(n, r.total as number)}%)</span>
                       </td>
                     );

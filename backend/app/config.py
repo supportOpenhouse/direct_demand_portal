@@ -61,11 +61,14 @@ class Settings(BaseSettings):
     # reject request bodies larger than this many bytes (basic DoS guard)
     MAX_BODY_BYTES: int = 1_000_000
     # Leads source spreadsheet (separate from the inventory sheet). Two worksheets:
-    # listing portals (99acres/MagicBricks) and Meta. Synced insert-only every 4h.
+    # listing portals (99acres/MagicBricks) and Meta.
     LEADS_SHEET_ID: str = "18FTnKh2bwwmMNXZNnxPZsep_ZcDthSFOnCC8zfbQViU"
     LEADS_LISTING_WORKSHEET: str = "Listing Leads_New"
     LEADS_META_WORKSHEET: str = "Meta Affordable_New"
-    LEADS_SYNC_INTERVAL_HOURS: int = 4
+    # Near-real-time poll: the ingest is insert-only + idempotent, so re-running it
+    # every couple of minutes is safe and just no-ops when there's nothing new. Tune
+    # on Render (1 = fastest) without a redeploy.
+    LEADS_SYNC_INTERVAL_MINUTES: int = 2
     # write a "synced" timestamp back to each source row after it lands in our system
     # (needs the service account to have EDITOR access on the leads sheet)
     LEADS_SYNC_WRITEBACK: bool = True

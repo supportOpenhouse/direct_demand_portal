@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
 
         asyncio.create_task(_locked_startup("inventory_sync", run_sync))
         asyncio.create_task(_locked_startup("leads_sync", run_leads_sync))
-        start_scheduler(settings.SYNC_INTERVAL_MINUTES, settings.LEADS_SYNC_INTERVAL_HOURS)
+        start_scheduler(settings.SYNC_INTERVAL_MINUTES)
         # auto-dialer: places the next call the moment a hangup callback frees an RM
         start_dialer()
     else:

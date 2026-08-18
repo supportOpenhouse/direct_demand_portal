@@ -54,6 +54,7 @@ const STAGE_LABEL: Record<string, string> = {
   follow_up: "Call Back Again",
   qualified: "Qualified",
   visit_scheduled: "Visit Scheduled",
+  revisit_scheduled: "Revisit Scheduled",
   won: "Won",
   rejected: "Rejected",
   rnr: "RNR",
@@ -64,6 +65,7 @@ const STAGE_CLASS: Record<string, string> = {
   follow_up: "planned",
   qualified: "nego",
   visit_scheduled: "visit",
+  revisit_scheduled: "visit",
   won: "won",
   rejected: "lost",
   rnr: "lost",
@@ -79,7 +81,10 @@ export const LEAD_SEGMENTS: { seg: string; route: string; label: string }[] = [
   { seg: "call_not_received", route: "/leads/call-not-received", label: "Call Not Received" },
   { seg: "followup", route: "/leads/followup", label: "Call Back Again" },
   { seg: "qualified", route: "/leads/qualified", label: "Qualified" },
-  { seg: "pipeline", route: "/leads/pipeline", label: "Pipeline" },
+  // "pipeline" segment = stage visit_scheduled, shown as "Visited"; a revisit booking
+  // advances the lead to the new "revisit" segment, shown as "Pipeline"
+  { seg: "pipeline", route: "/leads/pipeline", label: "Visited" },
+  { seg: "revisit", route: "/leads/revisit", label: "Pipeline" },
   { seg: "converted", route: "/leads/converted", label: "Converted" },
   // RNR leads keep stage='rnr' but live on the Rejected page, badged
   { seg: "rejected", route: "/leads/rejected", label: "Rejected" },

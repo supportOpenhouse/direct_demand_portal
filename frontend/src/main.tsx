@@ -65,6 +65,7 @@ const desktopRoutes = [
       { path: "leads/followup", element: <Followup /> },
       { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
       { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },
+      { path: "leads/revisit", element: <LeadsSegment segment="revisit" /> },
       { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
       // RNR leads live on the Rejected page now — keep old links working
       { path: "leads/rnr", element: <Navigate to="/leads/rejected" replace /> },

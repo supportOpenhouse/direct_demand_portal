@@ -28,7 +28,7 @@ router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 # (The previous model derived pages from confirmed/follow_up_at/qualified_at/crm_visits
 # and needed a catch-all clause to stop worked leads vanishing entirely.)
 STAGES = ("new", "call_not_received", "follow_up", "qualified",
-          "visit_scheduled", "won", "rejected", "rnr")
+          "visit_scheduled", "revisit_scheduled", "won", "rejected", "rnr")
 
 # stages a lead never moves back out of on its own
 _TERMINAL = "('won','rejected','rnr')"
@@ -40,7 +40,10 @@ SEGMENTS = {
     "call_not_received": "stage = 'call_not_received'",
     "followup": "stage = 'follow_up'",
     "qualified": "stage = 'qualified'",
+    # a visit is booked (Visited Leads tab). A second booking (a revisit) advances
+    # the lead to revisit_scheduled → the Pipeline Leads tab below.
     "pipeline": "stage = 'visit_scheduled'",
+    "revisit": "stage = 'revisit_scheduled'",
     "converted": "stage = 'won'",
     "rejected": "stage IN ('rejected','rnr')",
 }
@@ -333,7 +336,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                     "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
                     # forward-only: a lead already at visit_scheduled (or beyond) must not
                     # drop back to qualified when the qualify form is re-submitted
-                    f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN ('qualified','visit_scheduled') "
+                    f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN ('qualified','visit_scheduled','revisit_scheduled') "
                     "THEN stage ELSE 'qualified' END, "
                     "tat_deadline = NULL, follow_up_at = :t, "
                     "follow_up_since = COALESCE(follow_up_since, now()), "
@@ -347,7 +350,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                 text("UPDATE leads SET ever_connected = true, miss_count = 0, follow_up_at = :t, "
                      "follow_up_since = COALESCE(follow_up_since, now()), "
                      f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN "
-                     "('qualified','visit_scheduled') THEN stage ELSE 'follow_up' END "
+                     "('qualified','visit_scheduled','revisit_scheduled') THEN stage ELSE 'follow_up' END "
                      "WHERE id = :id"),
                 {"id": lead_id, "t": follow_up},
             )
@@ -453,7 +456,7 @@ _CALL_RESULT_NO = text(f"""
         stage = CASE WHEN cur.blocked THEN leads.stage
                      WHEN CAST(:reject AS boolean) THEN 'rejected'
                      WHEN NOT leads.ever_connected AND leads.miss_count + 1 >= 10 THEN 'rnr'
-                     WHEN leads.stage IN ('qualified','visit_scheduled','won') THEN leads.stage
+                     WHEN leads.stage IN ('qualified','visit_scheduled','revisit_scheduled','won') THEN leads.stage
                      WHEN NOT leads.ever_connected THEN 'call_not_received'
                      ELSE 'follow_up' END,
         follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
@@ -579,7 +582,7 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
                  # a qualified lead keeps its stage — the callback shows as a due badge
                  # on the Qualified page rather than demoting it
                  f"stage = CASE WHEN stage IN {_TERMINAL} OR stage IN "
-                 "('qualified','visit_scheduled') THEN stage ELSE 'follow_up' END "
+                 "('qualified','visit_scheduled','revisit_scheduled') THEN stage ELSE 'follow_up' END "
                  "WHERE id = :id"),
             {"t": follow_up, "id": lead_id})
         if res.rowcount == 0:

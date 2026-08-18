@@ -19,7 +19,7 @@ import { CallButton } from "../components/CallButton";
 import LeadPhone from "../components/LeadPhone";
 import { VisitPlanner } from "../features/VisitPlanner";
 
-const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
+const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "visited leads", revisit: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
 
 // minutes from a TAT deadline → the prototype's ok/warn/breach chip (null → —)
 function TatChip({ deadline }: { deadline: string | null }) {
@@ -58,9 +58,13 @@ function DueBadge({ at }: { at: string | null }) {
   );
 }
 
-export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "converted" | "rejected" }) {
+export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "revisit" | "converted" | "rejected" }) {
   const rejected = segment === "rejected";
-  const pipeline = segment === "pipeline";
+  // "pipeline" = Visited Leads (visit booked); "revisit" = Pipeline Leads (revisit booked).
+  // Both carry visits, so both get the ★ hot column + visit-status filter.
+  const hasVisits = segment === "pipeline" || segment === "revisit";
+  const showStage = !rejected && segment !== "qualified"; // Qualified drops the Stage column
+  const bookLabel = segment === "qualified" ? "Book Visit" : hasVisits ? "Book Revisit" : "Visits";
   const { data, isLoading } = useLeads(segment);
   const nav = useNavigate();
   const { query } = useSearch();
@@ -106,7 +110,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
           <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
-          {pipeline && (
+          {hasVisits &&(
             <>
               <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
               <button
@@ -136,7 +140,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               <th style={{ width: 30 }}>
                 <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
               </th>
-              {pipeline && <th style={{ width: 34 }} title="Hot">★</th>}
+              {hasVisits &&<th style={{ width: 34 }} title="Hot">★</th>}
               <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
               {rejected ? (
                 <>
@@ -146,7 +150,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                 </>
               ) : (
                 <>
-                  <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  {showStage && <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />}
                   <SortTh label="TAT" sortKey="tat" activeKey={sortKey} dir={dir} onSort={onSort} />
                   <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
@@ -158,9 +162,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={pipeline ? 9 : 8}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={5 + (hasVisits ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={pipeline ? 9 : 8}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={5 + (hasVisits ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -169,7 +173,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <td onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
                   </td>
-                  {pipeline && <td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
+                  {hasVisits &&<td onClick={(e) => e.stopPropagation()}><HotStar lead={l} /></td>}
                   <td>
                     <div className="who">
                       <CallButton leadId={l.id} disabled={!l.phone} />
@@ -198,9 +202,11 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     </>
                   ) : (
                     <>
-                      <td>{l.visit_status
-                        ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} />
-                        : <span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span>}</td>
+                      {showStage && (
+                        <td>{l.visit_status
+                          ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} />
+                          : <span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span>}</td>
+                      )}
                       <td><TatChip deadline={l.tat_deadline} /></td>
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     </>
@@ -211,7 +217,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     {!rejected && (
                       <button className="btn ghost sm" title="Plan site visits"
                         onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
-                        📅 Visits
+                        📅 {bookLabel}
                       </button>
                     )}
                   </td>

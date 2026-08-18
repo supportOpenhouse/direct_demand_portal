@@ -119,8 +119,12 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/leads/qualified" className={navClass} title="Qualified Leads">
           <IconQualified /> <span className="nav-t">Qualified Leads</span> <Pct seg="qualified" />
         </NavLink>
-        <NavLink to="/leads/pipeline" className={navClass} title="Pipeline Leads">
-          <IconFunnel /> <span className="nav-t">Pipeline Leads</span> <Pct seg="pipeline" />
+        <NavLink to="/leads/pipeline" className={navClass} title="Visited Leads">
+          <IconFunnel /> <span className="nav-t">Visited Leads</span> <Pct seg="pipeline" />
+        </NavLink>
+        {/* a booked revisit advances a Visited lead here */}
+        <NavLink to="/leads/revisit" className={navClass} title="Pipeline Leads">
+          <IconFunnel /> <span className="nav-t">Pipeline Leads</span> <Pct seg="revisit" />
         </NavLink>
         <NavLink to="/leads/converted" className={navClass} title="Converted Leads">
           <IconCheckCircle /> <span className="nav-t">Converted Leads</span> <Pct seg="converted" />

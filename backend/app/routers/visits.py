@@ -137,12 +137,15 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     await conn.execute(
                         pg_insert(CrmVisit).values(rows).on_conflict_do_nothing(index_elements=["visit_id"])
                     )
-                    # a real booking is the ONLY thing that means "Visit Scheduled"
-                    # (this is also what moves the lead into Pipeline)
+                    # A real booking is the ONLY thing that schedules a visit. The first
+                    # booking → visit_scheduled (Visited Leads). Booking again on a lead
+                    # that's already visited = a revisit → revisit_scheduled (Pipeline
+                    # Leads). Forward-only: terminal / already-in-pipeline leads are kept.
                     await conn.execute(text(
-                        "UPDATE leads SET stage = CASE WHEN stage IN "
-                        "('won','rejected','rnr') "
-                        "THEN stage ELSE 'visit_scheduled' END WHERE id = :id"), {"id": req.lead_id})
+                        "UPDATE leads SET stage = CASE "
+                        "WHEN stage IN ('won','rejected','rnr','revisit_scheduled') THEN stage "
+                        "WHEN stage = 'visit_scheduled' THEN 'revisit_scheduled' "
+                        "ELSE 'visit_scheduled' END WHERE id = :id"), {"id": req.lead_id})
             except Exception:  # noqa: BLE001
                 log.exception("failed to persist booked visits (booking itself succeeded)")
 

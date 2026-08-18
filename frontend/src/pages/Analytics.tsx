@@ -5,10 +5,11 @@
 
    Definitions are labelled inline so every number is unambiguous. `new Date()` is
    fine here (browser runtime). Test leads (is_test) are excluded throughout. */
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { useAllLeads } from "../lib/queries";
+import { useAuth } from "../components/AuthContext";
 import { useSort, SortTh } from "../lib/useSort";
 import { srcLabel } from "../lib/leads";
 import { Lead, api } from "../lib/api";
@@ -104,8 +105,69 @@ function cleanCity(c: string | null | undefined): string | null {
   return v && !CITY_PLACEHOLDERS.has(v.toLowerCase()) ? v : null;
 }
 
+type SummaryState = { status: "loading" | "done" | "error"; text?: string; error?: string; cached?: boolean };
+type MineBundle = { rm: string; total: number; stages: Record<string, number>; extras: Record<string, number> };
+
+// The RM's own dashboard: personal funnel tiles + stage chips + AI coaching summary.
+// (Admins see the full multi-RM table instead.)
+function MyPerformance({ mine, rangeLabel, sm, onRetry }: {
+  mine: MineBundle | null; rangeLabel: string; sm?: SummaryState; onRetry: () => void;
+}) {
+  if (!mine || mine.total === 0) {
+    return <div className="empty" style={{ padding: 24 }}>No leads assigned to you in this range.</div>;
+  }
+  const ex = mine.extras;
+  const tiles = [
+    { label: "Total leads", value: mine.total, sub: `${ex.active_days || 0} active days · ${ex.leads_per_active_day || 0}/day` },
+    { label: "Reached qualification", value: ex.qualified_reached, sub: `${pct(ex.qualified_reached, mine.total)}% of your leads` },
+    { label: "Call connect rate", value: `${pct(ex.ever_connected, mine.total)}%`, sub: `${ex.ever_connected} of ${mine.total} connected` },
+    { label: "Converted", value: mine.stages.converted || 0, sub: `${pct(mine.stages.converted || 0, mine.total)}% of your leads` },
+    { label: "Overdue callbacks", value: ex.followups_overdue, sub: "due before today" },
+    { label: "Hot leads", value: ex.hot, sub: "starred" },
+  ];
+  return (
+    <div className="panel-pad" style={{ paddingTop: 12 }}>
+      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
+        {tiles.map((t) => (
+          <div key={t.label} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
+            <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>{t.label}</div>
+            <div style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 24, fontWeight: 700, lineHeight: 1.1, margin: "2px 0" }}>{t.value}</div>
+            <div style={{ fontSize: 11, color: "var(--muted)" }}>{t.sub}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 14 }}>
+        {STAGE_COLS.map((c) => (
+          <span key={c.seg} style={{ fontSize: 12, border: "1px solid var(--line)", borderRadius: 20, padding: "4px 10px" }}>
+            {c.label}: <b>{mine.stages[c.seg] || 0}</b>{" "}
+            <span style={{ color: "var(--muted)" }}>({pct(mine.stages[c.seg] || 0, mine.total)}%)</span>
+          </span>
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, background: "var(--bg-soft, #f8fafc)", borderRadius: 12, padding: "14px 18px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span style={{ fontWeight: 700, fontSize: 12.5 }}>✨ Your AI coaching summary</span>
+          <span style={{ color: "var(--muted)", fontSize: 11 }}>· {rangeLabel}</span>
+        </div>
+        {(!sm || sm.status === "loading") && <div style={{ color: "var(--muted)", fontSize: 12.5 }}>Generating summary…</div>}
+        {sm?.status === "error" && (
+          <div style={{ fontSize: 12.5 }}>
+            <span style={{ color: "var(--coral, #dc2626)" }}>Couldn't generate: {sm.error}</span>{" "}
+            <button className="btn ghost sm" style={{ marginLeft: 6 }} onClick={onRetry}>Retry</button>
+          </div>
+        )}
+        {sm?.status === "done" && <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>{sm.text}</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function Analytics() {
   const { leads, isLoading } = useAllLeads(true);
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
   const nav = useNavigate();
   const [trendDays, setTrendDays] = useState<number | "all">(30);
   const [repPreset, setRepPreset] = useState("month");
@@ -254,24 +316,61 @@ export default function Analytics() {
     if (repPreset === "custom") return repFrom || repTo ? `${repFrom || "start"} → ${repTo || "today"}` : "Custom (all dates)";
     return REP_RANGES.find((r) => r.v === repPreset)?.label ?? repPreset;
   };
-  // fetch (or refetch) a row's Claude summary; cached per rm+range on the client
-  const fetchSummary = (r: Rep) => {
-    const ck = sumKey(r.rm);
+  // fetch (or refetch) a Claude summary for one RM; cached per rm+range on the client
+  const fetchSummary = (rm: string, total: number, stages: Record<string, number>, extras: Record<string, number>) => {
+    const ck = sumKey(rm);
     setSummaries((s) => ({ ...s, [ck]: { status: "loading" } }));
+    api.rmSummary({ rm, range_label: rangeLabel(), total, stages, extras })
+      .then((res) => setSummaries((s) => ({ ...s, [ck]: { status: "done", text: res.summary, cached: res.cached } })))
+      .catch((e) => setSummaries((s) => ({ ...s, [ck]: { status: "error", error: e.message } })));
+  };
+  // build the {stages, extras} payload for a table row
+  const repPayload = (r: Rep) => {
     const stages: Record<string, number> = {};
     STAGE_COLS.forEach((c) => (stages[c.seg] = r[c.seg] as number));
     const extras = { ...(repExtras.get(r.rm) as unknown as Record<string, number>) };
-    api.rmSummary({ rm: r.rm, range_label: rangeLabel(), total: r.total as number, stages, extras })
-      .then((res) => setSummaries((s) => ({ ...s, [ck]: { status: "done", text: res.summary, cached: res.cached } })))
-      .catch((e) => setSummaries((s) => ({ ...s, [ck]: { status: "error", error: e.message } })));
+    return { stages, extras };
   };
   // expand a row and lazily fetch its summary the first time it's opened for this range
   const toggleRM = (r: Rep) => {
     if (expanded === r.rm) { setExpanded(null); return; }
     setExpanded(r.rm);
     const st = summaries[sumKey(r.rm)]?.status;
-    if (st !== "done" && st !== "loading") fetchSummary(r);
+    if (st !== "done" && st !== "loading") { const { stages, extras } = repPayload(r); fetchSummary(r.rm, r.total as number, stages, extras); }
   };
+
+  // RM view: fold this RM's (already server-scoped) rows into one "me" bundle. Alias
+  // variants of the same person collapse together since it's all her own data anyway.
+  const mine = useMemo(() => {
+    if (isAdmin || repRows.length === 0) return null;
+    const stages: Record<string, number> = {};
+    STAGE_COLS.forEach((c) => (stages[c.seg] = 0));
+    const extras: Record<string, number> = { qualified_reached: 0, ever_connected: 0, miss_total: 0, hot: 0, followups_overdue: 0, active_days: 0, leads_per_active_day: 0 };
+    let total = 0;
+    repRows.forEach((r) => {
+      total += r.total as number;
+      STAGE_COLS.forEach((c) => (stages[c.seg] += r[c.seg] as number));
+      const x = repExtras.get(r.rm);
+      if (x) {
+        extras.qualified_reached += x.qualified_reached;
+        extras.ever_connected += x.ever_connected;
+        extras.miss_total += x.miss_total;
+        extras.hot += x.hot;
+        extras.followups_overdue += x.followups_overdue;
+        extras.active_days = Math.max(extras.active_days, x.active_days);
+      }
+    });
+    extras.leads_per_active_day = extras.active_days ? Math.round((total / extras.active_days) * 10) / 10 : 0;
+    return { rm: user?.name || repRows[0].rm, total, stages, extras };
+  }, [isAdmin, repRows, repExtras, user]);
+
+  // auto-generate the RM's own coaching summary on load and whenever the range changes
+  useEffect(() => {
+    if (!mine || mine.total === 0) return;
+    const st = summaries[sumKey(mine.rm)]?.status;
+    if (st !== "done" && st !== "loading") fetchSummary(mine.rm, mine.total, mine.stages, mine.extras);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mine, repPreset, repFrom, repTo]);
 
   // Inflow by received_at over the selected window (own memo so switching the range
   // doesn't recompute everything). "All" spans from the earliest lead to today.
@@ -307,11 +406,11 @@ export default function Analytics() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* RM performance — per-owner stage breakdown over a date range */}
+      {/* RM performance (admin) / My performance (RM) — stage breakdown over a date range */}
       <div style={card}>
         <div className="panel-pad" style={{ paddingBottom: 0 }}>
           <div className="panel-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-            <span>👥 RM performance</span>
+            <span>{isAdmin ? "👥 RM performance" : "📊 My performance"}</span>
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               {REP_RANGES.map((r) => (
                 <button key={r.v} className={"btn sm " + (repPreset === r.v ? "" : "ghost")}
@@ -327,9 +426,14 @@ export default function Analytics() {
               )}
             </div>
           </div>
-          <p className="note" style={{ margin: "4px 0 0", fontSize: 11.5 }}>✨ Click any RM row to generate an AI performance summary.</p>
+          <p className="note" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
+            {isAdmin ? "✨ Click any RM row to generate an AI performance summary." : "Your funnel over the selected range, with an AI coaching summary."}
+          </p>
         </div>
-        {repList.length === 0 ? (
+        {!isAdmin ? (
+          <MyPerformance mine={mine} rangeLabel={rangeLabel()} sm={mine ? summaries[sumKey(mine.rm)] : undefined}
+            onRetry={() => mine && fetchSummary(mine.rm, mine.total, mine.stages, mine.extras)} />
+        ) : repList.length === 0 ? (
           <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>
         ) : (
           <div className="table-wrap">
@@ -378,7 +482,7 @@ export default function Analytics() {
                             <div style={{ fontSize: 12.5 }}>
                               <span style={{ color: "var(--coral, #dc2626)" }}>Couldn't generate: {sm.error}</span>{" "}
                               <button className="btn ghost sm" style={{ marginLeft: 6 }}
-                                onClick={(e) => { e.stopPropagation(); fetchSummary(r); }}>
+                                onClick={(e) => { e.stopPropagation(); const { stages, extras } = repPayload(r); fetchSummary(r.rm, r.total as number, stages, extras); }}>
                                 Retry
                               </button>
                             </div>

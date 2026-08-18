@@ -206,6 +206,7 @@ export default function Analytics() {
 
   const { sorted: repList, sortKey, dir, onSort } = useSort<Rep>(repRows, {
     name: (r) => r.rm,
+    total: (r) => r.total as number,
     new: (r) => r.new as number,
     call_not_received: (r) => r.call_not_received as number,
     followup: (r) => r.followup as number,
@@ -262,17 +263,61 @@ export default function Analytics() {
         </div>
       </div>
 
-      {/* KPI row */}
-      {/* auto-fit rather than a fixed 6 — the row gains a tile and shouldn't cram */}
-      <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(155px, 1fr))", gap: 14 }}>
-        <Tile label="New Leads" value={m.nNew.toLocaleString("en-IN")} sub="awaiting first call" accent="var(--blue)" onClick={() => nav("/leads/new")} />
-        {/* each tile counts only the page it opens, so the number always matches */}
-        <Tile label="Call Not Received" value={m.nCnr.toLocaleString("en-IN")} sub={`${m.cnrDue.today} due today · ${m.cnrDue.overdue} overdue`} accent="var(--gold)" onClick={() => nav("/leads/call-not-received")} />
-        <Tile label="Follow-ups Today" value={m.fuDue.today} sub={`${m.fuDue.overdue} overdue`} accent="var(--amber)" onClick={() => nav("/leads/followup")} />
-        <Tile label="TAT Breached" value={m.tatBreached} sub={`of ${m.tatTotal} new · SLA`} accent="var(--coral)" onClick={() => nav("/leads/new")} />
-        <Tile label="Qualified+" value={m.qualifiedPlus.toLocaleString("en-IN")} sub={`${pct(m.qualifiedPlus, m.total)}% of leads`} accent="var(--cyan)" onClick={() => nav("/leads/qualified")} />
-        <Tile label="Converted" value={m.nConverted.toLocaleString("en-IN")} sub={`${convRate}% lead→token`} accent="var(--emerald)" onClick={() => nav("/leads/converted")} />
-        <Tile label="Unassigned" value={m.unassigned} sub="need an owner" accent="var(--gold)" onClick={() => nav("/leads/new")} />
+      {/* RM performance — per-owner stage breakdown over a date range */}
+      <div style={card}>
+        <div className="panel-pad" style={{ paddingBottom: 0 }}>
+          <div className="panel-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <span>👥 RM performance</span>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              {REP_RANGES.map((r) => (
+                <button key={r.v} className={"btn sm " + (repPreset === r.v ? "" : "ghost")}
+                  style={repPreset === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                  onClick={() => setRepPreset(r.v)}>{r.label}</button>
+              ))}
+              {repPreset === "custom" && (
+                <>
+                  <input type="date" value={repFrom} onChange={(e) => setRepFrom(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="From" />
+                  <span style={{ color: "var(--muted)" }}>–</span>
+                  <input type="date" value={repTo} onChange={(e) => setRepTo(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="To" />
+                </>
+              )}
+            </div>
+          </div>
+          <p className="note" style={{ margin: "0 0 4px" }}>Each cell is the RM's leads in that stage · % of their total for the range.</p>
+        </div>
+        {repList.length === 0 ? (
+          <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>
+        ) : (
+          <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <SortTh label="Assigned To" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
+                <SortTh label="Total" sortKey="total" activeKey={sortKey} dir={dir} onSort={onSort} align="right" style={{ width: 92, whiteSpace: "normal", verticalAlign: "bottom" }} />
+                {STAGE_COLS.map((c) => (
+                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="right" style={{ width: 92, whiteSpace: "normal", verticalAlign: "bottom" }} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {repList.map((r) => (
+                <tr key={r.rm}>
+                  <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.rm}</td>
+                  <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", fontWeight: 700, whiteSpace: "nowrap" }}>{r.total as number}</td>
+                  {STAGE_COLS.map((c) => {
+                    const n = r[c.seg] as number;
+                    return (
+                      <td key={c.seg} style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
+                        {n}{" "}<span style={{ color: "var(--muted)" }}>({pct(n, r.total as number)}%)</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        )}
       </div>
 
       {/* inflow trend */}
@@ -362,61 +407,6 @@ export default function Analytics() {
             </>
           )}
         </div>
-      </div>
-
-      {/* RM performance — per-owner stage breakdown over a date range */}
-      <div style={card}>
-        <div className="panel-pad" style={{ paddingBottom: 0 }}>
-          <div className="panel-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-            <span>👥 RM performance</span>
-            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
-              {REP_RANGES.map((r) => (
-                <button key={r.v} className={"btn sm " + (repPreset === r.v ? "" : "ghost")}
-                  style={repPreset === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
-                  onClick={() => setRepPreset(r.v)}>{r.label}</button>
-              ))}
-              {repPreset === "custom" && (
-                <>
-                  <input type="date" value={repFrom} onChange={(e) => setRepFrom(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="From" />
-                  <span style={{ color: "var(--muted)" }}>–</span>
-                  <input type="date" value={repTo} onChange={(e) => setRepTo(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="To" />
-                </>
-              )}
-            </div>
-          </div>
-          <p className="note" style={{ margin: "0 0 4px" }}>Each cell is the RM's leads in that stage · % of their total for the range.</p>
-        </div>
-        {repList.length === 0 ? (
-          <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>
-        ) : (
-          <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <SortTh label="Assigned To" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
-                {STAGE_COLS.map((c) => (
-                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="right" />
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {repList.map((r) => (
-                <tr key={r.rm}>
-                  <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.rm}</td>
-                  {STAGE_COLS.map((c) => {
-                    const n = r[c.seg] as number;
-                    return (
-                      <td key={c.seg} style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
-                        {n}{" "}<span style={{ color: "var(--muted)" }}>({pct(n, r.total as number)}%)</span>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -69,7 +69,7 @@ export default function NewLeads() {
       (!source || l.source === source) &&
       matchesOption(l.city, city) &&
       (!plan || l.plan_to_buy === plan) &&
-      (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      matchesOption(l.assigned_to, owner) &&
       inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
       leadMatchesQuery(query, l)
   );
@@ -115,7 +115,7 @@ export default function NewLeads() {
           {showPlan && (
             <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
           )}
-          <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           <DateFilter preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || plan || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setPlan(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>

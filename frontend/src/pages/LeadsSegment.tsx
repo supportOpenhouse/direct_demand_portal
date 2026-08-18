@@ -72,7 +72,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     (l) =>
       (!source || l.source === source) &&
       matchesOption(l.city, city) &&
-      (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      matchesOption(l.assigned_to, owner) &&
       (!hotOnly || l.is_hot) &&
       (!visitStatus || l.visit_status === visitStatus) &&
       leadMatchesQuery(query, l)
@@ -98,10 +98,11 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           {NOUN[segment]}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
-            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
+          <FilterSelect label="Source" value={source}
+            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
+            onChange={setSource} width={130} />
           <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
-          <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           {hasVisits && (
             <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />
           )}

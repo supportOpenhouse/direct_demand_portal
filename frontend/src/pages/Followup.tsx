@@ -56,7 +56,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     (l) =>
       (!source || l.source === source) &&
       matchesOption(l.city, city) &&
-      (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
+      matchesOption(l.assigned_to, owner) &&
       inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
       leadMatchesQuery(query, l)
   );
@@ -107,10 +107,11 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
           </div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
-            onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
+          <FilterSelect label="Source" value={source}
+            options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
+            onChange={setSource} width={130} />
           <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
-          <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
+          <FilterSelect label="Owner" value={owner} options={countedOptions(all, (l) => l.assigned_to, "Unassigned")} onChange={setOwner} width={160} />
           <DateFilter label="Due" preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || owner || datePreset) && (
             <button className="btn ghost sm" onClick={() => { setSource(""); setCity(""); setOwner(""); setDatePreset(""); setDateFrom(""); setDateTo(""); }}>Clear</button>

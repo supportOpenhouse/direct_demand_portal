@@ -7,7 +7,7 @@ import { srcLabel, planClass, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
 import { useAuth } from "../components/AuthContext";
 import { useToast } from "../components/Toast";
-import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
+import { FilterSelect, uniqueValues, countedOptions, matchesOption, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { NotesCell } from "../components/NotesCell";
 import { CallConnected } from "../components/CallConnected";
 import { CallButton } from "../components/CallButton";
@@ -67,7 +67,7 @@ export default function NewLeads() {
   const filtered = all.filter(
     (l) =>
       (!source || l.source === source) &&
-      (!city || l.city === city) &&
+      matchesOption(l.city, city) &&
       (!plan || l.plan_to_buy === plan) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
@@ -111,7 +111,7 @@ export default function NewLeads() {
           <FilterSelect label="Source" value={source}
             options={uniqueValues(all, (l) => l.source).map((s) => ({ value: s, label: srcLabel(s) }))}
             onChange={onSource} width={130} />
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
+          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
           {showPlan && (
             <FilterSelect label="Plan" value={plan} options={uniqueValues(all, (l) => l.plan_to_buy)} onChange={setPlan} width={130} />
           )}

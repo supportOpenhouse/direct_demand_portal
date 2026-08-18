@@ -12,7 +12,7 @@ import { useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
-import { FilterSelect, uniqueValues, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
+import { FilterSelect, uniqueValues, countedOptions, matchesOption, DateFilter, inDatePreset, type DatePreset } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -55,7 +55,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   const filtered = all.filter(
     (l) =>
       (!source || l.source === source) &&
-      (!city || l.city === city) &&
+      matchesOption(l.city, city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
       leadMatchesQuery(query, l)
@@ -109,7 +109,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
+          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
           <DateFilter label="Due" preset={datePreset} from={dateFrom} to={dateTo} onPreset={setDatePreset} onFrom={setDateFrom} onTo={setDateTo} />
           {(source || city || owner || datePreset) && (

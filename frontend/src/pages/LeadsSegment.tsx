@@ -7,7 +7,7 @@ import { useLeads, formatDate, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { srcClass, srcLabel, stageClass, stageLabel, leadMatchesQuery } from "../lib/leads";
 import { useSearch } from "../components/SearchContext";
-import { FilterSelect, uniqueValues } from "../components/Filters";
+import { FilterSelect, uniqueValues, countedOptions, matchesOption } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
 import { useRowSelection } from "../lib/useRowSelection";
@@ -71,7 +71,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const filtered = all.filter(
     (l) =>
       (!source || l.source === source) &&
-      (!city || l.city === city) &&
+      matchesOption(l.city, city) &&
       (!owner || (owner === "Unassigned" ? !l.assigned_to : l.assigned_to === owner)) &&
       (!hotOnly || l.is_hot) &&
       (!visitStatus || l.visit_status === visitStatus) &&
@@ -100,7 +100,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <FilterSelect label="Source" value={source} options={uniqueValues(all, (l) => l.source).map(srcLabel)}
             onChange={(v) => setSource(uniqueValues(all, (l) => l.source).find((s) => srcLabel(s) === v) || "")} width={130} />
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (l) => l.city)} onChange={setCity} width={120} />
+          <FilterSelect label="City" value={city} options={countedOptions(all, (l) => l.city, "No City")} onChange={setCity} width={150} />
           <FilterSelect label="Owner" value={owner} options={["Unassigned", ...uniqueValues(all, (l) => l.assigned_to)]} onChange={setOwner} width={140} />
           {hasVisits && (
             <FilterSelect label="Visit" value={visitStatus} options={["upcoming", "completed", "cancelled"]} onChange={setVisitStatus} width={130} />

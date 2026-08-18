@@ -36,12 +36,12 @@ const STAGE_COLS: { seg: string; label: string }[] = [
   { seg: "rejected", label: "Rejected Leads" },
 ];
 const REP_RANGES: { v: string; label: string }[] = [
+  { v: "all", label: "All" },
   { v: "today", label: "Today" },
   { v: "yesterday", label: "Yesterday" },
   { v: "7d", label: "Last 7 days" },
   { v: "15d", label: "Last 15 days" },
   { v: "month", label: "This Month" },
-  { v: "all", label: "All" },
   { v: "custom", label: "Custom" },
 ];
 
@@ -114,17 +114,15 @@ function cleanCity(c: string | null | undefined): string | null {
 export default function Analytics() {
   const { leads, isLoading } = useAllLeads(true);
   const nav = useNavigate();
-  const [city, setCity] = useState("");
   const [trendDays, setTrendDays] = useState<number | "all">(30);
   const [repPreset, setRepPreset] = useState("month");
   const [repFrom, setRepFrom] = useState("");
   const [repTo, setRepTo] = useState("");
 
   const rows: Row[] = useMemo(
-    () => leads.filter((r) => !r.lead.is_test && (!city || r.lead.city === city)).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
-    [leads, city],
+    () => leads.filter((r) => !r.lead.is_test).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
+    [leads],
   );
-  const cityOptions = useMemo(() => uniqueValues(leads.map((r) => r.lead), (l) => l.city), [leads]);
 
   const m = useMemo(() => {
     const now = Date.now();
@@ -266,17 +264,6 @@ export default function Analytics() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* filter bar */}
-      <div className="section-head" style={{ marginBottom: 0 }}>
-        <div className="note">
-          Computed live across all lead stages{city ? ` · ${city}` : ""} · {m.total.toLocaleString("en-IN")} leads
-        </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <FilterSelect label="City" value={city} options={cityOptions} onChange={setCity} width={150} />
-          {city && <button className="btn ghost sm" onClick={() => setCity("")}>Clear</button>}
-        </div>
-      </div>
-
       {/* RM performance — per-owner stage breakdown over a date range */}
       <div style={card}>
         <div className="panel-pad" style={{ paddingBottom: 0 }}>
@@ -297,7 +284,6 @@ export default function Analytics() {
               )}
             </div>
           </div>
-          <p className="note" style={{ margin: "0 0 4px" }}>Each cell is the RM's leads in that stage · % of their total for the range.</p>
         </div>
         {repList.length === 0 ? (
           <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>

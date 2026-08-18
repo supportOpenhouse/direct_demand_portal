@@ -21,15 +21,6 @@ import { VisitPlanner } from "../features/VisitPlanner";
 
 const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "visited leads", revisit: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
 
-// minutes from a TAT deadline → the prototype's ok/warn/breach chip (null → —)
-function TatChip({ deadline }: { deadline: string | null }) {
-  if (!deadline) return <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span>;
-  const mins = Math.round((new Date(deadline).getTime() - Date.now()) / 60000);
-  if (mins < 0) return <span className="tat breach">⚠ {Math.abs(mins)}m over</span>;
-  if (mins < 30) return <span className="tat warn">{mins}m left</span>;
-  return <span className="tat ok">{mins}m left</span>;
-}
-
 // ★ toggle — marks a lead hot (Pipeline filter uses it)
 function HotStar({ lead }: { lead: Lead }) {
   const mark = useMarkHot();
@@ -89,11 +80,11 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     stage: (l) => stageLabel(l.stage),
-    tat: (l) => (l.tat_deadline ? Date.parse(l.tat_deadline) : null),
     society: (l) => l.society,
     assigned: (l) => l.assigned_to,
     reason: (l) => l.reject_reason,
     rejected: (l) => (l.rejected_at ? Date.parse(l.rejected_at) : null),
+    created: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
     visit: (l) => l.visit_status,
   });
@@ -147,12 +138,12 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                 <>
                   <SortTh label="Reason" sortKey="reason" activeKey={sortKey} dir={dir} onSort={onSort} />
                   <th>Reject note</th>
-                  <SortTh label="Rejected" sortKey="rejected" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <SortTh label="Created On" sortKey="created" activeKey={sortKey} dir={dir} onSort={onSort} />
+                  <SortTh label="Rejected On" sortKey="rejected" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
               ) : (
                 <>
                   {showStage && <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />}
-                  <SortTh label="TAT" sortKey="tat" activeKey={sortKey} dir={dir} onSort={onSort} />
                   <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
                 </>
               )}
@@ -163,9 +154,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
           </thead>
           <tbody>
             {isLoading ? (
-              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
+              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)}><div className="empty" style={{ padding: 30 }}>Loading…</div></td></tr>
             ) : list.length === 0 ? (
-              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 3 : showStage ? 3 : 2)}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={5 + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -199,6 +190,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                     <>
                       <td><span className="stage lost">{l.reject_reason || "—"}</span></td>
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)", maxWidth: 280, whiteSpace: "normal" }}>{l.reject_notes || "—"}</td>
+                      <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", color: "var(--muted)", whiteSpace: "nowrap" }}>{l.received_at ? formatDate(l.received_at) : "—"}</td>
                       <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", color: "var(--muted)", whiteSpace: "nowrap" }}>{l.rejected_at ? formatDate(l.rejected_at) : "—"}</td>
                     </>
                   ) : (
@@ -208,7 +200,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                           ? <VisitsCell leadId={l.id} status={l.visit_status} date={l.visit_date} count={l.visit_count} />
                           : <span className={`stage ${stageClass(l.stage)}`}>{stageLabel(l.stage)}</span>}</td>
                       )}
-                      <td><TatChip deadline={l.tat_deadline} /></td>
                       <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{l.society || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                     </>
                   )}

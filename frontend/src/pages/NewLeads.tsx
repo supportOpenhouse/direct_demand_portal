@@ -156,7 +156,7 @@ export default function NewLeads() {
               <SortTh label="Society (from source)" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Budget" sortKey="budget" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Plan to Buy" sortKey="plan" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Date" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Created On" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
             </tr>

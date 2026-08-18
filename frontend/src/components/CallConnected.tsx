@@ -115,7 +115,7 @@ export function MissReasonModal(
           <button className="btn ghost" onClick={onClose}>Cancel</button>
           <button className="btn" style={{ background: "var(--coral)", color: "#fff" }}
             onClick={submit} disabled={m.isPending}>
-            {m.isPending ? "Saving…" : "Log attempt"}
+            {m.isPending ? "Saving…" : "Submit"}
           </button>
         </div>
       </div>

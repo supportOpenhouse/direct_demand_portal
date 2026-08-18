@@ -269,7 +269,7 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
   animation:call-spin .7s linear infinite}
 @keyframes call-spin{to{transform:rotate(360deg)}}
 .who .nm{font-weight:600}
-.who .ph{font-size:11.5px;color:var(--muted);font-family:"Spline Sans Mono"}
+.who .ph{font-size:11.5px;color:var(--muted);font-family:"Spline Sans Mono";white-space:nowrap}
 
 /* source badges — kept on recognisable brand colours */
 .src{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px}

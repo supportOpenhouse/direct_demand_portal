@@ -81,6 +81,11 @@ class Settings(BaseSettings):
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
 
+    # --- Anthropic (Claude) — powers the on-demand RM performance summaries ---
+    # Set on Render to switch the feature on; empty = the endpoint answers 503.
+    ANTHROPIC_API_KEY: str = ""
+    RM_SUMMARY_MODEL: str = "claude-haiku-4-5-20251001"
+
     # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
     # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.
     CRM_BOOKING_API_BASE_URL: str = ""

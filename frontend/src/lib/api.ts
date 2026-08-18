@@ -400,8 +400,22 @@ export interface WaMessage {
   created_at: string;
 }
 
+export interface RMSummaryResp {
+  rm: string;
+  range_label: string;
+  summary: string;
+  model: string;
+  cached: boolean;
+  generated_at: string;
+}
+
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
+  rmSummary: (body: {
+    rm: string; range_label: string; total: number;
+    stages: Record<string, number>; extras: Record<string, number>;
+  }) =>
+    request<RMSummaryResp>("/v1/analytics/rm-summary", { method: "POST", body: JSON.stringify(body) }),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
   waMessages: (phone?: string) =>
     request<{

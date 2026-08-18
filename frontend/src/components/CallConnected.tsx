@@ -55,12 +55,10 @@ export function MissReasonModal(
   const toast = useToast();
   const [reason, setReason] = useState(MISS_REASONS[0].value);
   const [notes, setNotes] = useState("");
-  const [err, setErr] = useState(false);
   const hours = MISS_REASONS.find((r) => r.value === reason)?.hours ?? null;
   const preview = hours != null ? previewFollowup(hours) : null;
 
   const submit = () => {
-    if (!reason || !notes.trim()) { setErr(true); return; }
     m.mutate(
       { id: leadId, connected: false, reason, notes: notes.trim(), queueItemId },
       {
@@ -91,12 +89,11 @@ export function MissReasonModal(
               {MISS_REASONS.map((r) => <option key={r.value} value={r.value}>{r.value}</option>)}
             </select>
           </div>
-          <div className={"field" + (err && !notes.trim() ? " invalid" : "")} style={{ marginBottom: 0 }}>
-            <label>Notes <span className="req">*</span></label>
+          <div className="field" style={{ marginBottom: 0 }}>
+            <label>Notes <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— optional</span></label>
             <textarea rows={3} value={notes} autoFocus placeholder="What happened on this attempt?"
               onChange={(e) => setNotes(e.target.value)} />
           </div>
-          {err && !notes.trim() && <div className="mand-flag show">⚠ Notes are required.</div>}
 
           {/* what saving will actually do — the +3h/+6h landing time, already
               clamped to calling hours, or the terminal outcome */}

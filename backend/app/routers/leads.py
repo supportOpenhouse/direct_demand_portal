@@ -444,7 +444,7 @@ _CALL_RESULT_NO = text(f"""
         -- row, so the note is skipped and the UPDATE returns nothing (→ 404)
         -- rather than blowing up on the note's foreign key
         INSERT INTO lead_notes (id, lead_id, body, author, source, created_at)
-        SELECT :nid, :id, :note, :author, 'call', now() FROM cur WHERE NOT cur.blocked
+        SELECT :nid, :id, :note_body, :author, 'call', now() FROM cur WHERE NOT cur.blocked
     )
     UPDATE leads SET
         miss_count = CASE WHEN cur.blocked THEN leads.miss_count
@@ -497,8 +497,8 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
     if not payload.connected:
         if payload.reason not in MISS_REASONS:
             raise HTTPException(status_code=422, detail={"fields": ["reason"], "message": "pick a reason"})
-        if not note:
-            raise HTTPException(status_code=422, detail={"fields": ["notes"], "message": "notes are required"})
+    # the logged note always records the reason; any free-text notes are appended.
+    note_body = f"{payload.reason} — {note}" if note else (payload.reason or "")
     author = user.get("name") or user.get("email") or "You"
     email = user.get("email") or ""
 
@@ -538,7 +538,7 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         due = None if reject else _within_calling_hours(
             datetime.now(timezone.utc) + timedelta(hours=MISS_REASONS[payload.reason]))
         res = await conn.execute(_CALL_RESULT_NO, {
-            "nid": uuid4(), "id": lead_id, "note": note, "author": author,
+            "nid": uuid4(), "id": lead_id, "note": note, "note_body": note_body, "author": author,
             "reject": reject, "reason": payload.reason, "due": due,
             # a verified campaign row waives the spam window; a manual call never does
             "skip_cooldown": queue_item_id is not None,

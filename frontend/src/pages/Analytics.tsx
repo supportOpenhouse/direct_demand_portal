@@ -10,6 +10,7 @@ import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { useAllLeads } from "../lib/queries";
 import { FilterSelect, uniqueValues } from "../components/Filters";
+import { useSort, SortTh } from "../lib/useSort";
 import { srcLabel } from "../lib/leads";
 import { Lead } from "../lib/api";
 
@@ -22,6 +23,52 @@ const TREND_RANGES: { v: number | "all"; label: string }[] = [
 ];
 const card = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)" } as const;
 const HOT_PLAN = "Within 30 days";
+
+// RM performance: one column per lead stage/segment, in funnel order (matches the tabs)
+const STAGE_COLS: { seg: string; label: string }[] = [
+  { seg: "new", label: "New" },
+  { seg: "call_not_received", label: "Call Not Received" },
+  { seg: "followup", label: "Call Back Again" },
+  { seg: "qualified", label: "Qualified" },
+  { seg: "pipeline", label: "Visited" },
+  { seg: "revisit", label: "Pipeline" },
+  { seg: "converted", label: "Converted" },
+  { seg: "rejected", label: "Rejected" },
+];
+const REP_RANGES: { v: string; label: string }[] = [
+  { v: "today", label: "Today" },
+  { v: "yesterday", label: "Yesterday" },
+  { v: "7d", label: "Last 7 days" },
+  { v: "15d", label: "Last 15 days" },
+  { v: "month", label: "This Month" },
+  { v: "custom", label: "Custom" },
+];
+
+const startOfDay = (t: number) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+
+/** Is a lead's received_at inside the RM-table's selected range (day-granular, inclusive)? */
+function inRepRange(iso: string | null, preset: string, from: string, to: string): boolean {
+  if (!iso) return false;
+  const DAY = 86_400_000;
+  const day = startOfDay(new Date(iso).getTime());
+  const now = new Date();
+  const today = startOfDay(now.getTime());
+  switch (preset) {
+    case "today": return day === today;
+    case "yesterday": return day === today - DAY;
+    case "7d": return day >= today - 6 * DAY;
+    case "15d": return day >= today - 14 * DAY;
+    case "month": return new Date(iso).getMonth() === now.getMonth() && new Date(iso).getFullYear() === now.getFullYear();
+    case "custom": {
+      const lo = from ? startOfDay(new Date(from).getTime()) : null;
+      const hi = to ? startOfDay(new Date(to).getTime()) : null;
+      return (lo == null || day >= lo) && (hi == null || day <= hi);
+    }
+    default: return true;
+  }
+}
+
+type Rep = { rm: string; total: number; [seg: string]: number | string };
 
 type Row = { lead: Lead; seg: string };
 
@@ -57,6 +104,9 @@ export default function Analytics() {
   const nav = useNavigate();
   const [city, setCity] = useState("");
   const [trendDays, setTrendDays] = useState<number | "all">(30);
+  const [repPreset, setRepPreset] = useState("month");
+  const [repFrom, setRepFrom] = useState("");
+  const [repTo, setRepTo] = useState("");
 
   const rows: Row[] = useMemo(
     () => leads.filter((r) => !r.lead.is_test && (!city || r.lead.city === city)).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
@@ -131,28 +181,40 @@ export default function Analytics() {
     const bySource = groupConv((l) => l.source);
     const byCity = groupConv((l) => l.city);
 
-    // Per-RM leaderboard (unique leads)
-    const rmMap = new Map<string, { assigned: number; connected: number; qualified: number; converted: number }>();
-    uniq.forEach((r) => {
-      const rm = r.lead.assigned_to;
-      if (!rm) return;
-      const e = rmMap.get(rm) || { assigned: 0, connected: 0, qualified: 0, converted: 0 };
-      e.assigned += 1;
-      if (r.lead.ever_connected) e.connected += 1;
-      if (r.seg === "qualified" || r.seg === "pipeline" || r.seg === "converted") e.qualified += 1;
-      if (r.seg === "converted") e.converted += 1;
-      rmMap.set(rm, e);
-    });
-    const reps = [...rmMap.entries()].map(([rm, v]) => ({ rm, ...v })).sort((a, b) => b.converted - a.converted || b.assigned - a.assigned);
-
     return {
       total, nNew, nCnr, nFollowup, nQualified, nPipeline, nConverted, nRnr, nRejected, qualifiedPlus,
       tatBreached, tatWithin, tatTotal: newWithTat.length,
       fuOverdue, fuToday, withFu: fu.length, fuDue, cnrDue,
       attempted: attempted.length, connected, unassigned, immediate,
-      bySource, byCity, reps,
+      bySource, byCity,
     };
   }, [rows]);
+
+  // RM performance: per-owner counts by stage, over the selected date range (received_at)
+  const repRows = useMemo<Rep[]>(() => {
+    const map = new Map<string, Rep>();
+    rows.forEach((r) => {
+      const rm = r.lead.assigned_to;
+      if (!rm || !inRepRange(r.lead.received_at, repPreset, repFrom, repTo)) return;
+      let e = map.get(rm);
+      if (!e) { e = { rm, total: 0 }; STAGE_COLS.forEach((c) => (e![c.seg] = 0)); map.set(rm, e); }
+      e.total = (e.total as number) + 1;
+      if (typeof e[r.seg] === "number") e[r.seg] = (e[r.seg] as number) + 1;
+    });
+    return [...map.values()].sort((a, b) => (b.total as number) - (a.total as number));
+  }, [rows, repPreset, repFrom, repTo]);
+
+  const { sorted: repList, sortKey, dir, onSort } = useSort<Rep>(repRows, {
+    name: (r) => r.rm,
+    new: (r) => r.new as number,
+    call_not_received: (r) => r.call_not_received as number,
+    followup: (r) => r.followup as number,
+    qualified: (r) => r.qualified as number,
+    pipeline: (r) => r.pipeline as number,
+    revisit: (r) => r.revisit as number,
+    converted: (r) => r.converted as number,
+    rejected: (r) => r.rejected as number,
+  });
 
   // Inflow by received_at over the selected window (own memo so switching the range
   // doesn't recompute everything). "All" spans from the earliest lead to today.
@@ -302,45 +364,55 @@ export default function Analytics() {
         </div>
       </div>
 
-      {/* per-RM leaderboard */}
+      {/* RM performance — per-owner stage breakdown over a date range */}
       <div style={card}>
-        <div className="panel-pad" style={{ paddingBottom: 0 }}><div className="panel-title">👥 Rep performance</div></div>
-        {m.reps.length === 0 ? (
-          <div className="empty" style={{ padding: 24 }}>No assigned leads yet.</div>
+        <div className="panel-pad" style={{ paddingBottom: 0 }}>
+          <div className="panel-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <span>👥 RM performance</span>
+            <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
+              {REP_RANGES.map((r) => (
+                <button key={r.v} className={"btn sm " + (repPreset === r.v ? "" : "ghost")}
+                  style={repPreset === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                  onClick={() => setRepPreset(r.v)}>{r.label}</button>
+              ))}
+              {repPreset === "custom" && (
+                <>
+                  <input type="date" value={repFrom} onChange={(e) => setRepFrom(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="From" />
+                  <span style={{ color: "var(--muted)" }}>–</span>
+                  <input type="date" value={repTo} onChange={(e) => setRepTo(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="To" />
+                </>
+              )}
+            </div>
+          </div>
+          <p className="note" style={{ margin: "0 0 4px" }}>Each cell is the RM's leads in that stage · % of their total for the range.</p>
+        </div>
+        {repList.length === 0 ? (
+          <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>
         ) : (
           <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Owner</th>
-                <th style={{ textAlign: "right" }}>Assigned</th>
-                <th style={{ textAlign: "right" }}>Connect %</th>
-                <th style={{ textAlign: "right" }}>Qualified</th>
-                <th style={{ textAlign: "right" }}>Converted</th>
-                <th style={{ minWidth: 120 }}>Conversion</th>
+                <SortTh label="Assigned To" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
+                {STAGE_COLS.map((c) => (
+                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="right" />
+                ))}
               </tr>
             </thead>
             <tbody>
-              {m.reps.map((r) => {
-                const cv = pct(r.converted, r.assigned);
-                return (
-                  <tr key={r.rm}>
-                    <td style={{ fontWeight: 600 }}>{r.rm}</td>
-                    <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'" }}>{r.assigned}</td>
-                    <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", color: "var(--ink-2)" }}>{pct(r.connected, r.assigned)}%</td>
-                    <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", color: "var(--ink-2)" }}>{r.qualified}</td>
-                    <td style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", fontWeight: 700, color: "var(--emerald)" }}>{r.converted}</td>
-                    <td>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ flex: 1, height: 7, background: "var(--line)", borderRadius: 6, overflow: "hidden" }}>
-                          <div style={{ height: "100%", width: `${cv}%`, background: "var(--emerald)", borderRadius: 6 }} />
-                        </div>
-                        <span style={{ fontFamily: "'Spline Sans Mono'", fontSize: 11.5, color: "var(--muted)", width: 34, textAlign: "right" }}>{cv}%</span>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {repList.map((r) => (
+                <tr key={r.rm}>
+                  <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.rm}</td>
+                  {STAGE_COLS.map((c) => {
+                    const n = r[c.seg] as number;
+                    return (
+                      <td key={c.seg} style={{ textAlign: "right", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
+                        {n}{" "}<span style={{ color: "var(--muted)" }}>({pct(n, r.total as number)}%)</span>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
             </tbody>
           </table>
           </div>

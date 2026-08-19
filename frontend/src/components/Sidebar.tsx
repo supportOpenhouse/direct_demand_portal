@@ -163,12 +163,12 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/settings" className={navClass} title="Settings & Access">
           <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
         </NavLink>
-        {isAdmin && (
-          <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
-            <img src="/bonvoice_icon.png" alt="" className="nav-img" />
-            <span className="nav-t">Bonvoice Call Log</span>
-          </NavLink>
-        )}
+        {/* Not admin-gated any more: RMs get the same page scoped to their own
+            handset, so it's their record of who they spoke to. */}
+        <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
+          <img src="/bonvoice_icon.png" alt="" className="nav-img" />
+          <span className="nav-t">Bonvoice Call Log</span>
+        </NavLink>
         {/* Its sibling: same shape of page, different provider. Bonvoice logs the
             telephony leg, Huvo logs what was said on it. */}
         {isAdmin && (

@@ -28,7 +28,7 @@ from sqlalchemy import desc, func, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
-from ..core.auth import current_user, require_admin
+from ..core.auth import current_user, is_calling_rm, require_admin
 from ..db import neon_engine
 from ..events import publish, rm_channel
 from ..models import CallLog, Lead, User
@@ -787,6 +787,31 @@ def _lead_side_sql() -> str:
     )
 
 
+def own_calls_sql() -> str:
+    """Calls involving this user's own handset.
+
+    Matched on the number, not on `placed_by`: an inbound call has no actor — the lead
+    dialled us — and those are exactly the rows an RM most needs. All three columns are
+    checked because Bonvoice puts the handset in source on an outgoing row and in
+    destination on an incoming one, with display_number holding whichever side we
+    showed; testing one would hide half an RM's calls.
+    """
+    return (f"({_p10_sql('c.source_number')} = :me10"
+            f" OR {_p10_sql('c.destination_number')} = :me10"
+            f" OR {_p10_sql('c.display_number')} = :me10)")
+
+
+def incoming_only_sql() -> str:
+    """Calls the lead placed to us.
+
+    On direction, not on placed_by being NULL: a dropped callback also leaves
+    placed_by empty, and treating those as inbound would ring the bell for the RM's
+    own outgoing calls. Both spellings are accepted — the pulled records say
+    'incoming', some callbacks say 'inbound'.
+    """
+    return "lower(coalesce(c.direction, '')) LIKE 'in%'"
+
+
 def call_log_filters(q: str | None, answered: bool | None,
                      campaign_id: UUID | None = None,
                      placed_by: str | None = None,
@@ -844,7 +869,19 @@ def call_log_filters(q: str | None, answered: bool | None,
     return (" WHERE " + " AND ".join(where)) if where else "", params
 
 
-@router.get("/bonvoice/calls", dependencies=[Depends(require_admin)])
+async def _my_phone10(user: dict) -> str:
+    """This user's own handset, last 10 digits. "" when they have none on file."""
+    engine = neon_engine()
+    if engine is None:
+        return ""
+    async with engine.connect() as conn:
+        phone = (await conn.execute(
+            text("SELECT phone FROM users WHERE lower(email) = lower(:e)"),
+            {"e": user.get("email") or ""})).scalar()
+    return _digits(phone)
+
+
+@router.get("/bonvoice/calls")
 async def call_log(
     q: str | None = Query(None),          # matches any phone number or the lead's name
     answered: bool | None = Query(None),
@@ -853,6 +890,7 @@ async def call_log(
     duration: str | None = Query(None),      # a DURATION_BUCKETS label
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    user: dict = Depends(current_user),
 ):
     """Every call leg Bonvoice has reported, newest first — backs the Call Log page.
 
@@ -863,6 +901,17 @@ async def call_log(
     if engine is None:
         return {"items": [], "total": 0}
     clause, params = call_log_filters(q, answered, campaign_id, placed_by, duration)
+
+    # RMs see only calls involving their own handset; admins see everything. Scoped on
+    # the number rather than placed_by, because an inbound call has no actor at all —
+    # and fail-closed: an RM with no phone on file sees nothing, not everything.
+    if is_calling_rm(user.get("role")):
+        me10 = await _my_phone10(user)
+        if not me10:
+            return {"items": [], "total": 0}
+        clause += (" AND " if clause else " WHERE ") + own_calls_sql()
+        params["me10"] = me10
+
     async with engine.connect() as conn:
         total = (await conn.execute(
             text(f"SELECT count(*) {CALL_LOG_FROM}{clause}"), params)).scalar()
@@ -889,6 +938,55 @@ async def call_log(
          for k, v in dict(r).items()}
         for r in rows
     ], "total": total}
+
+
+@router.get("/bonvoice/calls/incoming")
+async def incoming_calls(
+    since: str | None = Query(None),   # ISO-8601; what this browser has already seen
+    user: dict = Depends(current_user),
+):
+    """Calls the lead placed TO this user — the phone bell in the top bar.
+
+    Incoming only, deliberately. An RM's own outgoing calls are not news to them; a
+    customer ringing back and being missed is.
+
+    `since` is the browser's acknowledgement mark, so "unseen" is per person rather
+    than a flag on the row: two RMs sharing nothing, and one clearing the bell can't
+    clear it for anyone else.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"unseen": 0, "last_incoming_at": None, "items": []}
+
+    me10 = await _my_phone10(user)
+    # Admins have no handset in this system, so there is nothing "to them" to report.
+    if not me10:
+        return {"unseen": 0, "last_incoming_at": None, "items": []}
+
+    where = f"WHERE {incoming_only_sql()} AND {own_calls_sql()}"
+    params: dict = {"me10": me10}
+    seen = _dt(since)
+    async with engine.connect() as conn:
+        latest = (await conn.execute(text(
+            f"SELECT max(COALESCE(c.start_at, c.created_at)) {CALL_LOG_FROM} {where}"),
+            params)).scalar()
+        unseen_clause = where
+        if seen is not None:
+            unseen_clause += " AND COALESCE(c.start_at, c.created_at) > :seen"
+            params["seen"] = seen
+        rows = (await conn.execute(text(f"""
+            SELECT c.call_id, c.lead_id, l.name AS lead_name, c.source_number,
+                   c.answered, COALESCE(c.start_at, c.created_at) AS at
+            {CALL_LOG_FROM} {unseen_clause}
+             ORDER BY at DESC LIMIT 20"""), params)).mappings().all()
+
+    return {
+        "unseen": len(rows),
+        "last_incoming_at": latest.isoformat() if latest else None,
+        "items": [{k: (v.isoformat() if isinstance(v, datetime)
+                       else str(v) if isinstance(v, UUID) else v)
+                   for k, v in dict(r).items()} for r in rows],
+    }
 
 
 @router.get("/bonvoice/calls/actors", dependencies=[Depends(require_admin)])

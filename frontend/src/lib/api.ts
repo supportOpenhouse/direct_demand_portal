@@ -564,6 +564,13 @@ export const api = {
     return request<CallLogResponse>(`/v1/bonvoice/calls?${qs.toString()}`);
   },
   /* Who has placed calls — server-side, since the page only holds 50 rows at a time. */
+  /* Incoming calls to this user's own handset. `since` is the browser's
+     acknowledgement mark, so unseen is per person rather than a flag on the row. */
+  incomingCalls: (since?: string | null) =>
+    request<{ unseen: number; last_incoming_at: string | null;
+              items: { call_id: string; lead_id: string | null; lead_name: string | null;
+                       source_number: string | null; answered: boolean; at: string }[] }>(
+      `/v1/bonvoice/calls/incoming${since ? `?since=${encodeURIComponent(since)}` : ""}`),
   callLogActors: () => request<{ items: string[] }>("/v1/bonvoice/calls/actors"),
   leadCalls: (id: string) => request<{ items: LeadCallRow[] }>(`/v1/leads/${id}/calls`),
   /* Backfill from Bonvoice's own records — the webhook only knows about calls placed

@@ -8,6 +8,17 @@ import { LEAD_SEGMENTS } from "./leads";
    another user's open tab picks up a policy change when they next focus it (react-
    query refetches stale queries on window focus) rather than only on a hard reload —
    without paying a request per navigation forever. */
+/* Polled: an inbound call arrives with no push channel to the browser, same as the
+   WhatsApp bell. 30s is fast enough to catch a missed call while it still matters. */
+export function useIncomingCalls(since: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["incoming-calls", since],
+    queryFn: () => api.incomingCalls(since),
+    enabled,
+    refetchInterval: 30_000,
+  });
+}
+
 export function useAppSettings() {
   return useQuery({
     queryKey: ["app-settings"],

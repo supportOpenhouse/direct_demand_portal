@@ -1,9 +1,11 @@
 /* 1:1 port of the prototype's .topbar. Reminders / Add New Lead are later-phase. */
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
 import { useAuth } from "./AuthContext";
-import { useMyCalls, useWaLatest } from "../lib/queries";
+import { useIncomingCalls, useMyCalls, useWaLatest } from "../lib/queries";
+import { markCallsSeen, readCallsSeenAt } from "../lib/calls";
 import { isCallingRm } from "../lib/roles";
 import { readWaSeenAt } from "../lib/whatsapp";
 import GlobalSearch from "./GlobalSearch";
@@ -73,6 +75,52 @@ function LiveCallsButton() {
   );
 }
 
+/* Handset receiving a call — an inbound ring, as distinct from IconLiveCall's
+   outbound-campaign handset. */
+const IconIncoming = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+       strokeLinecap="round" strokeLinejoin="round" width="16" height="16">
+    <path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91" />
+    {/* arrow coming IN to the handset */}
+    <path d="M22 2l-6 6" /><path d="M16 3v5h5" />
+  </svg>
+);
+
+/* Calls the lead placed to this RM.
+
+   Incoming only: an RM's own outgoing calls are not news to them, a customer ringing
+   back and being missed is. Acknowledgement is per browser (lib/calls.ts) rather than
+   a column on the row — two RMs can both be on a call, and one clearing their bell
+   must not clear the other's. */
+function IncomingCallsBell() {
+  const { enabled, user } = useAuth();
+  const isRm = enabled && isCallingRm(user?.role);
+  // Held in state so clicking clears the badge immediately rather than after the
+  // next poll — the acknowledgement should feel instant.
+  const [seenAt, setSeenAt] = useState<string | null>(() => readCallsSeenAt());
+  const { data } = useIncomingCalls(seenAt, isRm);
+
+  if (!isRm) return null;
+  const unseen = data?.unseen ?? 0;
+
+  const acknowledge = () => {
+    // Marked at the newest call we know of, not at "now": a call landing between the
+    // last poll and this click would otherwise be silently marked as seen.
+    const at = data?.last_incoming_at || new Date().toISOString();
+    markCallsSeen(at);
+    setSeenAt(at);
+  };
+
+  return (
+    <Link className={"btn ic-bell" + (unseen ? " ringing" : "")} to="/call-log"
+          onClick={acknowledge}
+          title={unseen ? `${unseen} incoming call${unseen === 1 ? "" : "s"}` : "Incoming calls"}>
+      <IconIncoming />
+      {unseen > 0 && <span className="ic-count">{unseen > 9 ? "9+" : unseen}</span>}
+    </Link>
+  );
+}
+
 export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
@@ -109,6 +157,7 @@ export default function Topbar() {
       <button className="btn green" onClick={() => toast("Lead capture arrives in a later phase", "blue", "＋")}>
         <IconPlusBold /> Add New Lead
       </button>
+      <IncomingCallsBell />
       <LiveCallsButton />
       {/* RMs see their assigned conversations; the API scopes what comes back */}
       <Link className="btn wa" to="/chat" style={{ position: "relative" }}>

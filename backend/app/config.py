@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     # --- Anthropic (Claude) — powers the on-demand RM performance summaries ---
     # Set on Render to switch the feature on; empty = the endpoint answers 503.
     ANTHROPIC_API_KEY: str = ""
-    RM_SUMMARY_MODEL: str = "claude-haiku-4-5-20251001"
+    RM_SUMMARY_MODEL: str = "claude-sonnet-5"
 
     # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
     # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.

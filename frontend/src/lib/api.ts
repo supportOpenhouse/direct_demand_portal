@@ -100,6 +100,29 @@ export interface SupplyResponse {
 
 /* Huvo call log — one row per completed call their bot made, with the analytics it
    produced. Distinct from the Bonvoice log, which records telephony legs. */
+/* Activity log — what changed, who changed it, from what to what.
+   Replaces the old audit_logs feed, which recorded HTTP requests. */
+export interface ActivityRow {
+  id: string;
+  created_at: string;
+  actor_email: string | null;
+  actor_name: string | null;
+  actor_role: string | null;
+  entity_type: string;          // lead | user | campaign | sync | ...
+  entity_id: string | null;
+  action: string;               // stage_change | assigned | note_added | ...
+  field: string | null;
+  before_value: string | null;
+  after_value: string | null;
+  metadata: Record<string, unknown>;
+  lead_name: string | null;     // joined for entity_type='lead'
+}
+
+export interface ActivityQuery {
+  q?: string; action?: string; entity_type?: string; actor?: string;
+  from?: string; to?: string; limit?: number; offset?: number;
+}
+
 export interface HuvoCall {
   id: string;
   // call_details.campaign_name, falling back to the CSV import's Campaign column
@@ -493,6 +516,34 @@ export const api = {
   // its own fetch rather than the row being expanded from what the table already has.
   leadHuvoCalls: (leadId: string) =>
     request<{ items: HuvoCallDetail[] }>(`/v1/leads/${leadId}/huvo-calls`),
+  activity: (p: ActivityQuery) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    return request<{ items: ActivityRow[]; total: number }>(`/v1/activity?${qs.toString()}`);
+  },
+  activityFilters: () =>
+    request<{ actions: string[]; entity_types: string[]; actors: string[] }>("/v1/activity/filters"),
+  // One entity's own history — the lead-detail timeline. Not admin-gated.
+  entityActivity: (type: string, id: string) =>
+    request<{ items: ActivityRow[] }>(`/v1/activity/entity/${type}/${encodeURIComponent(id)}`),
+  /* Fetched with the Bearer header and saved as a blob, rather than a plain <a href>.
+     A link can't carry an Authorization header, and the usual workaround — ?token= —
+     would put the JWT into access logs and Referer headers for a mere CSV. */
+  activityExport: async (p: ActivityQuery) => {
+    const qs = new URLSearchParams();
+    Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    const token = getToken();
+    const res = await fetch(`${API_URL}/v1/activity/export?${qs.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `activity-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   huvoCall: (id: string) => request<HuvoCallDetail>(`/v1/huvo/calls/${id}`),
   huvoCallFilters: () =>
     request<{ outcomes: string[]; interest: string[]; campaigns: string[] }>("/v1/huvo/calls/outcomes"),

@@ -122,6 +122,41 @@ class HuvoCallUpdate(Base):
     )
 
 
+class ActivityLog(Base):
+    """Append-only record of what changed, written in the same transaction as the
+    change — see services/activity.py.
+
+    Supersedes AuditLog, which recorded HTTP requests (method/path/status) rather than
+    business events. That table is left in place; nothing writes the request log as the
+    primary trail any more.
+    """
+
+    __tablename__ = "activity_log"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # denormalised on purpose: a user can be renamed, demoted or deleted, and the log
+    # must keep saying who did it at the time
+    actor_email: Mapped[str | None] = mapped_column(Text, index=True)
+    actor_name: Mapped[str | None] = mapped_column(Text)
+    actor_role: Mapped[str | None] = mapped_column(Text)
+    entity_type: Mapped[str] = mapped_column(Text, nullable=False)   # lead | user | campaign | ...
+    entity_id: Mapped[str | None] = mapped_column(Text)              # text, so any key fits
+    action: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    field: Mapped[str | None] = mapped_column(Text)
+    before_value: Mapped[str | None] = mapped_column(Text)
+    after_value: Mapped[str | None] = mapped_column(Text)
+    metadata_: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default="{}")
+    created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        # the per-entity timeline (a lead's own history) and the newest-first list
+        Index("ix_activity_entity", entity_type, entity_id, created_at.desc()),
+        Index("ix_activity_created", created_at.desc()),
+    )
+
+
 class AppSetting(Base):
     """Org-wide settings an admin sets once and everyone reads.
 

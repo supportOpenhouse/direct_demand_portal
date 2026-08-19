@@ -19,6 +19,32 @@ export function useIncomingCalls(since: string | null, enabled = true) {
   });
 }
 
+/* The Logs page. keepPreviousData so paging and filtering don't blank the table. */
+export function useActivity(p: import("./api").ActivityQuery) {
+  return useQuery({
+    queryKey: ["activity", p],
+    queryFn: () => api.activity(p),
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useActivityFilters() {
+  return useQuery({
+    queryKey: ["activity-filters"],
+    queryFn: api.activityFilters,
+    staleTime: 5 * 60_000,
+  });
+}
+
+/* One entity's history — the lead-detail timeline. */
+export function useEntityActivity(type: string, id: string) {
+  return useQuery({
+    queryKey: ["entity-activity", type, id],
+    queryFn: () => api.entityActivity(type, id),
+    staleTime: 30_000,
+  });
+}
+
 export function useAppSettings() {
   return useQuery({
     queryKey: ["app-settings"],

@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..core.auth import assignment_aliases, current_user, is_calling_rm
 from ..db import neon_engine
 from ..models import LeadConfirmedData, LeadNote, Visit
+from ..services import activity
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
 from ..services.societies import (
@@ -541,6 +542,12 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
             if queue_item_id is not None:
                 await conn.execute(_STAMP_CALL_RESULT, {
                     "qid": queue_item_id, "result": "connected", "email": email})
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="call_connected",
+                # where it came from matters: a campaign call and a worklist click are
+                # the same event to the lead but very different to a manager reading this
+                metadata={"source": "campaign" if queue_item_id else "worklist"}))
             return {"status": "ok", "connected": True, "moved_to_rnr": False, "rejected": False}
 
         # One round trip: append the note and apply the outcome together. This runs on
@@ -564,6 +571,16 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         if queue_item_id is not None and not out["blocked"]:
             await conn.execute(_STAMP_CALL_RESULT, {
                 "qid": queue_item_id, "result": "missed", "email": email})
+        # Not when blocked: the spam guard recorded nothing, so there is no event.
+        if not out["blocked"]:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="call_missed", field="miss_count",
+                before=out["miss_count"] - (0 if reject else 1), after=out["miss_count"],
+                metadata={"reason": payload.reason, "notes": note,
+                          "stage": out["stage"],
+                          "source": "campaign" if queue_item_id else "worklist",
+                          "follow_up_at": due.isoformat() if due else None}))
 
     if out["blocked"]:
         remaining = (out["retry_at"] - datetime.now(timezone.utc)).total_seconds() / 60
@@ -625,7 +642,8 @@ class HotPayload(BaseModel):
 
 
 @router.post("/leads/{lead_id}/hot")
-async def mark_hot(lead_id: UUID, payload: HotPayload):
+async def mark_hot(lead_id: UUID, payload: HotPayload,
+                   user: dict = Depends(current_user)):
     """Star / un-star a lead as hot (used by the Pipeline tab's filter)."""
     engine = neon_engine()
     if engine is None:
@@ -635,6 +653,10 @@ async def mark_hot(lead_id: UUID, payload: HotPayload):
             text("UPDATE leads SET is_hot = :h WHERE id = :id"), {"h": payload.hot, "id": lead_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="lead not found")
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+            action="marked_hot" if payload.hot else "unmarked_hot",
+            field="is_hot", before=not payload.hot, after=payload.hot))
     return {"status": "ok", "is_hot": payload.hot}
 
 
@@ -650,7 +672,8 @@ class RejectPayload(BaseModel):
 
 
 @router.post("/leads/{lead_id}/reject")
-async def reject_lead(lead_id: UUID, payload: RejectPayload):
+async def reject_lead(lead_id: UUID, payload: RejectPayload,
+                      user: dict = Depends(current_user)):
     if payload.reason not in REJECT_REASONS:
         raise HTTPException(status_code=422, detail={"fields": ["reason"]})
     if not payload.notes.strip():
@@ -660,10 +683,18 @@ async def reject_lead(lead_id: UUID, payload: RejectPayload):
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     async with engine.begin() as conn:
         res = await conn.execute(text(
-            "UPDATE leads SET stage='rejected', reject_reason=:r, reject_notes=:n, rejected_at=now() WHERE id=:id"),
+            "UPDATE leads SET stage='rejected', reject_reason=:r, reject_notes=:n, rejected_at=now() "
+            "WHERE id=:id RETURNING (SELECT stage FROM leads WHERE id=:id) AS before"),
             {"r": payload.reason, "n": payload.notes.strip(), "id": lead_id})
-        if res.rowcount == 0:
+        row = res.first()
+        if row is None:
             raise HTTPException(status_code=404, detail="lead not found")
+        # A rejection is terminal, so the reason is the whole story — kept in metadata
+        # rather than as before/after, which carry the stage move itself.
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+            action="stage_change", field="stage", before=row[0], after="rejected",
+            metadata={"reason": payload.reason, "notes": payload.notes.strip()}))
     return {"status": "ok"}
 
 
@@ -760,6 +791,11 @@ async def add_note(lead_id: UUID, payload: NoteCreate, user: dict = Depends(curr
         if exists is None:
             raise HTTPException(status_code=404, detail="lead not found")
         await conn.execute(pg_insert(LeadNote).values(lead_id=lead_id, body=body, author=author, source="note"))
+        # The note text rides in metadata, not after_value: it's context for the event,
+        # and after_value is reserved for a field's new value.
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+            action="note_added", metadata={"note": body}))
     return {"status": "ok"}
 
 
@@ -864,15 +900,25 @@ class AssignPayload(BaseModel):
 
 
 @router.post("/leads/{lead_id}/assign")
-async def assign_lead(lead_id: UUID, payload: AssignPayload):
+async def assign_lead(lead_id: UUID, payload: AssignPayload,
+                      user: dict = Depends(current_user)):
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     name = (payload.assigned_to or "").strip() or None
     async with engine.begin() as conn:
-        res = await conn.execute(text("UPDATE leads SET assigned_to = :a WHERE id = :id"), {"a": name, "id": lead_id})
-        if res.rowcount == 0:
+        # RETURNING the old value: an activity row is only worth reading if it says
+        # what it changed FROM, and a separate SELECT could race another assign.
+        res = await conn.execute(text(
+            "UPDATE leads SET assigned_to = :a WHERE id = :id "
+            "RETURNING (SELECT assigned_to FROM leads WHERE id = :id) AS before"),
+            {"a": name, "id": lead_id})
+        row = res.first()
+        if row is None:
             raise HTTPException(status_code=404, detail="lead not found")
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+            action="assigned", field="assigned_to", before=row[0], after=name))
     return {"status": "ok", "assigned_to": name}
 
 
@@ -882,7 +928,7 @@ class BulkAssign(BaseModel):
 
 
 @router.post("/leads/bulk-assign")
-async def bulk_assign(payload: BulkAssign):
+async def bulk_assign(payload: BulkAssign, user: dict = Depends(current_user)):
     if not payload.lead_ids:
         raise HTTPException(status_code=422, detail="no leads selected")
     engine = neon_engine()
@@ -890,10 +936,25 @@ async def bulk_assign(payload: BulkAssign):
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     name = (payload.assigned_to or "").strip() or None
     async with engine.begin() as conn:
+        # Read first, so each row's own prior owner is logged — a bulk assign that
+        # recorded only "42 leads reassigned" can't answer "who had this one before?".
+        prior = dict((await conn.execute(text(
+            "SELECT id, assigned_to FROM leads WHERE id = ANY(:ids)"),
+            {"ids": payload.lead_ids})).all())
         res = await conn.execute(
             text("UPDATE leads SET assigned_to = :a WHERE id = ANY(:ids)"),
             {"a": name, "ids": payload.lead_ids},
         )
+        actor = activity.Actor.of(user)
+        await activity.record(conn, [
+            activity.row_for(actor, entity_type="lead", entity_id=lid,
+                             action="assigned", field="assigned_to",
+                             before=before, after=name,
+                             # marks the row as part of one action, so the Logs page can
+                             # collapse 42 rows into one line if it ever wants to
+                             metadata={"bulk": len(payload.lead_ids)})
+            for lid, before in prior.items() if before != name
+        ])
     return {"status": "ok", "updated": res.rowcount, "assigned_to": name}
 
 

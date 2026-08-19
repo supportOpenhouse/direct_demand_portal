@@ -1254,3 +1254,23 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
   font-size:10px;font-weight:700;font-family:"Spline Sans Mono";
   display:grid;place-items:center;line-height:1;
 }
+
+/* Activity log page. */
+.lg-head{align-items:flex-start;gap:16px;margin-bottom:10px;flex-wrap:wrap}
+.lg-counts{flex:0 0 auto;white-space:nowrap;font-size:12.5px;color:var(--muted);line-height:1.35}
+.lg-counts b{color:var(--ink-2);font-size:14px;font-variant-numeric:tabular-nums}
+.lg-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;
+  flex:1 1 460px;min-width:0}
+.lg-search{margin-bottom:0;flex:1 1 180px;min-width:140px;max-width:300px}
+.lg-search input{width:100%;padding:7px 10px;font-size:12.5px}
+.lg-date{padding:6px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);color:var(--ink)}
+
+/* Secondary detail inside a sentence — reasons, notes, counts. Same weight everywhere
+   so the primary fact in each row stays the thing you read first. */
+.lg-sub{color:var(--muted);font-size:11.5px}
+.lg-note{color:var(--ink-2);font-style:italic}
+
+.lg-pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
+
+@media (max-width:1100px){.lg-filters{flex-basis:100%;justify-content:flex-start}}

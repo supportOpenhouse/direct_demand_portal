@@ -260,10 +260,12 @@ class Lead(Base):
     qualified_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     # call worklist / follow-up flow — a lead with an open follow_up_at lives in the
-    # Follow-up tab; miss_count = consecutive not-connected calls (reset on connect);
-    # never-connected leads hitting 10 misses move to the terminal 'rnr' stage.
+    # Follow-up tab. miss_count = consecutive not-connected calls (reset on connect);
+    # miss_total = lifetime misses (never reset). From the active calling stages,
+    # 5 consecutive OR 8 total misses escalate the lead to 'rnr' (Rejected, reason RNR).
     follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     miss_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    miss_total: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # when "No" was last logged on this lead. Rapid repeats are rejected for 2 hours
     # so a caller can't inflate miss_count (and drive a lead to RNR) by clicking.
     last_no_timestamp: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))

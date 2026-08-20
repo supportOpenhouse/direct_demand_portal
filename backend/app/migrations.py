@@ -71,6 +71,8 @@ _ADD_COLUMNS = [
     ("crm_visits", "buyer_name", "TEXT"),
     ("crm_visits", "buyer_mobile", "TEXT"),
     ("crm_visits", "source", "TEXT"),
+    # lifetime miss counter (miss_count is consecutive-only) → drives the 8-total RNR rule
+    ("leads", "miss_total", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -112,6 +114,12 @@ async def run_migrations(engine) -> None:
                 )
             # everything still null (meta has no source date) → use ingest time
             await conn.execute(text("UPDATE leads SET received_at = created_at WHERE received_at IS NULL"))
+
+            # miss_total is new (defaults 0) but lifetime misses can't be less than the
+            # current consecutive streak — seed it so total >= consecutive holds. Both
+            # counters then increment together on every future miss.
+            await conn.execute(text(
+                "UPDATE leads SET miss_total = miss_count WHERE miss_total < miss_count"))
 
             # back-fill WhatsApp media off the stored callback. Messages received
             # before the media columns existed rendered as a bare "[audio]", but the

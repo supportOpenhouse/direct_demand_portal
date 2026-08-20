@@ -92,6 +92,7 @@ def _lead_row(r) -> dict:
         "follow_up_since": r["follow_up_since"].isoformat() if r["follow_up_since"] else None,
         "follow_up_at": r["follow_up_at"].isoformat() if r["follow_up_at"] else None,
         "miss_count": r["miss_count"] or 0,
+        "miss_total": r.get("miss_total") or 0,
         # lets the worklist refuse a spammed "No" before opening the reason form —
         # the server still enforces the cooldown, this only saves wasted typing
         "last_no_timestamp": (r["last_no_timestamp"].isoformat()
@@ -450,7 +451,11 @@ _CALL_RESULT_NO = text(f"""
         SELECT id, last_no_timestamp AS prev,
                (NOT CAST(:skip_cooldown AS boolean)
                 AND last_no_timestamp IS NOT NULL
-                AND last_no_timestamp > now() - interval '{NO_COOLDOWN_HOURS} hours') AS blocked
+                AND last_no_timestamp > now() - interval '{NO_COOLDOWN_HOURS} hours') AS blocked,
+               -- Auto-RNR: from the active calling stages, this miss tips the lead over
+               -- 5 consecutive (miss_count) or 8 lifetime (miss_total) misses → Rejected/RNR.
+               (stage IN ('call_not_received','follow_up','qualified')
+                AND (miss_total + 1 >= 8 OR miss_count + 1 >= 5)) AS escalate
         FROM leads WHERE id = :id
     ),
     n AS (
@@ -464,34 +469,41 @@ _CALL_RESULT_NO = text(f"""
         miss_count = CASE WHEN cur.blocked THEN leads.miss_count
                      WHEN CAST(:reject AS boolean) THEN leads.miss_count
                      ELSE leads.miss_count + 1 END,
-        -- never reached → Call Not Received; already reached → Follow-up.
-        -- Qualified and beyond keep their stage: a missed callback on a
-        -- qualified lead must not drag it back down the funnel.
+        miss_total = CASE WHEN cur.blocked THEN leads.miss_total
+                     WHEN CAST(:reject AS boolean) THEN leads.miss_total
+                     ELSE leads.miss_total + 1 END,
+        -- escalate → RNR; else never reached → Call Not Received, already reached → Follow-up.
+        -- Qualified/visit_scheduled/revisit/won keep their stage when they DON'T escalate:
+        -- a below-threshold missed callback must not drag a qualified (or booked, or won)
+        -- lead back down the funnel — only crossing 5-consecutive / 8-total sends it to RNR.
         stage = CASE WHEN cur.blocked THEN leads.stage
                      WHEN CAST(:reject AS boolean) THEN 'rejected'
-                     WHEN NOT leads.ever_connected AND leads.miss_count + 1 >= 10 THEN 'rnr'
+                     WHEN cur.escalate THEN 'rnr'
                      WHEN leads.stage IN ('qualified','visit_scheduled','revisit_scheduled','won') THEN leads.stage
                      WHEN NOT leads.ever_connected THEN 'call_not_received'
                      ELSE 'follow_up' END,
         follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
-                     WHEN CAST(:reject AS boolean)
-                          OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
+                     WHEN CAST(:reject AS boolean) OR cur.escalate THEN NULL
                      ELSE CAST(:due AS timestamptz) END,
         follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since
-                     WHEN CAST(:reject AS boolean)
-                          OR (NOT leads.ever_connected AND leads.miss_count + 1 >= 10) THEN NULL
+                     WHEN CAST(:reject AS boolean) OR cur.escalate THEN NULL
                      ELSE COALESCE(leads.follow_up_since, now()) END,
-        reject_reason = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                     THEN CAST(:reason AS text) ELSE leads.reject_reason END,
-        reject_notes  = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                     THEN CAST(:note AS text) ELSE leads.reject_notes END,
-        rejected_at   = CASE WHEN NOT cur.blocked AND CAST(:reject AS boolean)
-                     THEN now() ELSE leads.rejected_at END,
+        reject_reason = CASE WHEN cur.blocked THEN leads.reject_reason
+                     WHEN CAST(:reject AS boolean) THEN CAST(:reason AS text)
+                     WHEN cur.escalate THEN 'RNR'
+                     ELSE leads.reject_reason END,
+        reject_notes  = CASE WHEN cur.blocked THEN leads.reject_notes
+                     WHEN CAST(:reject AS boolean) THEN CAST(:note AS text)
+                     WHEN cur.escalate THEN 'Auto-RNR — 5 consecutive or 8 total missed calls'
+                     ELSE leads.reject_notes END,
+        rejected_at   = CASE WHEN cur.blocked THEN leads.rejected_at
+                     WHEN CAST(:reject AS boolean) OR cur.escalate THEN now()
+                     ELSE leads.rejected_at END,
         last_no_timestamp = CASE WHEN cur.blocked THEN leads.last_no_timestamp
                      ELSE now() END
     FROM cur
     WHERE leads.id = cur.id
-    RETURNING leads.miss_count, leads.stage, cur.blocked,
+    RETURNING leads.miss_count, leads.miss_total, leads.stage, cur.blocked,
               cur.prev + interval '{NO_COOLDOWN_HOURS} hours' AS retry_at
 """)
 
@@ -502,7 +514,8 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
     connected=True  → opens the lead (caller navigates); resets the miss streak.
     connected=False → reason + notes are both mandatory. Did Not Pick → +3h,
     Switched Off → +6h (both clamped to calling hours); Invalid Number → Rejected.
-    10 consecutive misses on a never-connected lead still escalate to RNR."""
+    From Call Not Received / Follow-up / Qualified, 5 consecutive OR 8 total missed
+    calls escalate the lead to RNR (Rejected, reason RNR)."""
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")

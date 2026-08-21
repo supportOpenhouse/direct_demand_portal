@@ -28,6 +28,14 @@ export function useActivity(p: import("./api").ActivityQuery) {
   });
 }
 
+export function useRmReport(from: string, to: string) {
+  return useQuery({
+    queryKey: ["rm-report", from, to],
+    queryFn: () => api.rmReport(from, to),
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useActivityFilters() {
   return useQuery({
     queryKey: ["activity-filters"],

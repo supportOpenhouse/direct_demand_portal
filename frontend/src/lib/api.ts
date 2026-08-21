@@ -102,6 +102,24 @@ export interface SupplyResponse {
    produced. Distinct from the Bonvoice log, which records telephony legs. */
 /* Activity log — what changed, who changed it, from what to what.
    Replaces the old audit_logs feed, which recorded HTTP requests. */
+/* Per-RM activity report. Every number is derived from activity_log, so a column can
+   only be as good as the event behind it. */
+export interface RmReportRow {
+  email: string;
+  name: string | null;
+  role: string;
+  first_action_at: string | null;   // "login" = first activity of the IST day
+  last_action_at: string | null;
+  total_events: number;
+  calls_dialled: number;
+  calls_connected: number;
+  calls_missed: number;
+  leads_qualified: number;
+  visit_scheduled: number;
+  revisit_booked: number;
+  leads_rejected: number;
+}
+
 export interface ActivityRow {
   id: string;
   created_at: string;
@@ -517,6 +535,13 @@ export const api = {
   // its own fetch rather than the row being expanded from what the table already has.
   leadHuvoCalls: (leadId: string) =>
     request<{ items: HuvoCallDetail[] }>(`/v1/leads/${leadId}/huvo-calls`),
+  rmReport: (from?: string, to?: string) => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    return request<{ items: RmReportRow[]; from: string; to: string; metrics: string[] }>(
+      `/v1/reports/rm?${qs.toString()}`);
+  },
   activity: (p: ActivityQuery) => {
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });

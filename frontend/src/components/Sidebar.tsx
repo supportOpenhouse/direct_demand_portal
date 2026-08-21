@@ -17,6 +17,13 @@ import {
   IconReject,
 } from "./icons";
 
+/* Bar chart — the report is a table of per-person numbers. */
+const IconReport = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3v18h18" /><path d="M7 15v3M12 10v8M17 6v12" />
+  </svg>
+);
+
 const navClass = ({ isActive }: { isActive: boolean }) => "nav-item" + (isActive ? " active" : "");
 
 /* Share of the role-scoped total this segment holds. Intentionally omitted for
@@ -159,6 +166,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
               </div>
             )}
           </>
+        )}
+        {/* Admin-only in the nav; the endpoint itself scopes an RM to their own row,
+            so an RM reaching it directly sees themselves rather than a league table. */}
+        {isAdmin && (
+          <NavLink to="/reports" className={navClass} title="Reports">
+            <IconReport /> <span className="nav-t">Reports</span>
+          </NavLink>
         )}
         <NavLink to="/settings" className={navClass} title="Settings & Access">
           <IconSettings /> <span className="nav-t">Settings &amp; Access</span>

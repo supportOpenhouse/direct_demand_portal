@@ -1274,3 +1274,23 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .lg-pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px}
 
 @media (max-width:1100px){.lg-filters{flex-basis:100%;justify-content:flex-start}}
+
+/* Per-RM report. */
+.rp-head{align-items:flex-start;gap:16px;margin-bottom:10px;flex-wrap:wrap}
+.rp-counts{flex:0 0 auto;white-space:nowrap;font-size:12.5px;color:var(--muted);line-height:1.35}
+.rp-counts b{color:var(--ink-2);font-size:14px;font-variant-numeric:tabular-nums}
+.rp-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:1 1 400px;min-width:0}
+.rp-date{padding:6px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+.rp-sub{font-size:11.5px;color:var(--muted)}
+
+/* Numbers right-aligned and tabular so columns compare down the page at a glance —
+   the whole reason this is a table and not a list of cards. */
+.rp-tbl .rp-th{text-align:right;white-space:nowrap}
+.rp-num{text-align:right;font-family:"Spline Sans Mono";font-variant-numeric:tabular-nums;font-size:13px}
+.rp-num.strong{font-weight:700;color:var(--ink)}
+/* A zero is information, not an absence — dimmed, never hidden. */
+.rp-num.zero{color:var(--muted)}
+.rp-idle{background:var(--panel-2)}
+
+.rp-total td{border-top:2px solid var(--line);font-weight:700;background:var(--panel-2)}
+.rp-note{margin-top:10px;font-size:11.5px;color:var(--muted)}

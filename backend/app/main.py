@@ -20,7 +20,8 @@ from .models import Base
 from .migrations import run_migrations
 from .routers import (
     activity, app_settings, auth, bonvoice, dialer, external_analytics, gupshup, health,
-    huvo, huvo_calls, inventory, leads, live_calls, logs, rm_summary, supply, users, visits,
+    huvo, huvo_calls, inventory, leads, live_calls, logs, reports, rm_summary, supply,
+    users, visits,
 )
 from .services.dialer import start_dialer, stop_dialer
 from .workers.scheduler import start_scheduler, stop_scheduler
@@ -189,6 +190,7 @@ app.include_router(huvo_calls.router, prefix="/v1")
 app.include_router(visits.router, prefix="/v1")
 app.include_router(logs.router, prefix="/v1")
 app.include_router(activity.router, prefix="/v1")
+app.include_router(reports.router, prefix="/v1")
 app.include_router(gupshup.router, prefix="/v1")
 app.include_router(bonvoice.router, prefix="/v1")
 app.include_router(dialer.router, prefix="/v1")

@@ -535,8 +535,9 @@ export const api = {
   // its own fetch rather than the row being expanded from what the table already has.
   leadHuvoCalls: (leadId: string) =>
     request<{ items: HuvoCallDetail[] }>(`/v1/leads/${leadId}/huvo-calls`),
-  rmReport: (from?: string, to?: string) => {
+  rmReport: (from?: string, to?: string, all?: boolean) => {
     const qs = new URLSearchParams();
+    if (all) qs.set("all", "true");   // server resolves the floor from the log itself
     if (from) qs.set("from", from);
     if (to) qs.set("to", to);
     return request<{ items: RmReportRow[]; from: string; to: string; metrics: string[] }>(

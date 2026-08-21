@@ -28,10 +28,10 @@ export function useActivity(p: import("./api").ActivityQuery) {
   });
 }
 
-export function useRmReport(from: string, to: string) {
+export function useRmReport(from: string, to: string, all = false) {
   return useQuery({
-    queryKey: ["rm-report", from, to],
-    queryFn: () => api.rmReport(from, to),
+    queryKey: ["rm-report", from, to, all],
+    queryFn: () => api.rmReport(from, to, all),
     placeholderData: keepPreviousData,
   });
 }

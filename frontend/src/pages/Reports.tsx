@@ -12,8 +12,43 @@ import { useRmReport } from "../lib/queries";
 import { RmReportRow } from "../lib/api";
 
 const IST = "Asia/Kolkata";
-const todayIST = () =>
-  new Date(Date.now() + 330 * 60_000).toISOString().slice(0, 10);
+const IST_OFFSET_MIN = 330;  // Asia/Kolkata, no DST
+
+/* Every preset is computed on the IST calendar, not the browser's. An RM in another
+   timezone — or one working past midnight IST — must see the same "Today" a manager
+   in Delhi does, or the two of them read different numbers off the same button. */
+const istDay = (daysAgo = 0) =>
+  new Date(Date.now() + IST_OFFSET_MIN * 60_000 - daysAgo * 864e5)
+    .toISOString().slice(0, 10);
+
+const todayIST = () => istDay();
+
+type Preset = "all" | "today" | "yesterday" | "7d" | "15d" | "month" | "custom";
+
+/* [from, to] per preset. `all` is resolved server-side from the log's own first row,
+   so its bounds here are only a placeholder the response overwrites. */
+function rangeFor(p: Preset): [string, string] {
+  const today = istDay();
+  switch (p) {
+    case "today":     return [today, today];
+    case "yesterday": return [istDay(1), istDay(1)];
+    // inclusive of today, so "Last 7 days" is 7 days of work, not 8
+    case "7d":        return [istDay(6), today];
+    case "15d":       return [istDay(14), today];
+    case "month":     return [today.slice(0, 8) + "01", today];
+    default:          return [today, today];
+  }
+}
+
+const PRESETS: { key: Preset; label: string }[] = [
+  { key: "all",       label: "All" },
+  { key: "today",     label: "Today" },
+  { key: "yesterday", label: "Yesterday" },
+  { key: "7d",        label: "Last 7 days" },
+  { key: "15d",       label: "Last 15 days" },
+  { key: "month",     label: "This Month" },
+  { key: "custom",    label: "Custom" },
+];
 
 /* Only the time — the date is already the page's range, and repeating it in every
    row would crowd out the numbers. */
@@ -41,9 +76,20 @@ function Num({ n, strong }: { n: number; strong?: boolean }) {
 }
 
 export default function Reports() {
+  const [preset, setPreset] = useState<Preset>("today");
   const [from, setFrom] = useState(todayIST);
   const [to, setTo] = useState(todayIST);
-  const { data, isLoading, isFetching } = useRmReport(from, to);
+  const { data, isLoading, isFetching } = useRmReport(from, to, preset === "all");
+
+  const pick = (p: Preset) => {
+    setPreset(p);
+    // Custom keeps whatever range was already on screen, so switching to it is a
+    // starting point rather than a reset.
+    if (p !== "custom" && p !== "all") {
+      const [f, t] = rangeFor(p);
+      setFrom(f); setTo(t);
+    }
+  };
 
   const rows = data?.items ?? [];
   const totals = COLUMNS.reduce((acc, c) => {
@@ -52,30 +98,40 @@ export default function Reports() {
   }, {} as Record<string, number>);
   const worked = rows.filter((r) => r.total_events > 0).length;
 
-  const preset = (days: number) => {
-    const end = todayIST();
-    const start = new Date(Date.now() + 330 * 60_000 - days * 864e5).toISOString().slice(0, 10);
-    setFrom(days === 0 ? end : start);
-    setTo(end);
-  };
-
   return (
     <>
       <div className="section-head rp-head">
         <div className="rp-counts">
           <div><b>{rows.length}</b> RMs</div>
           {/* the interesting half of the headline: how many actually did anything */}
-          <div className="rp-sub">{worked} active in this range</div>
+          <div className="rp-sub">
+            {worked} active ·{" "}
+            {/* The server resolves All from the log's first row, so echo what came
+                back rather than what was asked for. */}
+            {data ? (data.from === data.to ? data.from : `${data.from} → ${data.to}`) : "…"}
+          </div>
         </div>
         <div className="rp-filters">
-          <button className="btn ghost sm" onClick={() => preset(0)}>Today</button>
-          <button className="btn ghost sm" onClick={() => preset(6)}>7 days</button>
-          <button className="btn ghost sm" onClick={() => preset(29)}>30 days</button>
-          <input type="date" className="rp-date" value={from} title="From (IST)"
-            onChange={(e) => setFrom(e.target.value)} />
-          <span className="rp-sub">→</span>
-          <input type="date" className="rp-date" value={to} title="To (IST)"
-            onChange={(e) => setTo(e.target.value)} />
+          <div className="rp-presets" role="group" aria-label="Date range">
+            {PRESETS.map((p) => (
+              <button key={p.key}
+                className={"rp-pill" + (preset === p.key ? " on" : "")}
+                onClick={() => pick(p.key)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          {/* Only Custom gets the inputs — for every other preset they'd be a
+              read-only echo of the button already highlighted. */}
+          {preset === "custom" && (
+            <>
+              <input type="date" className="rp-date" value={from} title="From (IST)"
+                onChange={(e) => setFrom(e.target.value)} />
+              <span className="rp-sub">→</span>
+              <input type="date" className="rp-date" value={to} title="To (IST)"
+                onChange={(e) => setTo(e.target.value)} />
+            </>
+          )}
           {isFetching && <span className="rp-sub">updating…</span>}
         </div>
       </div>

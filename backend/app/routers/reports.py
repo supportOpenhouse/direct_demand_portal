@@ -51,6 +51,13 @@ def _metric_sql(metric: str) -> str:
     return f"count(*) FILTER (WHERE {_METRICS[metric]}) AS {metric}"
 
 
+# Where "All" starts. Resolved from the data rather than a hardcoded floor: a made-up
+# 2020-01-01 would have the page header claim a range the log can't back. IST, like
+# every other day boundary here.
+EARLIEST_ACTIVITY = text(
+    "SELECT min(created_at) AT TIME ZONE 'Asia/Kolkata' FROM activity_log"
+)
+
 RM_REPORT = text(f"""
     SELECT u.email, u.name, u.role,
            -- first action of the day, IST — see the module docstring on why this
@@ -80,6 +87,7 @@ RM_REPORT = text(f"""
 async def rm_report(
     date_from: str | None = Query(None, alias="from"),
     date_to: str | None = Query(None, alias="to"),
+    all_time: bool = Query(False, alias="all"),
     user: dict = Depends(current_user),
 ):
     """One row per RM for an IST date range. Defaults to today.
@@ -106,6 +114,13 @@ async def rm_report(
     scope_email = user.get("email") if is_calling_rm(user.get("role")) else None
 
     async with engine.connect() as conn:
+        if all_time:
+            # An empty log means there is no "all" — fall back to today rather than
+            # inventing a range with nothing in it.
+            floor = (await conn.execute(EARLIEST_ACTIVITY)).scalar()
+            start = floor.date() if floor else today
+            end = today
+
         rows = (await conn.execute(RM_REPORT, {
             "date_from": start, "date_to": end, "email": scope_email,
         })).mappings().all()

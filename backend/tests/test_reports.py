@@ -67,3 +67,17 @@ def test_calls_dialled_is_derived_not_a_separate_action():
     src = _sql(_metric_sql("calls_dialled"))
     assert "call_connected" in src and "call_missed" in src
     assert "call_dialled" not in src
+
+
+# --- the All range ----------------------------------------------------------
+
+def test_all_time_resolves_from_the_log_not_a_hardcoded_date():
+    """"All" has to start where the data starts. A hardcoded floor like 2020-01-01
+    would report a range the log can't back, and the page header would lie about what
+    it's showing."""
+    from app.routers.reports import EARLIEST_ACTIVITY
+
+    src = _sql(EARLIEST_ACTIVITY)
+    assert "min(created_at)" in src.lower()
+    assert "activity_log" in src
+    assert "Asia/Kolkata" in src, "the floor is an IST calendar day like every other bound"

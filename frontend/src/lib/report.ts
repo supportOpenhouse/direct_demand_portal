@@ -70,9 +70,15 @@ export const COLUMNS: { key: MetricKey; label: string; hint: string }[] = [
   { key: "leads_rejected",  label: "Rejected",  hint: "Stage moved to rejected" },
 ];
 
-/* Where the detail page for one RM lives. A helper because the link is built in two
-   places and the querystring has to survive the round trip — the detail page reads
-   its range back out of it. */
-export const detailHref = (email: string, from: string, to: string, all: boolean) =>
-  `/reports/detail?${new URLSearchParams(
-    all ? { email, all: "true" } : { email, from, to })}`;
+/* Where the detail page for one RM lives.
+
+   The PRESET travels, not just the dates it happened to resolve to — the new tab has
+   to open on the same filter the table was showing, with the same pill lit. Dates ride
+   along for `custom`, which is the one preset that can't be recomputed. */
+export const detailHref = (email: string, preset: Preset, from: string, to: string) =>
+  `/reports/detail?${new URLSearchParams({ email, preset, from, to })}`;
+
+/* A preset out of a querystring is user input — anything unrecognised falls back to
+   custom, which then honours whatever from/to came with it. */
+export const asPreset = (v: string | null): Preset =>
+  PRESETS.some((p) => p.key === v) ? (v as Preset) : "custom";

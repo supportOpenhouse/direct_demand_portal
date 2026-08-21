@@ -1281,8 +1281,10 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .rp-counts>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rp-counts b{color:var(--ink-2);font-size:14px;font-variant-numeric:tabular-nums}
 .rp-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:1 1 auto;min-width:0}
-/* The date pair is one atom — it wraps as a whole or not at all. */
-.rp-range{display:inline-flex;align-items:center;gap:6px;flex:none}
+/* Its own full-width line under the pills, right-aligned to sit beneath Custom.
+   Selecting Custom then ADDS a line rather than widening the row and pushing the
+   pills around — the buttons stay exactly where the eye left them. */
+.rp-range{flex:0 0 100%;display:flex;align-items:center;justify-content:flex-end;gap:6px;margin-top:2px}
 /* A date input sizes itself to the widest locale it might render and ends up far
    wider than dd/mm/yyyy needs, which is what pushed this row onto a second line. */
 .rp-date{padding:6px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;

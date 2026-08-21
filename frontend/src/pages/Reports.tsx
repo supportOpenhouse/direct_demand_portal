@@ -74,10 +74,12 @@ export default function Reports() {
               </button>
             ))}
           </div>
+          {isFetching && <span className="rp-sub">updating…</span>}
           {/* Only Custom gets the inputs — for every other preset they'd be a
-              read-only echo of the button already highlighted. */}
-          {/* One unit, so the two dates and the arrow between them can never be
-              split across a wrap — half a range on each line reads as two ranges. */}
+              read-only echo of the pill already highlighted. Rendered last and
+              full-width so selecting Custom ADDS a line under the pills instead of
+              widening the row and shoving everything beside it around. One unit, too:
+              half a range on each line would read as two ranges. */}
           {preset === "custom" && (
             <span className="rp-range">
               <input type="date" className="rp-date" value={from} title="From (IST)"
@@ -87,7 +89,6 @@ export default function Reports() {
                 onChange={(e) => setTo(e.target.value)} />
             </span>
           )}
-          {isFetching && <span className="rp-sub">updating…</span>}
         </div>
       </div>
 
@@ -115,7 +116,7 @@ export default function Reports() {
                 <div className="empty" style={{ padding: 24 }}>No RMs to report on.</div></td></tr>
             ) : rows.map((r) => {
               const login = hhmm(r.first_action_at);
-              const href = detailHref(r.email, from, to, preset === "all");
+              const href = detailHref(r.email, preset, from, to);
               return (
                 /* The whole row opens the report — the numbers are what a manager is
                    reading, so the name isn't a better click target than the count next

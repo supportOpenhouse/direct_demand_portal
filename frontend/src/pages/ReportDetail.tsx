@@ -12,7 +12,7 @@ import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useRmDayLeads, useRmReportDays } from "../lib/queries";
 import { RmDayLeadRow, RmDayRow } from "../lib/api";
-import { COLUMNS, dayLabel, hhmm, PRESETS, Preset, rangeFor, todayIST } from "../lib/report";
+import { asPreset, COLUMNS, dayLabel, hhmm, PRESETS, Preset, rangeFor, todayIST } from "../lib/report";
 import { downloadCsv } from "../lib/csv";
 import { stageClass, stageLabel } from "../lib/leads";
 
@@ -138,12 +138,21 @@ function DayLeads({ email, day, onClose }: { email: string; day: string; onClose
 export default function ReportDetail() {
   const [params] = useSearchParams();
   const email = (params.get("email") || "").toLowerCase();
-  /* The range arrives in the URL so the tab is a shareable, reloadable link — the
-     page it was opened from is in another tab and can't be asked. */
-  const initialAll = params.get("all") === "true";
-  const [preset, setPreset] = useState<Preset>(initialAll ? "all" : "custom");
-  const [from, setFrom] = useState(params.get("from") || todayIST());
-  const [to, setTo] = useState(params.get("to") || todayIST());
+  /* The filter arrives in the URL so the tab is a shareable, reloadable link — the
+     page it was opened from is in another tab and can't be asked.
+
+     A named preset is RE-RESOLVED here rather than read off the from/to it produced:
+     a tab left open overnight and reloaded should still show today's "Today", the way
+     the pill lit at the top of the page claims it does. Only `custom` — and `all`,
+     whose floor the server resolves — take their dates from the link. */
+  const initial = asPreset(params.get("preset"));
+  const [from0, to0] = initial === "custom" || initial === "all"
+    ? [params.get("from") || todayIST(), params.get("to") || todayIST()]
+    : rangeFor(initial);
+
+  const [preset, setPreset] = useState<Preset>(initial);
+  const [from, setFrom] = useState(from0);
+  const [to, setTo] = useState(to0);
 
   const { data, isLoading, isFetching } = useRmReportDays(email, from, to, preset === "all");
   const days = data?.days ?? [];
@@ -201,8 +210,13 @@ export default function ReportDetail() {
               </button>
             ))}
           </div>
-          {/* One unit, so the two dates and the arrow between them can never be
-              split across a wrap — half a range on each line reads as two ranges. */}
+          <button className="btn ghost sm" onClick={exportCsv} disabled={!days.length}>⬇ Export CSV</button>
+          {isFetching && <span className="rp-sub">updating…</span>}
+          {/* Only Custom gets the inputs — for every other preset they'd be a
+              read-only echo of the pill already highlighted. Rendered last and
+              full-width so selecting Custom ADDS a line under the pills instead of
+              widening the row and shoving everything beside it around. One unit, too:
+              half a range on each line would read as two ranges. */}
           {preset === "custom" && (
             <span className="rp-range">
               <input type="date" className="rp-date" value={from} title="From (IST)"
@@ -212,8 +226,6 @@ export default function ReportDetail() {
                 onChange={(e) => setTo(e.target.value)} />
             </span>
           )}
-          <button className="btn ghost sm" onClick={exportCsv} disabled={!days.length}>⬇ Export CSV</button>
-          {isFetching && <span className="rp-sub">updating…</span>}
         </div>
       </div>
 

@@ -32,6 +32,7 @@ from ..config import get_settings
 # callback feed stays admin-only — it's a debugging surface, not a worklist.
 from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
 from ..db import neon_engine
+from ..services import activity
 from ..models import Lead, WaContact, WaMessage
 
 log = logging.getLogger("gupshup")
@@ -403,6 +404,13 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
         row = (await conn.execute(
             select(Lead.id).where(Lead.origin_key == values["origin_key"])
         )).first()
+        # Attribution for where a lead came from and who turned it into one — the
+        # sheet sync creates most leads, so a hand-made one is worth marking.
+        if row:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=row[0],
+                action="lead_created",
+                metadata={"source": "whatsapp", "name": req.name.strip()}))
     return {"status": "ok", "lead_id": str(row[0]) if row else None}
 
 
@@ -555,4 +563,12 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(current_user)):
                 direction="out", phone=destination, body=req.text, msg_type="text",
                 gupshup_id=gupshup_id, status="submitted", author=author,
             ))
+            # An RM messaging a customer is real work that was entirely invisible.
+            # The body is deliberately NOT stored here — wa_messages already has it,
+            # and duplicating customer text into the audit trail widens its blast
+            # radius for no gain.
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=None,
+                action="wa_message_sent",
+                metadata={"phone10": destination[-10:], "chars": len(req.text or "")}))
     return {"status": "sent", "gupshup_id": gupshup_id, "author": author}

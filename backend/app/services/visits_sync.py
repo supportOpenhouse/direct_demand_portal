@@ -16,6 +16,8 @@ from sqlalchemy import text
 from ..config import get_settings
 from ..db import neon_engine
 
+from . import activity
+
 log = logging.getLogger("visits_sync")
 
 VISITS_KEY = "visits_status_sheet"
@@ -72,7 +74,7 @@ async def run_visits_sync(trigger: str = "manual") -> dict:
     try:
         async with engine.connect() as conn:
             ours = (await conn.execute(text(
-                "SELECT visit_id, status, visit_date, buyer_feedback, sales_feedback FROM crm_visits"
+                "SELECT visit_id, lead_id, status, visit_date, buyer_feedback, sales_feedback FROM crm_visits"
             ))).mappings().all()
         if not ours:
             await _write_state(VISITS_KEY, "ok", f"no booked visits yet ({trigger})", 0)
@@ -91,11 +93,27 @@ async def run_visits_sync(trigger: str = "manual") -> dict:
             updates.append({"vid": v["visit_id"], **row})
 
         if updates:
+            # Only status MOVES are events. The sync also carries feedback and date
+            # edits, and logging those as "cancelled" would be a lie; logging every
+            # unchanged re-sync would bury the ones that matter.
+            was = {v["visit_id"]: v["status"] for v in ours}
+            lead_of = {v["visit_id"]: v.get("lead_id") for v in ours}
+            moved = [u for u in updates if u["status"] != was.get(u["vid"])]
+
             async with engine.begin() as conn:
                 await conn.execute(text(
                     "UPDATE crm_visits SET status = :status, visit_date = :visit_date, "
                     "buyer_feedback = :buyer_feedback, sales_feedback = :sales_feedback, synced_at = now() "
                     "WHERE visit_id = :vid"), updates)
+                # No actor: ops changed this in the sheet, not anyone in this app.
+                await activity.record(conn, [
+                    activity.row_for(
+                        None, entity_type="lead", entity_id=lead_of.get(u["vid"]),
+                        action=f"visit_{u['status']}", field="visit_status",
+                        before=was.get(u["vid"]), after=u["status"],
+                        metadata={"visit_id": u["vid"], "via": "visits_sheet"})
+                    for u in moved
+                ])
         else:
             async with engine.begin() as conn:
                 await conn.execute(text("UPDATE crm_visits SET synced_at = now()"))

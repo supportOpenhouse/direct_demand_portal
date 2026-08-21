@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from ..core.auth import require_admin
 from ..db import neon_engine
+from ..services import activity
 from ..services.dialer import (
     FIELDS, OPS, UNOWNED_DETAIL, aliases_for, assign_owners, compile_rules, count_matching,
     materialize, window_has_passed, windows_overlap,
@@ -250,7 +251,8 @@ async def create_campaign(payload: CampaignIn, user: dict = Depends(require_admi
 
 
 @router.post("/campaigns/{campaign_id}/{action}")
-async def campaign_action(campaign_id: UUID, action: str, _: dict = Depends(require_admin)):
+async def campaign_action(campaign_id: UUID, action: str,
+                          user: dict = Depends(require_admin)):
     """start / pause / stop.
 
     Pausing places no new calls; whatever is already ringing rings out. Stopping also
@@ -283,6 +285,11 @@ async def campaign_action(campaign_id: UUID, action: str, _: dict = Depends(requ
              WHERE id = :id RETURNING id"""), {"id": campaign_id, "status": status})).first()
         if updated is None:
             raise HTTPException(status_code=404, detail="campaign not found")
+        # Starting a campaign sets other people's phones ringing. Who did that, and
+        # who stopped it, is exactly the kind of thing nobody remembers an hour later.
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="campaign", entity_id=campaign_id,
+            action=f"campaign_{action}", field="status", after=status))
         if action == "stop":
             await conn.execute(text(
                 "UPDATE dial_queue SET status = 'skipped' "

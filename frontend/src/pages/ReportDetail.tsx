@@ -201,14 +201,16 @@ export default function ReportDetail() {
               </button>
             ))}
           </div>
+          {/* One unit, so the two dates and the arrow between them can never be
+              split across a wrap — half a range on each line reads as two ranges. */}
           {preset === "custom" && (
-            <>
+            <span className="rp-range">
               <input type="date" className="rp-date" value={from} title="From (IST)"
                 onChange={(e) => setFrom(e.target.value)} />
               <span className="rp-sub">→</span>
               <input type="date" className="rp-date" value={to} title="To (IST)"
                 onChange={(e) => setTo(e.target.value)} />
-            </>
+            </span>
           )}
           <button className="btn ghost sm" onClick={exportCsv} disabled={!days.length}>⬇ Export CSV</button>
           {isFetching && <span className="rp-sub">updating…</span>}

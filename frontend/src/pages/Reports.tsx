@@ -76,14 +76,16 @@ export default function Reports() {
           </div>
           {/* Only Custom gets the inputs — for every other preset they'd be a
               read-only echo of the button already highlighted. */}
+          {/* One unit, so the two dates and the arrow between them can never be
+              split across a wrap — half a range on each line reads as two ranges. */}
           {preset === "custom" && (
-            <>
+            <span className="rp-range">
               <input type="date" className="rp-date" value={from} title="From (IST)"
                 onChange={(e) => setFrom(e.target.value)} />
               <span className="rp-sub">→</span>
               <input type="date" className="rp-date" value={to} title="To (IST)"
                 onChange={(e) => setTo(e.target.value)} />
-            </>
+            </span>
           )}
           {isFetching && <span className="rp-sub">updating…</span>}
         </div>
@@ -113,15 +115,23 @@ export default function Reports() {
                 <div className="empty" style={{ padding: 24 }}>No RMs to report on.</div></td></tr>
             ) : rows.map((r) => {
               const login = hhmm(r.first_action_at);
+              const href = detailHref(r.email, from, to, preset === "all");
               return (
-                <tr key={r.email} className={r.total_events === 0 ? "rp-idle" : ""}>
+                /* The whole row opens the report — the numbers are what a manager is
+                   reading, so the name isn't a better click target than the count next
+                   to it. The anchor below stays anyway: a row can't BE a link, and
+                   dropping it would take middle-click, copy-link and keyboard focus
+                   with it. It stops propagation so the two don't both fire. */
+                <tr key={r.email}
+                    className={"rp-row" + (r.total_events === 0 ? " rp-idle" : "")}
+                    onClick={() => window.open(href, "_blank", "noopener")}
+                    title={`Open ${r.name || r.email}'s day-by-day report in a new tab`}>
                   <td>
                     {/* A plain anchor with target=_blank, not a react-router Link:
                         the detail page reads its whole range out of the querystring,
                         so the new tab is a real, reloadable, shareable URL. */}
-                    <a className="rp-rm" target="_blank" rel="noreferrer"
-                       href={detailHref(r.email, from, to, preset === "all")}
-                       title={`Open ${r.name || r.email}'s day-by-day report in a new tab`}>
+                    <a className="rp-rm" target="_blank" rel="noreferrer" href={href}
+                       onClick={(e) => e.stopPropagation()}>
                       <div style={{ fontSize: 13 }}>{r.name || r.email}</div>
                       <div className="rp-sub">{r.email}
                         {r.role === "test_rm" && <span className="dl-testtag">TEST</span>}
@@ -159,7 +169,7 @@ export default function Reports() {
       <p className="rp-note">
         Counts are derived from the activity log, so they begin when an event type was
         first recorded — earlier work isn't attributable to a person and doesn't appear.
-        Click an RM to open their day-by-day report in a new tab.
+        Click any row to open that RM's day-by-day report in a new tab.
       </p>
     </>
   );

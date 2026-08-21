@@ -1277,15 +1277,27 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 
 /* Per-RM report. */
 .rp-head{align-items:flex-start;gap:16px;margin-bottom:10px;flex-wrap:wrap}
-.rp-counts{flex:0 0 auto;white-space:nowrap;font-size:12.5px;color:var(--muted);line-height:1.35}
+.rp-counts{flex:0 1 auto;min-width:0;font-size:12.5px;color:var(--muted);line-height:1.35}
+.rp-counts>div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .rp-counts b{color:var(--ink-2);font-size:14px;font-variant-numeric:tabular-nums}
-.rp-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:1 1 400px;min-width:0}
-.rp-date{padding:6px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink)}
+.rp-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end;flex:1 1 auto;min-width:0}
+/* The date pair is one atom — it wraps as a whole or not at all. */
+.rp-range{display:inline-flex;align-items:center;gap:6px;flex:none}
+/* A date input sizes itself to the widest locale it might render and ends up far
+   wider than dd/mm/yyyy needs, which is what pushed this row onto a second line. */
+.rp-date{padding:6px 8px;font-size:12.5px;border:1px solid var(--line);border-radius:8px;
+  background:var(--panel);color:var(--ink);width:132px;box-sizing:border-box}
 .rp-sub{font-size:11.5px;color:var(--muted)}
 
 /* Numbers right-aligned and tabular so columns compare down the page at a glance —
    the whole reason this is a table and not a list of cards. */
-.rp-tbl .rp-th{text-align:right;white-space:nowrap}
+/* Every header sits over its own data — right, like the numbers and the login time
+   beneath them. RM is the one exception: its cell is a name, left-aligned, so a
+   right-aligned header there would just move the mismatch one column over. */
+.rp-tbl th{text-align:right;white-space:nowrap}
+/* Also used on its own in the drill-down modal, whose other headers stay left. */
+.rp-th{text-align:right;white-space:nowrap}
+.rp-tbl th:first-child,.rp-tbl tfoot td:first-child{text-align:left}
 .rp-num{text-align:right;font-family:"Spline Sans Mono";font-variant-numeric:tabular-nums;font-size:13px}
 .rp-num.strong{font-weight:700;color:var(--ink)}
 /* A zero is information, not an absence — dimmed, never hidden. */
@@ -1309,9 +1321,13 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .rp-pill.on:hover{background:var(--blue)}
 
 /* per-RM report detail (/reports/detail) */
-.rp-rm{display:block;color:inherit;text-decoration:none;border-radius:8px;margin:-4px -6px;padding:4px 6px}
-.rp-rm:hover{background:var(--panel-2)}
-.rp-rm:hover>div:first-child{color:var(--blue);text-decoration:underline}
+.rp-rm{display:block;color:inherit;text-decoration:none}
+/* Feedback belongs to the row, not the name — the whole row is the click target, and
+   a tint that works on an idle row (already --panel-2) has to be its own colour. */
+.rp-row{cursor:pointer}
+.rp-row:hover{background:var(--blue-soft)}
+.rp-row:hover .rp-rm>div:first-child{color:var(--blue-deep);text-decoration:underline}
+.rp-rm:focus-visible{outline:2px solid var(--blue);outline-offset:2px;border-radius:6px}
 .rd-days{display:flex;flex-direction:column;gap:10px}
 .rd-day{display:block;width:100%;text-align:left;padding:14px 16px;border:1px solid var(--line);
   background:var(--panel);cursor:pointer;font:inherit;color:inherit;transition:border-color .12s,box-shadow .12s}

@@ -31,6 +31,7 @@ from ..config import get_settings
 from ..core.auth import current_user, is_calling_rm, require_admin
 from ..db import neon_engine
 from ..events import publish, rm_channel
+from ..services import activity
 from ..models import CallLog, Lead, User
 
 log = logging.getLogger("bonvoice")
@@ -624,7 +625,7 @@ _RELEASE_SLOT = text("""
            outcome  = COALESCE(:outcome, outcome),
            answered = answered OR :answered
      WHERE event_id = :eid AND status = 'dialing'
- RETURNING id, rm_email
+ RETURNING id, rm_email, lead_id
 """)
 
 
@@ -654,6 +655,20 @@ async def _release_dial_slot(engine, body: dict) -> None:
                 _RELEASE_SLOT,
                 {"eid": str(event_id), "outcome": status, "answered": answered, "ends": ends},
             )).mappings().first()
+            # A durable record that a call actually happened, with whether the PBX
+            # thought it connected. Deliberately NOT what the report counts —
+            # Bonvoice's connected flag isn't trustworthy enough, so the report uses
+            # the RM's own call_connected / call_missed. This exists so the raw signal
+            # accumulates and can be compared against later.
+            if ends and freed:
+                await activity.record(conn, activity.row_for(
+                    activity.Actor(email=freed["rm_email"], role="rm"),
+                    # .get, not []: a KeyError here is caught by the outer handler and would
+                    # take the slot-release publish down with it, stranding the RM on "Ringing…"
+                    entity_type="lead", entity_id=freed.get("lead_id"),
+                    action="call_dialled",
+                    metadata={"connected": bool(answered), "pbx_status": status,
+                              "source": "auto_dialer", "event_id": str(event_id)}))
     except Exception:  # noqa: BLE001 — the callback was already acked
         log.exception("bonvoice: failed to release dial slot for event %s", event_id)
         return

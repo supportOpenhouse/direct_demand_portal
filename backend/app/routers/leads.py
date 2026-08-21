@@ -294,7 +294,8 @@ class ConfirmPayload(BaseModel):
 
 
 @router.post("/leads/{lead_id}/confirm")
-async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
+async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
+                       user: dict = Depends(current_user)):
     """Save the confirmed-on-call form + a mandatory follow-up. `qualify=true` moves the
     lead to stage 'qualified'; `qualify=false` saves the details and moves it to
     'follow_up' instead."""
@@ -346,7 +347,7 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
         if payload.qualify:
             # → Qualified. follow_up_at is kept so the Qualified page can badge a due
             # callback; the lead no longer also appears in the Follow-up list.
-            await conn.execute(
+            res_q = await conn.execute(
                 text(
                     "UPDATE leads SET confirmed = true, ever_connected = true, miss_count = 0, "
                     # forward-only: a lead already at visit_scheduled (or beyond) must not
@@ -355,10 +356,22 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload):
                     "THEN stage ELSE 'qualified' END, "
                     "tat_deadline = NULL, follow_up_at = :t, "
                     "follow_up_since = COALESCE(follow_up_since, now()), "
-                    "qualified_at = COALESCE(qualified_at, now()) WHERE id = :id"
+                    "qualified_at = COALESCE(qualified_at, now()) "
+                    # the prior stage, captured before the CASE overwrites it
+                    "WHERE id = :id RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"
                 ),
                 {"id": lead_id, "t": follow_up},
             )
+            moved = res_q.first()
+            # The CASE is forward-only, so re-submitting the form on an already-visited
+            # lead changes nothing. Logging the attempt would inflate "Leads Qualified"
+            # with re-saves that moved no one.
+            if moved and moved[0] != moved[1]:
+                await activity.record(conn, activity.row_for(
+                    activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                    action="stage_change", field="stage",
+                    before=moved[0], after=moved[1],
+                    metadata={"via": "qualify_form"}))
         elif follow_up is not None:
             # details saved but not qualified → Follow-up
             await conn.execute(
@@ -612,7 +625,8 @@ class FollowupPayload(BaseModel):
 
 
 @router.post("/leads/{lead_id}/followup")
-async def set_followup(lead_id: UUID, payload: FollowupPayload):
+async def set_followup(lead_id: UUID, payload: FollowupPayload,
+                       user: dict = Depends(current_user)):
     """Set a manual follow-up (reachable only after a connected call) → moves to Follow-up."""
     follow_up = _parse_followup(payload.follow_up_at)
     engine = neon_engine()
@@ -630,6 +644,11 @@ async def set_followup(lead_id: UUID, payload: FollowupPayload):
             {"t": follow_up, "id": lead_id})
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="lead not found")
+        # Booking a callback is real RM work and was invisible until now — an RM who
+        # spends a morning rescheduling had nothing to show for it.
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+            action="follow_up_set", field="follow_up_at", after=follow_up))
     return {"status": "ok"}
 
 

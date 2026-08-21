@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, force_logout_all, forget_user, require_admin
 from ..db import neon_engine
+from ..services import activity
 from ..models import User
 
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
@@ -68,7 +69,7 @@ class UserCreate(BaseModel):
 
 
 @router.post("/users")
-async def create_user(payload: UserCreate):
+async def create_user(payload: UserCreate, actor: dict = Depends(require_admin)):
     if payload.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ROLES)}")
     engine = neon_engine()
@@ -82,6 +83,10 @@ async def create_user(payload: UserCreate):
         row = (await conn.execute(stmt)).first()
         if row is None:
             raise HTTPException(status_code=409, detail="a user with that email already exists")
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(actor), entity_type="user",
+            entity_id=str(payload.email).lower(), action="user_created",
+            metadata={"role": payload.role, "name": payload.name.strip()}))
     return {"id": str(row[0]), "status": "ok"}
 
 
@@ -94,7 +99,8 @@ class UserUpdate(BaseModel):
 
 
 @router.patch("/users/{user_id}")
-async def update_user(user_id: UUID, payload: UserUpdate):
+async def update_user(user_id: UUID, payload: UserUpdate,
+                      actor: dict = Depends(require_admin)):
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ROLES)}")
     sets, params = [], {"id": user_id}
@@ -107,9 +113,27 @@ async def update_user(user_id: UUID, payload: UserUpdate):
         return {"status": "noop"}
     engine = neon_engine()
     async with engine.begin() as conn:
+        # Read first: "who made whom an admin" is the question an audit trail exists to
+        # answer, and it needs the prior role, not just the new one.
+        before = (await conn.execute(text(
+            "SELECT email, name, role, active FROM users WHERE id = :id"),
+            {"id": user_id})).mappings().first()
         res = await conn.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
         if res.rowcount == 0:
             raise HTTPException(status_code=404, detail="user not found")
+
+        me = activity.Actor.of(actor)
+        events = activity.changes_between(
+            me, "user", before["email"], dict(before),
+            {k: v for k, v in params.items() if k != "id"})
+        # Role and active get their own verbs — they're the two that change what a
+        # person can DO, and burying them in a generic "update" makes them unfilterable.
+        for e in events:
+            if e["field"] == "role":
+                e["action"] = "role_changed"
+            elif e["field"] == "active":
+                e["action"] = "user_activated" if e["after_value"] == "true" else "user_deactivated"
+        await activity.record(conn, events)
     forget_user(user_id)  # a role/active edit must bite now, not when their token lapses
     return {"status": "ok"}
 
@@ -129,6 +153,14 @@ async def delete_user(user_id: UUID):
 async def logout_all_sessions(user: dict = Depends(require_admin)):
     """Force every user (including the caller) to sign in again."""
     await force_logout_all(user.get("email") or "admin")
+    # One click invalidates every session in the company. If anything belongs in an
+    # audit trail, it's this.
+    engine = neon_engine()
+    if engine is not None:
+        async with engine.begin() as conn:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="auth", entity_id=None,
+                action="force_logout_all"))
     return {"status": "ok"}
 
 

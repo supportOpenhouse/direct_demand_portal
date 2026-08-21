@@ -12,6 +12,7 @@ from sqlalchemy import text
 
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
+from ..services import activity
 from ..services.app_settings import DEFAULTS, SETTING_KEYS, coerce, merge_defaults
 
 log = logging.getLogger("app_settings")
@@ -62,5 +63,10 @@ async def set_setting(key: str, payload: SettingIn, user: dict = Depends(require
             "value": "true" if payload.value else "false",
             "by": user.get("email"),
         })
+        # hide_lead_phones is a PII policy switch — who flipped it and when is the
+        # whole point of recording it.
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="setting", entity_id=key,
+            action="setting_changed", field=key, after=payload.value))
     log.info("setting %s = %s by %s", key, payload.value, user.get("email"))
     return {key: coerce(key, payload.value)}

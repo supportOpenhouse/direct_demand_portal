@@ -76,7 +76,7 @@ async def test_the_hangup_publishes_to_the_rm_whose_slot_it_freed(published):
     reaches the Completed list to be marked."""
     from app.routers.bonvoice import _release_dial_slot
 
-    engine = _FakeEngine(row={"id": "q1", "rm_email": "Asha@X.com"})
+    engine = _FakeEngine(row={"id": "q1", "rm_email": "Asha@X.com", "lead_id": "L1"})
     await _release_dial_slot(engine, {"callType": "2", "eventID": "ev1", "Status": "ANSWER"})
 
     assert published == [
@@ -88,7 +88,7 @@ async def test_an_answer_event_does_not_announce_the_call_as_ended(published):
     here would move the row to Completed mid-conversation."""
     from app.routers.bonvoice import _release_dial_slot
 
-    engine = _FakeEngine(row={"id": "q1", "rm_email": "asha@x.com"})
+    engine = _FakeEngine(row={"id": "q1", "rm_email": "asha@x.com", "lead_id": "L1"})
     await _release_dial_slot(engine, {"callType": "1", "eventID": "ev1"})
 
     assert published == []

@@ -12,6 +12,7 @@ from ..config import get_settings
 from ..core.auth import current_user
 from ..db import neon_engine
 from ..models import CrmVisit
+from ..services import activity
 from ..services.crm_booking import BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits
 
 log = logging.getLogger("visits")
@@ -179,11 +180,30 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     # booking → visit_scheduled (Visited Leads). Booking again on a lead
                     # that's already visited = a revisit → revisit_scheduled (Pipeline
                     # Leads). Forward-only: terminal / already-in-pipeline leads are kept.
-                    await conn.execute(text(
+                    moved = (await conn.execute(text(
                         "UPDATE leads SET stage = CASE "
                         "WHEN stage IN ('won','rejected','rnr','revisit_scheduled') THEN stage "
                         "WHEN stage = 'visit_scheduled' THEN 'revisit_scheduled' "
-                        "ELSE 'visit_scheduled' END WHERE id = :id"), {"id": req.lead_id})
+                        "ELSE 'visit_scheduled' END WHERE id = :id "
+                        "RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"),
+                        {"id": req.lead_id})).first()
+
+                    actor = activity.Actor.of(user)
+                    events = [activity.row_for(
+                        actor, entity_type="lead", entity_id=req.lead_id,
+                        action="visit_booked",
+                        # the booking itself, separate from the stage move: a revisit on
+                        # an already-visited lead books a visit but moves no stage
+                        metadata={"visits": booked})]
+                    # The CASE is forward-only, so a booking on a won/rejected lead
+                    # changes nothing — logging the attempt would inflate the report.
+                    if moved and moved[0] != moved[1]:
+                        events.append(activity.row_for(
+                            actor, entity_type="lead", entity_id=req.lead_id,
+                            action="stage_change", field="stage",
+                            before=moved[0], after=moved[1],
+                            metadata={"via": "visit_booking"}))
+                    await activity.record(conn, events)
             except Exception:  # noqa: BLE001
                 log.exception("failed to persist booked visits (booking itself succeeded)")
 

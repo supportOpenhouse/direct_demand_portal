@@ -166,7 +166,7 @@ class _FakeEngine:
         return _Ctx()
 
 
-async def _release(body, row={"id": "q1", "rm_email": "rm@x.com"}):
+async def _release(body, row={"id": "q1", "rm_email": "rm@x.com", "lead_id": "L1"}):
     from app.routers.bonvoice import _release_dial_slot
     engine = _FakeEngine(row=row)
     await _release_dial_slot(engine, body)
@@ -177,17 +177,20 @@ async def test_hangup_frees_the_slot_even_with_no_call_id():
     """The regression: a stuck 'dialing' row shows "Ringing…" forever AND costs that RM
     the rest of the campaign, so releasing must not depend on the log row's callID."""
     calls = await _release({"callType": "2", "eventID": "ev123", "Status": "ANSWER"})
-    assert len(calls) == 1
+    # The release, plus the activity row that now rides in the same transaction — the
+    # count isn't the point, the release running with the right params is.
     assert "dial_queue" in calls[0][0]
     assert calls[0][1] == {"eid": "ev123", "outcome": "ANSWER", "answered": True, "ends": True}
+    assert any("activity_log" in c[0] for c in calls), "the dial should be recorded too"
 
 
 async def test_answer_is_recorded_without_ending_the_call():
     """The answer event decides whether a retry is owed, but the call is still up —
     ending it here would free the RM mid-conversation and dial the next lead."""
     calls = await _release({"callType": "1", "eventID": "ev123"})
-    assert len(calls) == 1
     assert calls[0][1]["answered"] is True and calls[0][1]["ends"] is False
+    # an answer is not an end, so no call_dialled row yet
+    assert not any("activity_log" in c[0] for c in calls)
 
 
 async def test_nothing_else_touches_the_slot():

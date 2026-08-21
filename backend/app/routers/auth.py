@@ -9,6 +9,7 @@ from ..config import get_settings
 from ..core.auth import current_user, issue_jwt, verify_google_token
 from ..core.ratelimit import limiter
 from ..db import neon_engine
+from ..services import activity
 from ..models import User
 
 router = APIRouter(tags=["auth"])
@@ -69,6 +70,16 @@ async def auth_google(request: Request, response: Response, payload: GoogleLogin
     user = {"id": str(row["id"]), "email": info["email"], "name": row["name"],
             "picture": info["picture"] or row.get("picture"), "role": row["role"],
             "assignment_name": row.get("assignment_name")}
+
+    # The report derives "login time" as the first activity of the day, so it doesn't
+    # read this — but a week-long JWT means someone can work for days without ever
+    # signing in again, and an actual sign-in is worth its own audit row regardless.
+    engine = neon_engine()
+    if engine is not None:
+        async with engine.begin() as conn:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="auth",
+                entity_id=user["email"], action="login"))
     return {"token": issue_jwt(user), "user": user}
 
 

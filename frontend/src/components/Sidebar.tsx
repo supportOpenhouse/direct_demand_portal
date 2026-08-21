@@ -167,16 +167,6 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
             )}
           </>
         )}
-        {/* Admin-only in the nav; the endpoint itself scopes an RM to their own row,
-            so an RM reaching it directly sees themselves rather than a league table. */}
-        {isAdmin && (
-          <NavLink to="/reports" className={navClass} title="Reports">
-            <IconReport /> <span className="nav-t">Reports</span>
-          </NavLink>
-        )}
-        <NavLink to="/settings" className={navClass} title="Settings & Access">
-          <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
-        </NavLink>
         {/* Not admin-gated any more: RMs get the same page scoped to their own
             handset, so it's their record of who they spoke to. */}
         <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
@@ -191,11 +181,23 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
             <span className="nav-t">Huvo Call Log</span>
           </NavLink>
         )}
+        {/* Admin-only in the nav; the endpoint itself scopes an RM to their own row,
+            so an RM reaching it directly sees themselves rather than a league table. */}
+        {isAdmin && (
+          <NavLink to="/reports" className={navClass} title="Reports">
+            <IconReport /> <span className="nav-t">Reports</span>
+          </NavLink>
+        )}
         {isAdmin && (
           <NavLink to="/logs" className={navClass} title="Activity Logs">
             <IconLogs /> <span className="nav-t">Activity Logs</span>
           </NavLink>
         )}
+        {/* Last in the section: the one entry nobody navigates to as part of the
+            day's work. */}
+        <NavLink to="/settings" className={navClass} title="Settings & Access">
+          <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
+        </NavLink>
       </nav>
       {/* no spacer — #nav is flex:1 and pushes the chip down on its own */}
       <UserChip />

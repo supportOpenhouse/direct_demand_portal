@@ -9,62 +9,9 @@
    page for, so they're rendered as muted zeroes rather than hidden. */
 import { useState } from "react";
 import { useRmReport } from "../lib/queries";
-import { RmReportRow } from "../lib/api";
-
-const IST = "Asia/Kolkata";
-const IST_OFFSET_MIN = 330;  // Asia/Kolkata, no DST
-
-/* Every preset is computed on the IST calendar, not the browser's. An RM in another
-   timezone — or one working past midnight IST — must see the same "Today" a manager
-   in Delhi does, or the two of them read different numbers off the same button. */
-const istDay = (daysAgo = 0) =>
-  new Date(Date.now() + IST_OFFSET_MIN * 60_000 - daysAgo * 864e5)
-    .toISOString().slice(0, 10);
-
-const todayIST = () => istDay();
-
-type Preset = "all" | "today" | "yesterday" | "7d" | "15d" | "month" | "custom";
-
-/* [from, to] per preset. `all` is resolved server-side from the log's own first row,
-   so its bounds here are only a placeholder the response overwrites. */
-function rangeFor(p: Preset): [string, string] {
-  const today = istDay();
-  switch (p) {
-    case "today":     return [today, today];
-    case "yesterday": return [istDay(1), istDay(1)];
-    // inclusive of today, so "Last 7 days" is 7 days of work, not 8
-    case "7d":        return [istDay(6), today];
-    case "15d":       return [istDay(14), today];
-    case "month":     return [today.slice(0, 8) + "01", today];
-    default:          return [today, today];
-  }
-}
-
-const PRESETS: { key: Preset; label: string }[] = [
-  { key: "all",       label: "All" },
-  { key: "today",     label: "Today" },
-  { key: "yesterday", label: "Yesterday" },
-  { key: "7d",        label: "Last 7 days" },
-  { key: "15d",       label: "Last 15 days" },
-  { key: "month",     label: "This Month" },
-  { key: "custom",    label: "Custom" },
-];
-
-/* Only the time — the date is already the page's range, and repeating it in every
-   row would crowd out the numbers. */
-const hhmm = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleTimeString("en-IN",
-    { timeZone: IST, hour: "2-digit", minute: "2-digit", hour12: false }) : null;
-
-const COLUMNS: { key: keyof RmReportRow; label: string; hint: string }[] = [
-  { key: "calls_dialled",   label: "Dialled",   hint: "Connected + Missed, as marked by the RM" },
-  { key: "calls_connected", label: "Connected", hint: "Marked 'Yes' on a call" },
-  { key: "calls_missed",    label: "Missed",    hint: "Marked 'No', with a reason" },
-  { key: "leads_qualified", label: "Qualified", hint: "Stage moved to qualified" },
-  { key: "visit_scheduled", label: "Visit",     hint: "Stage moved to visit_scheduled" },
-  { key: "revisit_booked",  label: "Revisit",   hint: "Stage moved to revisit_scheduled" },
-  { key: "leads_rejected",  label: "Rejected",  hint: "Stage moved to rejected" },
-];
+/* Presets, metric columns and the detail link are shared with ReportDetail — see
+   lib/report.ts on why they can't live on either page. */
+import { COLUMNS, detailHref, hhmm, PRESETS, Preset, rangeFor, todayIST } from "../lib/report";
 
 function Num({ n, strong }: { n: number; strong?: boolean }) {
   // A zero is information, not an absence — muted, never blank.
@@ -92,8 +39,14 @@ export default function Reports() {
   };
 
   const rows = data?.items ?? [];
+  /* "Login" is the first activity of the IST day. Over a multi-day range that's the
+     first activity of the FIRST day, which reads like a clock-in time and isn't one —
+     so the column only fills in when the range is a single day, and the drill-down
+     carries the per-day times for every other range. Read off the server's echoed
+     range, because All resolves its floor there. */
+  const singleDay = data ? data.from === data.to : from === to;
   const totals = COLUMNS.reduce((acc, c) => {
-    acc[c.key as string] = rows.reduce((n, r) => n + (r[c.key] as number), 0);
+    acc[c.key] = rows.reduce((n, r) => n + r[c.key], 0);
     return acc;
   }, {} as Record<string, number>);
   const worked = rows.filter((r) => r.total_events > 0).length;
@@ -141,11 +94,13 @@ export default function Reports() {
           <thead>
             <tr>
               <th style={{ width: 200 }}>RM</th>
-              <th style={{ width: 90 }} title="First activity of the day, IST — not the login event: a week-long session means someone can work for days without signing in">
+              <th style={{ width: 90 }} title={singleDay
+                ? "First activity of the day, IST — not the login event: a week-long session means someone can work for days without signing in"
+                : "Only shown for a single-day range — open an RM to see their login for each day"}>
                 Login
               </th>
               {COLUMNS.map((c) => (
-                <th key={c.key as string} className="rp-th" title={c.hint}>{c.label}</th>
+                <th key={c.key} className="rp-th" title={c.hint}>{c.label}</th>
               ))}
             </tr>
           </thead>
@@ -161,16 +116,25 @@ export default function Reports() {
               return (
                 <tr key={r.email} className={r.total_events === 0 ? "rp-idle" : ""}>
                   <td>
-                    <div style={{ fontSize: 13 }}>{r.name || r.email}</div>
-                    <div className="rp-sub">{r.email}
-                      {r.role === "test_rm" && <span className="dl-testtag">TEST</span>}
-                    </div>
+                    {/* A plain anchor with target=_blank, not a react-router Link:
+                        the detail page reads its whole range out of the querystring,
+                        so the new tab is a real, reloadable, shareable URL. */}
+                    <a className="rp-rm" target="_blank" rel="noreferrer"
+                       href={detailHref(r.email, from, to, preset === "all")}
+                       title={`Open ${r.name || r.email}'s day-by-day report in a new tab`}>
+                      <div style={{ fontSize: 13 }}>{r.name || r.email}</div>
+                      <div className="rp-sub">{r.email}
+                        {r.role === "test_rm" && <span className="dl-testtag">TEST</span>}
+                      </div>
+                    </a>
                   </td>
                   <td className="rp-num">
-                    {login || <span className="rp-sub">—</span>}
+                    {singleDay
+                      ? (login || <span className="rp-sub">—</span>)
+                      : <span className="rp-sub" title="Multi-day range — open the RM for per-day logins">—</span>}
                   </td>
                   {COLUMNS.map((c) => (
-                    <Num key={c.key as string} n={r[c.key] as number}
+                    <Num key={c.key} n={r[c.key]}
                          strong={c.key === "calls_dialled"} />
                   ))}
                 </tr>
@@ -183,7 +147,7 @@ export default function Reports() {
                 <td>Total</td>
                 <td />
                 {COLUMNS.map((c) => (
-                  <Num key={c.key as string} n={totals[c.key as string]}
+                  <Num key={c.key} n={totals[c.key]}
                        strong={c.key === "calls_dialled"} />
                 ))}
               </tr>
@@ -195,6 +159,7 @@ export default function Reports() {
       <p className="rp-note">
         Counts are derived from the activity log, so they begin when an event type was
         first recorded — earlier work isn't attributable to a person and doesn't appear.
+        Click an RM to open their day-by-day report in a new tab.
       </p>
     </>
   );

@@ -36,6 +36,26 @@ export function useRmReport(from: string, to: string, all = false) {
   });
 }
 
+/* The per-RM detail page. `email` is always present by the time this runs — the page
+   refuses to render without one — so there is no enabled guard. */
+export function useRmReportDays(email: string, from: string, to: string, all = false) {
+  return useQuery({
+    queryKey: ["rm-report-days", email, from, to, all],
+    queryFn: () => api.rmReportDays(email, from, to, all),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/* Leads touched on one day. Only fetched once a day row is actually opened — the
+   detail page can list a month of days without pulling a month of leads. */
+export function useRmDayLeads(email: string, date: string | null) {
+  return useQuery({
+    queryKey: ["rm-day-leads", email, date],
+    queryFn: () => api.rmDayLeads(email, date!),
+    enabled: !!date,
+  });
+}
+
 export function useActivityFilters() {
   return useQuery({
     queryKey: ["activity-filters"],

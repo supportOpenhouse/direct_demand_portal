@@ -120,6 +120,51 @@ export interface RmReportRow {
   leads_rejected: number;
 }
 
+/* One IST day of one RM's work — the per-user detail page. Same metric keys as the
+   summary row, split by day instead of collapsed over the whole range. */
+export interface RmDayRow {
+  day: string;                      // YYYY-MM-DD, IST
+  first_action_at: string | null;   // "login" — meaningful here, it really is one day
+  last_action_at: string | null;
+  total_events: number;
+  unique_leads: number;
+  calls_dialled: number;
+  calls_connected: number;
+  calls_missed: number;
+  leads_qualified: number;
+  visit_scheduled: number;
+  revisit_booked: number;
+  leads_rejected: number;
+}
+
+/* One lead an RM touched on one day, with that day's stage journey. `current_stage`
+   is the lead's stage now — the only field here not derived from the log, and the one
+   that answers "did the move stick?". */
+export interface RmDayLeadRow {
+  // Nullable: `wa_message_sent` logs an entity_type of 'lead' with no entity_id, and
+  // those rows collapse into one groupless bucket rather than being dropped — the
+  // modal's numbers have to add up to the day row's.
+  lead_id: string | null;
+  name: string | null;
+  phone: string | null;
+  city: string | null;
+  source: string | null;
+  current_stage: string | null;
+  first_at: string | null;
+  last_at: string | null;
+  total_events: number;
+  calls_dialled: number;
+  calls_connected: number;
+  calls_missed: number;
+  leads_qualified: number;
+  visit_scheduled: number;
+  revisit_booked: number;
+  leads_rejected: number;
+  from_stage: string | null;
+  to_stage: string | null;
+  note: string | null;
+}
+
 export interface ActivityRow {
   id: string;
   created_at: string;
@@ -543,6 +588,17 @@ export const api = {
     return request<{ items: RmReportRow[]; from: string; to: string; metrics: string[] }>(
       `/v1/reports/rm?${qs.toString()}`);
   },
+  rmReportDays: (email: string, from: string, to: string, all = false) => {
+    const qs = new URLSearchParams({ email });
+    if (all) qs.set("all", "true");
+    else { qs.set("from", from); qs.set("to", to); }
+    return request<{ email: string; name: string | null; role: string | null;
+                     days: RmDayRow[]; from: string; to: string }>(
+      `/v1/reports/rm/days?${qs.toString()}`);
+  },
+  rmDayLeads: (email: string, date: string) =>
+    request<{ items: RmDayLeadRow[]; date: string; email: string }>(
+      `/v1/reports/rm/leads?${new URLSearchParams({ email, date })}`),
   activity: (p: ActivityQuery) => {
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });

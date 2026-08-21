@@ -13,6 +13,7 @@ import LeadDetail from "./pages/LeadDetail";
 import Settings from "./pages/Settings";
 import Logs from "./pages/Logs";
 import Reports from "./pages/Reports";
+import ReportDetail from "./pages/ReportDetail";
 import CallLog from "./pages/CallLog";
 import HuvoCalls from "./pages/HuvoCalls";
 import Chat from "./pages/Chat";
@@ -82,6 +83,8 @@ const desktopRoutes = [
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
       { path: "reports", element: <Reports /> },
+      // opened in a new tab from a row on /reports; range travels in the querystring
+      { path: "reports/detail", element: <ReportDetail /> },
       { path: "call-log", element: <CallLog /> },
       { path: "huvo-calls", element: <HuvoCalls /> },
       { path: "chat", element: <Chat /> },

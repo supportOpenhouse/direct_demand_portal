@@ -9,7 +9,16 @@ a LEFT JOIN's right-hand table silently drops exactly those people.
 """
 import re
 
-from app.routers.reports import RM_REPORT, _metric_sql
+import pytest
+from fastapi import HTTPException
+
+from app.routers.reports import (
+    RM_DAY_LEADS,
+    RM_DAYS,
+    RM_REPORT,
+    _metric_sql,
+    _scoped_email,
+)
 
 
 def _sql(x) -> str:
@@ -81,3 +90,59 @@ def test_all_time_resolves_from_the_log_not_a_hardcoded_date():
     assert "min(created_at)" in src.lower()
     assert "activity_log" in src
     assert "Asia/Kolkata" in src, "the floor is an IST calendar day like every other bound"
+
+
+# ── the per-RM drill-down ────────────────────────────────────────────────────────
+# Different trap from the summary above. Here the date filter belongs in the WHERE —
+# a day with no work has no row to preserve — so what needs pinning instead is the
+# scoping, the ordering of the stage journey, and the direction of the uuid cast.
+def test_the_drill_down_is_scoped_to_one_actor():
+    """Both queries name a single actor. Dropping this clause would turn a per-RM
+    page into every RM's leads and notes, which is a different product."""
+    for q in (RM_DAYS, RM_DAY_LEADS):
+        assert "lower(a.actor_email) = lower(:email)" in _sql(q)
+
+
+def test_the_drill_down_days_are_ist_calendar_days():
+    """Same reason as the summary: a UTC boundary rolls the day at 05:30 IST, which
+    is mid-shift — half a morning's calls would land on the previous row."""
+    for q in (RM_DAYS, RM_DAY_LEADS):
+        assert "Asia/Kolkata" in _sql(q)
+
+
+def test_the_stage_journey_is_ordered_by_time_not_by_name():
+    """min()/max() on before_value/after_value looks right and is wrong: it sorts the
+    stage NAMES alphabetically, so a lead that went new → qualified → rejected would
+    report 'new → rejected' by luck and 'qualified → won' when the luck runs out."""
+    src = _sql(RM_DAY_LEADS)
+    journey = src.split("from_stage", 1)[0].split("count(*)", 1)[1]
+    assert "array_agg" in journey and "ORDER BY a.created_at" in journey
+    assert "min(a.before_value)" not in src and "max(a.after_value)" not in src
+
+
+def test_the_lead_join_casts_the_uuid_to_text():
+    """entity_id is TEXT and holds non-uuid keys ('leads_sheet'), so casting it to
+    uuid raises on the first sync row. A regex guard does not save you — AND order in
+    a JOIN isn't guaranteed and the planner can still run the cast first."""
+    src = _sql(RM_DAY_LEADS)
+    assert "l.id::text = a.entity_id" in src
+    assert "a.entity_id::uuid" not in src
+
+
+def test_the_day_list_counts_leads_not_events():
+    """'12 leads' and '84 actions' are different numbers and the page shows both."""
+    assert "count(DISTINCT a.entity_id)" in _sql(RM_DAYS)
+
+
+def test_an_rm_only_ever_opens_their_own_report():
+    """The querystring is a request, not an authorisation. Someone who can read the
+    page can edit the URL."""
+    assert _scoped_email({"role": "rm", "email": "Me@oh.in"}, "boss@oh.in") == "me@oh.in"
+    assert _scoped_email({"role": "test_rm", "email": "t@oh.in"}, None) == "t@oh.in"
+
+
+def test_an_admin_asking_for_nobody_fails_closed():
+    """Falling back to 'everyone' would silently widen the page instead of erroring."""
+    assert _scoped_email({"role": "admin", "email": "a@oh.in"}, "rm@oh.in") == "rm@oh.in"
+    with pytest.raises(HTTPException):
+        _scoped_email({"role": "admin", "email": "a@oh.in"}, None)

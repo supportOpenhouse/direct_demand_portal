@@ -35,15 +35,12 @@ const COLUMNS: { header: string; get: (l: Lead) => unknown }[] = [
   { header: "Latest note", get: (l) => l.latest_note },
 ];
 
-function leadsToCsv(leads: Lead[]): string {
-  const head = COLUMNS.map((c) => cell(c.header)).join(",");
-  const rows = leads.map((l) => COLUMNS.map((c) => cell(c.get(l))).join(","));
-  return [head, ...rows].join("\r\n");
-}
-
-export function downloadLeadsCsv(filename: string, leads: Lead[]): void {
+/* Generic writer, so any page with a table on screen can hand over its own headers
+   and rows instead of owning a second copy of the escaping and the BOM. */
+export function downloadCsv(filename: string, headers: string[], rows: unknown[][]): void {
+  const body = [headers.map(cell).join(","), ...rows.map((r) => r.map(cell).join(","))].join("\r\n");
   // leading BOM so Excel reads UTF-8 (₹, non-ASCII names) correctly
-  const blob = new Blob(["﻿" + leadsToCsv(leads)], { type: "text/csv;charset=utf-8;" });
+  const blob = new Blob(["﻿" + body], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -52,4 +49,8 @@ export function downloadLeadsCsv(filename: string, leads: Lead[]): void {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadLeadsCsv(filename: string, leads: Lead[]): void {
+  downloadCsv(filename, COLUMNS.map((c) => c.header), leads.map((l) => COLUMNS.map((c) => c.get(l))));
 }

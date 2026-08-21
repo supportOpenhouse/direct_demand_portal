@@ -30,6 +30,7 @@ const TITLES: Record<string, string> = {
   "/settings": "Settings & Access",
   "/logs": "Activity Logs",
   "/reports": "Reports",
+  "/reports/detail": "RM Report",
   "/call-log": "Bonvoice Call Log",
   "/huvo-calls": "Huvo Call Log",
   "/chat": "WhatsApp",

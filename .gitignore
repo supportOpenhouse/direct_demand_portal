@@ -27,3 +27,6 @@ service-account*.json
 graphify-out
 huvo_call_updates.csv
 leads-2026-08-13.csv
+
+# private working context for Claude sessions
+claude.md

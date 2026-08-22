@@ -4,6 +4,7 @@ The read is deliberately NOT admin-only. An RM's browser has to know whether to 
 lead phone numbers, and it can only know that by asking — but only an admin may
 decide it. That asymmetry is the whole endpoint.
 """
+import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,7 +14,7 @@ from sqlalchemy import text
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..services import activity
-from ..services.app_settings import DEFAULTS, SETTING_KEYS, coerce, merge_defaults
+from ..services.app_settings import DEFAULTS, LIST_KEYS, SETTING_KEYS, coerce, merge_defaults
 
 log = logging.getLogger("app_settings")
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -27,7 +28,8 @@ _UPSERT = text("""
 
 
 class SettingIn(BaseModel):
-    value: bool
+    # bool for flag settings, list[str] for list settings (e.g. an email allowlist)
+    value: bool | list[str]
 
 
 @router.get("")
@@ -53,6 +55,16 @@ async def get_settings_values(_: dict = Depends(current_user)):
 async def set_setting(key: str, payload: SettingIn, user: dict = Depends(require_admin)):
     if key not in SETTING_KEYS:
         raise HTTPException(status_code=400, detail=f"unknown setting {key!r}")
+    # the value's type has to match the key's kind — a list into a flag (or vice versa)
+    # is a client bug, not something to silently coerce away.
+    if key in LIST_KEYS:
+        if not isinstance(payload.value, list):
+            raise HTTPException(status_code=400, detail=f"{key!r} expects a list")
+        stored = json.dumps([str(x).strip().lower() for x in payload.value if str(x).strip()])
+    else:
+        if not isinstance(payload.value, bool):
+            raise HTTPException(status_code=400, detail=f"{key!r} expects a boolean")
+        stored = "true" if payload.value else "false"
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
@@ -60,7 +72,7 @@ async def set_setting(key: str, payload: SettingIn, user: dict = Depends(require
         await conn.execute(_UPSERT, {
             "key": key,
             # stored as text, coerced back on read — see services/app_settings.py
-            "value": "true" if payload.value else "false",
+            "value": stored,
             "by": user.get("email"),
         })
         # hide_lead_phones is a PII policy switch — who flipped it and when is the

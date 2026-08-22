@@ -251,6 +251,9 @@ export interface AppSettings {
   // and screenshots. The number still reaches the browser and calling still works;
   // this only stops it being rendered.
   hide_lead_phones: boolean;
+  // WhatsApp top-bar button visibility for non-admins (admins always see it).
+  wa_show_all_rms: boolean;        // master switch: show to every RM
+  wa_allowed_emails: string[];     // specific users granted access when the switch is off
 }
 
 /* Live Calls — the RM's own view of the campaign dialling them. */
@@ -644,7 +647,7 @@ export const api = {
       "/v1/huvo/leads/bulk", { method: "POST", body: JSON.stringify(body) }),
   appSettings: () => request<AppSettings>("/v1/settings"),
   // PATCH not PUT — CORS allow_methods in backend/app/main.py doesn't list PUT
-  setAppSetting: (key: keyof AppSettings, value: boolean) =>
+  setAppSetting: (key: keyof AppSettings, value: boolean | string[]) =>
     request<Partial<AppSettings>>(`/v1/settings/${key}`, {
       method: "PATCH", body: JSON.stringify({ value }),
     }),

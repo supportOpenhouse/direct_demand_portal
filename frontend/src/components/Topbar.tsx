@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
 import { useToast } from "./Toast";
 import { useAuth } from "./AuthContext";
-import { useIncomingCalls, useMyCalls, useWaLatest } from "../lib/queries";
+import { useAppSettings, useIncomingCalls, useMyCalls, useWaLatest } from "../lib/queries";
 import { markCallsSeen, readCallsSeenAt } from "../lib/calls";
 import { isCallingRm } from "../lib/roles";
 import { readWaSeenAt } from "../lib/whatsapp";
@@ -126,6 +126,14 @@ function IncomingCallsBell() {
 export default function Topbar() {
   const { pathname } = useLocation();
   const toast = useToast();
+  // WhatsApp button visibility: admins always; RMs only when an admin has enabled it
+  // (globally for all RMs, or for this specific person).
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
+  const { data: appSettings } = useAppSettings();
+  const email = (user?.email || "").toLowerCase();
+  const waAllowed = isAdmin || !!appSettings?.wa_show_all_rms
+    || (!!email && (appSettings?.wa_allowed_emails ?? []).includes(email));
 
   // "Unseen" = an inbound message newer than the last time this browser opened the
   // WhatsApp page. Per-browser via localStorage rather than a read-receipt table —
@@ -161,19 +169,22 @@ export default function Topbar() {
       </button>
       <IncomingCallsBell />
       <LiveCallsButton />
-      {/* RMs see their assigned conversations; the API scopes what comes back */}
-      <Link className="btn wa" to="/chat" style={{ position: "relative" }}>
-        <WhatsAppIcon /> WhatsApp
-        {unseen && (
-          <span
-            title="New messages"
-            style={{
-              position: "absolute", top: -3, right: -3, width: 10, height: 10,
-              borderRadius: "50%", background: "#f97316", border: "2px solid var(--panel)",
-            }}
-          />
-        )}
-      </Link>
+      {/* RMs see their assigned conversations (API-scoped) — but only if an admin has
+          granted them WhatsApp access in Settings. Admins always see the button. */}
+      {waAllowed && (
+        <Link className="btn wa" to="/chat" style={{ position: "relative" }}>
+          <WhatsAppIcon /> WhatsApp
+          {unseen && (
+            <span
+              title="New messages"
+              style={{
+                position: "absolute", top: -3, right: -3, width: 10, height: 10,
+                borderRadius: "50%", background: "#f97316", border: "2px solid var(--panel)",
+              }}
+            />
+          )}
+        </Link>
+      )}
     </div>
   );
 }

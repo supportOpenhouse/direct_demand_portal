@@ -1,5 +1,5 @@
 import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, ConfirmPayload, HuvoCallQuery, MatchPreviewReq } from "./api";
+import { api, AppSettings, ConfirmPayload, HuvoCallQuery, MatchPreviewReq } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -87,7 +87,7 @@ export function useAppSettings() {
 export function useSetAppSetting() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ key, value }: { key: "hide_lead_phones"; value: boolean }) =>
+    mutationFn: ({ key, value }: { key: keyof AppSettings; value: boolean | string[] }) =>
       api.setAppSetting(key, value),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["app-settings"] }),
   });

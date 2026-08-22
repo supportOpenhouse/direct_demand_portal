@@ -71,6 +71,84 @@ function PrivacyPanel() {
     </div>
   );
 }
+function WhatsAppAccessPanel() {
+  const { data, isLoading } = useAppSettings();
+  const { data: usersData } = useUsers();
+  const set = useSetAppSetting();
+  const toast = useToast();
+
+  const showAll = !!data?.wa_show_all_rms;
+  const allowed = data?.wa_allowed_emails ?? [];
+  // admins always see WhatsApp, so only RMs are worth listing here
+  const rms = (usersData?.items ?? []).filter((u) => u.role !== "admin");
+
+  const flipShowAll = () =>
+    set.mutate(
+      { key: "wa_show_all_rms", value: !showAll },
+      {
+        onSuccess: () => toast(showAll ? "WhatsApp hidden from all RMs" : "WhatsApp shown to all RMs", showAll ? "blue" : "green", "💬"),
+        onError: (e: any) => toast(e.message, "gold", "⚠"),
+      },
+    );
+
+  const toggleUser = (rawEmail: string) => {
+    const e = rawEmail.toLowerCase();
+    const next = allowed.includes(e) ? allowed.filter((x) => x !== e) : [...allowed, e];
+    set.mutate({ key: "wa_allowed_emails", value: next }, { onError: (er: any) => toast(er.message, "gold", "⚠") });
+  };
+
+  return (
+    <div className="card panel-pad" style={{ marginTop: 16 }}>
+      <div className="section-head">
+        <div>
+          <div className="panel-title" style={{ marginBottom: 2 }}>WhatsApp access</div>
+          <p className="sec-sub" style={{ margin: 0 }}>Who sees the WhatsApp button in the top bar. Admins always see it.</p>
+        </div>
+      </div>
+
+      <div className="set-row">
+        <div>
+          <div className="set-name">Show WhatsApp to all RMs</div>
+          <p className="set-desc">On — every RM gets the WhatsApp button. Off — only the people you pick below see it.</p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={showAll}
+          aria-label="Show WhatsApp to all RMs"
+          className={"switch" + (showAll ? " on" : "")}
+          disabled={isLoading || set.isPending}
+          onClick={flipShowAll}
+        />
+      </div>
+
+      <div style={{ marginTop: 6, opacity: showAll ? 0.5 : 1 }}>
+        <div className="set-name" style={{ marginBottom: 4 }}>Show to specific people</div>
+        <p className="set-desc" style={{ marginTop: 0 }}>
+          {showAll
+            ? "Every RM already has access. This list applies when the toggle above is off."
+            : "Tick the RMs who should see the WhatsApp button."}
+        </p>
+        {rms.length === 0 ? (
+          <p className="set-desc">No RMs yet.</p>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: 280, overflow: "auto", marginTop: 8 }}>
+            {rms.map((u) => {
+              const on = allowed.includes(u.email.toLowerCase());
+              return (
+                <label key={u.id} style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", fontSize: 13 }}>
+                  <input type="checkbox" checked={on} onChange={() => toggleUser(u.email)} disabled={set.isPending} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />
+                  <span style={{ fontWeight: 600 }}>{u.name || u.email}</span>
+                  <span style={{ color: "var(--muted)", fontSize: 12 }}>{u.email}{!u.active && " · inactive"}</span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 const initials = (n: string | null, e: string) =>
   (n || e).split(/[ @]/).map((x) => x[0]).slice(0, 2).join("").toUpperCase();
 
@@ -386,6 +464,7 @@ export default function Settings() {
         )}
       </div>
       <PrivacyPanel />
+      <WhatsAppAccessPanel />
       {adding && <AddUserForm onClose={() => setAdding(false)} />}
     </>
   );

@@ -19,6 +19,7 @@ from ..core.auth import build_assignee_canon_map, canonical_assignee
 from ..db import neon_engine
 from ..models import Lead, ListingLead, MetaLead, SyncState
 from .normalize import normalize_city
+from .sheets import clean_cell
 
 log = logging.getLogger("leads_sync")
 
@@ -159,7 +160,7 @@ def _fetch_worksheet(name: str) -> list[dict]:
     for sheet_row, r in enumerate(values[1:], start=2):  # 1-based; row 1 = header
         if not any(c.strip() for c in r):
             continue
-        row = {headers[i]: (r[i].strip() if i < len(r) else "") for i in range(len(headers))}
+        row = {headers[i]: (clean_cell(r[i]) if i < len(r) else "") for i in range(len(headers))}
         row["_row"] = sheet_row  # carries the sheet row number for write-back
         rows.append(row)
     return rows
@@ -320,6 +321,25 @@ def _cols_per_row(model, rows: list[dict]) -> int:
     return max(1, len(keys) + auto)
 
 
+# City is the ONE field this sync rewrites on a row that already exists.
+#
+# Ingest is otherwise insert-only, so a lead kept whatever city it landed with —
+# blank, or a '#N/A' from a sheet lookup that happened to fail that morning — and no
+# later run would ever correct it. That is the "sometimes city is not updated".
+#
+# `IS DISTINCT FROM` so an unchanged city isn't a write, which also makes the rowcount
+# mean "cities actually corrected". `unnest` of two arrays rather than executemany:
+# one statement, two bound parameters, so there's no bind-parameter cap to chunk
+# around and the rowcount is real (executemany's is not).
+SYNC_CITY = text("""
+    UPDATE leads l
+       SET city = v.city
+      FROM unnest(CAST(:oks AS text[]), CAST(:cities AS text[])) AS v(origin_key, city)
+     WHERE l.origin_key = v.origin_key
+       AND l.city IS DISTINCT FROM v.city
+""")
+
+
 async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
     """Bulk INSERT ... ON CONFLICT DO NOTHING. Returns count of rows that landed.
     Chunked to stay under the bind-parameter cap; the caller's transaction spans every
@@ -365,11 +385,12 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
             if s.get("received_at") is None:  # meta + test leads → use ingest time
                 s["received_at"] = now
 
-        # backfill city onto already-ingested meta leads (insert-only never updates
-        # existing spine rows; the Meta sheet gained a city column after launch)
-        meta_city_updates = [
-            {"ok": s["origin_key"], "city": s["city"]} for s in meta_spine if s.get("city")
-        ]
+        # Both sources, not just Meta — a listing lead's city was never refreshed at
+        # all. Only non-empty values are offered, so a blank cell (or one the reader
+        # just flattened from '#N/A') leaves the existing city alone rather than
+        # erasing it: the sheet corrects a city, it doesn't get to delete one.
+        city_updates = [(s["origin_key"], s["city"])
+                        for s in (*meta_spine, *listing_spine) if s.get("city")]
 
         async with engine.begin() as conn:
             # resolve each lead's owner to the user's canonical full name before insert,
@@ -385,15 +406,16 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
             m_new = await _insert_only(conn, MetaLead, meta_ingest, "dedupe_key")
             l_new = await _insert_only(conn, ListingLead, listing_ingest, "dedupe_key")
             spine_new = await _insert_only(conn, Lead, [*meta_spine, *listing_spine], "origin_key")
-            if meta_city_updates:
-                await conn.execute(
-                    text("UPDATE leads SET city = :city WHERE origin_key = :ok AND (city IS NULL OR city = '')"),
-                    meta_city_updates,
-                )
+            city_fixed = 0
+            if city_updates:
+                oks, cities = zip(*city_updates)
+                city_fixed = (await conn.execute(
+                    SYNC_CITY, {"oks": list(oks), "cities": list(cities)})).rowcount or 0
 
         await _write_state(META_KEY, "ok", f"{m_new} new via {trigger}", m_new)
         await _write_state(LISTING_KEY, "ok", f"{l_new} new via {trigger}", l_new)
-        log.info("leads sync ok (%s): meta +%d, listing +%d, spine +%d", trigger, m_new, l_new, spine_new)
+        log.info("leads sync ok (%s): meta +%d, listing +%d, spine +%d, city fixed %d",
+                 trigger, m_new, l_new, spine_new, city_fixed)
 
         # stamp the source sheet so the team sees which rows we've captured (fail-soft:
         # a write-back failure must not fail the sync — usually means no Editor access)
@@ -410,7 +432,8 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
                     (settings.service_account_info or {}).get("client_email", "the service account"),
                     exc_info=True,
                 )
-        return {"status": "ok", "meta_new": m_new, "listing_new": l_new, "spine_new": spine_new}
+        return {"status": "ok", "meta_new": m_new, "listing_new": l_new,
+                "spine_new": spine_new, "city_fixed": city_fixed}
     except Exception as e:  # noqa: BLE001 — sync must never crash the app
         log.exception("leads sync failed (%s)", trigger)
         await _write_state(META_KEY, "error", str(e), None)

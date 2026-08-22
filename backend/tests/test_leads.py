@@ -1,8 +1,10 @@
+import re
 from datetime import datetime
 
 from app.routers.leads import IST, MISS_REASONS, _within_calling_hours
 from app.models import Lead
 from app.services.leads_sync import (
+    SYNC_CITY,
     _cols_per_row,
     build_listing,
     build_meta,
@@ -11,6 +13,8 @@ from app.services.leads_sync import (
     map_source,
     norm_phone,
 )
+from app.services.normalize import normalize_city
+from app.services.sheets import SHEET_ERRORS, clean_cell
 
 # Postgres' hard cap — the fix must keep every chunk strictly under this.
 PG_BIND_CAP = 32767
@@ -152,3 +156,64 @@ def test_miss_reasons_delays():
     assert MISS_REASONS["Did Not Pick / Not Reachable"] == 3
     assert MISS_REASONS["Switched Off"] == 6
     assert MISS_REASONS["Invalid Number"] is None  # rejected, never re-queued
+
+
+# ── sheet formula errors, and the city rewrite ──────────────────────────────────
+# A failed VLOOKUP in the source sheet renders as '#N/A', and the Sheets API returns
+# the DISPLAYED text — so it arrives as an ordinary six-character string. It reached
+# leads.city in production because normalize_city's catch-all branch title-cases
+# anything it doesn't recognise, and '#N/A'.title() is '#N/A'.
+def _sql(x) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"--[^\n]*", "", str(x))).strip()
+
+
+def test_a_failed_sheet_formula_reads_as_empty_not_as_a_value():
+    for bad in SHEET_ERRORS:
+        assert clean_cell(bad) == "", bad
+        assert clean_cell(f"  {bad.lower()}  ") == "", bad   # trimmed + case-insensitive
+
+
+def test_a_real_value_survives_the_guard():
+    """The guard must not be a filter on anything that merely starts with '#'."""
+    assert clean_cell("  Gurgaon ") == "Gurgaon"
+    assert clean_cell("#1 Society") == "#1 Society"
+    assert clean_cell(None) == "" and clean_cell("") == ""
+
+
+def test_the_normalizer_alone_would_still_let_it_through():
+    """Pins WHY the guard lives at the reader and not in normalize_city: this is the
+    exact behaviour that put 32 '#N/A' cities into production."""
+    assert normalize_city("#N/A") == "#N/A"
+    assert normalize_city(clean_cell("#N/A")) is None
+
+
+def test_build_meta_drops_a_city_the_sheet_could_not_compute():
+    ingest, spine, _ = build_meta([{"phone_number": "p:+919876543210",
+                                    "full_name": "A", "city": clean_cell("#N/A")}])
+    assert spine[0]["city"] is None and ingest[0]["city"] is None
+
+
+def test_the_city_rewrite_only_touches_rows_that_actually_change():
+    """IS DISTINCT FROM, not a plain assignment: an unchanged city must not count as a
+    correction, or the sync reports work it didn't do every four hours."""
+    src = _sql(SYNC_CITY)
+    assert "IS DISTINCT FROM" in src
+    assert "l.origin_key = v.origin_key" in src
+
+
+def test_the_city_rewrite_is_one_statement_not_a_per_row_loop():
+    """unnest of two arrays — executemany's rowcount is meaningless and a per-row
+    payload would have to be chunked around the 32767 bind-parameter cap."""
+    src = _sql(SYNC_CITY)
+    assert "unnest(" in src
+    assert "CAST(:oks AS text[])" in src and "CAST(:cities AS text[])" in src
+
+
+def test_the_rewrite_never_erases_a_city_with_a_blank_one():
+    """The sheet corrects a city; it doesn't get to delete one. Empty values are
+    filtered out before the statement ever sees them — mirrored here on the same
+    comprehension the sync uses."""
+    spine = [{"origin_key": "meta:1", "city": "Noida"},
+             {"origin_key": "meta:2", "city": None},
+             {"origin_key": "meta:3", "city": ""}]
+    assert [(s["origin_key"], s["city"]) for s in spine if s.get("city")] == [("meta:1", "Noida")]

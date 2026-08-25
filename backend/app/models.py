@@ -239,6 +239,9 @@ class Lead(Base):
     phone: Mapped[str | None] = mapped_column(Text)
     email: Mapped[str | None] = mapped_column(Text)
     assigned_to: Mapped[str | None] = mapped_column(Text)
+    # when the current owner was set (now() on assign, NULL on unassign) — lets the RM
+    # performance view bucket by assignment date, not just lead-receipt date
+    assigned_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
 
     # source-captured (what the ad form / portal gave us — locked, admin-editable later)
     city: Mapped[str | None] = mapped_column(Text)

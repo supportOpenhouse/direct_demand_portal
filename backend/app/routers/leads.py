@@ -72,6 +72,7 @@ def _lead_row(r) -> dict:
         "phone": r["phone"],
         "email": r["email"],
         "assigned_to": r["assigned_to"],
+        "assigned_at": r["assigned_at"].isoformat() if r.get("assigned_at") else None,
         "city": r["city"],
         "society": r["society"],
         "configuration": r["configuration"],
@@ -942,7 +943,8 @@ async def assign_lead(lead_id: UUID, payload: AssignPayload,
         # RETURNING the old value: an activity row is only worth reading if it says
         # what it changed FROM, and a separate SELECT could race another assign.
         res = await conn.execute(text(
-            "UPDATE leads SET assigned_to = :a WHERE id = :id "
+            "UPDATE leads SET assigned_to = :a, "
+            "assigned_at = CASE WHEN :a IS NULL THEN NULL ELSE now() END WHERE id = :id "
             "RETURNING (SELECT assigned_to FROM leads WHERE id = :id) AS before"),
             {"a": name, "id": lead_id})
         row = res.first()
@@ -974,7 +976,8 @@ async def bulk_assign(payload: BulkAssign, user: dict = Depends(current_user)):
             "SELECT id, assigned_to FROM leads WHERE id = ANY(:ids)"),
             {"ids": payload.lead_ids})).all())
         res = await conn.execute(
-            text("UPDATE leads SET assigned_to = :a WHERE id = ANY(:ids)"),
+            text("UPDATE leads SET assigned_to = :a, "
+                 "assigned_at = CASE WHEN :a IS NULL THEN NULL ELSE now() END WHERE id = ANY(:ids)"),
             {"a": name, "ids": payload.lead_ids},
         )
         actor = activity.Actor.of(user)

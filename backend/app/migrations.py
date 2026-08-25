@@ -73,6 +73,8 @@ _ADD_COLUMNS = [
     ("crm_visits", "source", "TEXT"),
     # lifetime miss counter (miss_count is consecutive-only) → drives the 8-total RNR rule
     ("leads", "miss_total", "INTEGER NOT NULL DEFAULT 0"),
+    # when the current owner was set — lets RM performance bucket by assignment date
+    ("leads", "assigned_at", "TIMESTAMPTZ"),
 ]
 
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
@@ -114,6 +116,22 @@ async def run_migrations(engine) -> None:
                 )
             # everything still null (meta has no source date) → use ingest time
             await conn.execute(text("UPDATE leads SET received_at = created_at WHERE received_at IS NULL"))
+
+            # back-fill assigned_at: the newest recorded "assigned" event per lead is
+            # exactly when its current owner was set. Only fills NULLs, so future
+            # assigns (which stamp now()) are never overwritten.
+            await conn.execute(text("""
+                UPDATE leads l SET assigned_at = a.ts
+                  FROM (SELECT entity_id, max(created_at) AS ts
+                          FROM activity_log
+                         WHERE entity_type = 'lead' AND action = 'assigned'
+                         GROUP BY entity_id) a
+                 WHERE a.entity_id = l.id::text AND l.assigned_at IS NULL"""))
+            # leads assigned at ingest have no 'assigned' event — fall back to their
+            # receipt date so they still appear under a sensible assignment day.
+            await conn.execute(text(
+                "UPDATE leads SET assigned_at = received_at "
+                "WHERE assigned_at IS NULL AND assigned_to IS NOT NULL"))
 
             # miss_total is new (defaults 0) but lifetime misses can't be less than the
             # current consecutive streak — seed it so total >= consecutive holds. Both

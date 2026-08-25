@@ -331,6 +331,7 @@ export interface Lead {
   phone: string | null;
   email: string | null;
   assigned_to: string | null;
+  assigned_at: string | null; // when the current owner was set (null = never / unassigned)
   city: string | null;
   society: string | null;
   configuration: string | null;

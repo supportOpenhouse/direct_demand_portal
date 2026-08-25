@@ -173,13 +173,16 @@ export default function Analytics() {
   const [repPreset, setRepPreset] = useState("month");
   const [repFrom, setRepFrom] = useState("");
   const [repTo, setRepTo] = useState("");
+  // which date the range buckets on: when the lead was received vs. when it was assigned
+  const [repDateBy, setRepDateBy] = useState<"received" | "assigned">("received");
   // AI summary: which RM row is expanded, and per (rm+range) summary state
   const [expanded, setExpanded] = useState<string | null>(null);
   type SumState = { status: "loading" | "done" | "error"; text?: string; error?: string; cached?: boolean };
   const [summaries, setSummaries] = useState<Record<string, SumState>>({});
-  const sumKey = (rm: string) => `${rm}|${repPreset}|${repFrom}|${repTo}`;
-  // changing the range invalidates an open summary — collapse so the next click refetches
+  const sumKey = (rm: string) => `${rm}|${repDateBy}|${repPreset}|${repFrom}|${repTo}`;
+  // changing the range or date-basis invalidates an open summary — collapse so the next click refetches
   const pickRange = (v: string) => { setRepPreset(v); setExpanded(null); };
+  const pickDateBy = (v: "received" | "assigned") => { setRepDateBy(v); setExpanded(null); };
 
   const rows: Row[] = useMemo(
     () => leads.filter((r) => !r.lead.is_test).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
@@ -272,7 +275,8 @@ export default function Analytics() {
     const days = new Map<string, Set<string>>();
     rows.forEach((r) => {
       const rm = r.lead.assigned_to;
-      if (!rm || !inRepRange(r.lead.received_at, repPreset, repFrom, repTo)) return;
+      const when = repDateBy === "assigned" ? r.lead.assigned_at : r.lead.received_at;
+      if (!rm || !inRepRange(when, repPreset, repFrom, repTo)) return;
       let e = map.get(rm);
       if (!e) { e = { rm, total: 0 }; STAGE_COLS.forEach((c) => (e![c.seg] = 0)); map.set(rm, e); }
       e.total = (e.total as number) + 1;
@@ -285,9 +289,9 @@ export default function Analytics() {
       x.miss_total += r.lead.miss_count || 0;
       if (r.lead.is_hot) x.hot += 1;
       if (r.lead.follow_up_at && Date.parse(r.lead.follow_up_at) < Date.now()) x.followups_overdue += 1;
-      if (r.lead.received_at) {
+      if (when) {
         let s = days.get(rm); if (!s) { s = new Set(); days.set(rm, s); }
-        s.add(r.lead.received_at.slice(0, 10));
+        s.add(when.slice(0, 10));
       }
     });
     ex.forEach((x, rm) => {
@@ -297,7 +301,7 @@ export default function Analytics() {
     });
     const repRows = [...map.values()].sort((a, b) => (b.total as number) - (a.total as number));
     return { repRows, repExtras: ex };
-  }, [rows, repPreset, repFrom, repTo]);
+  }, [rows, repPreset, repFrom, repTo, repDateBy]);
 
   const { sorted: repList, sortKey, dir, onSort } = useSort<Rep>(repRows, {
     name: (r) => r.rm,
@@ -426,9 +430,20 @@ export default function Analytics() {
               )}
             </div>
           </div>
-          <p className="note" style={{ margin: "4px 0 0", fontSize: 11.5 }}>
-            {isAdmin ? "✨ Click any RM row to generate an AI performance summary." : "Your funnel over the selected range, with an AI coaching summary."}
-          </p>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "6px 0 0" }}>
+            <p className="note" style={{ margin: 0, fontSize: 11.5 }}>
+              {isAdmin ? "✨ Click any RM row to generate an AI performance summary." : "Your funnel over the selected range, with an AI coaching summary."}
+            </p>
+            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+              <span style={{ fontSize: 11, color: "var(--muted)" }}>Bucket by</span>
+              {([["received", "Received date"], ["assigned", "Assigned date"]] as const).map(([v, label]) => (
+                <button key={v} className={"btn sm " + (repDateBy === v ? "" : "ghost")}
+                  style={repDateBy === v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                  title={v === "received" ? "Range filters on when the lead was received" : "Range filters on when the lead was assigned to its current owner"}
+                  onClick={() => pickDateBy(v)}>{label}</button>
+              ))}
+            </div>
+          </div>
         </div>
         {!isAdmin ? (
           <MyPerformance mine={mine} rangeLabel={rangeLabel()} sm={mine ? summaries[sumKey(mine.rm)] : undefined}

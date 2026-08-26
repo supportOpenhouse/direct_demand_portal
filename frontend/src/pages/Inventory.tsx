@@ -19,7 +19,7 @@ import { InventoryItem } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
 import { useSearch, matches } from "../components/SearchContext";
-import { useStickyState } from "../lib/sessionFilters";
+import { usePersistedState, asString, asStrings, asStringsOrNull } from "../lib/persistedState";
 import useIsMobile from "../lib/useIsMobile";
 import { waShare } from "../lib/whatsapp";
 import {
@@ -153,15 +153,21 @@ export default function Inventory() {
   const all = useMemo(() => data?.items ?? [], [data]);
 
   /* ----------------------------- filter state ----------------------------- */
-  const [fCities, setFCities] = useStickyState<string[]>("snapshot:fCities", []);
-  const [fConfigs, setFConfigs] = useStickyState<string[]>("snapshot:fConfigs", []);
-  const [fRegions, setFRegions] = useStickyState<string[]>("snapshot:fRegions", []);
-  const [priceMin, setPriceMin] = useStickyState<string>("snapshot:priceMin", "");
-  const [priceMax, setPriceMax] = useStickyState<string>("snapshot:priceMax", "");
-  /* null = "still on the default". The default is the sellable subset of whatever
-     statuses the data actually holds, which isn't knowable until the fetch lands —
-     so it can't be a literal initial value the way the CRM's was. */
-  const [fStatusesRaw, setFStatuses] = useStickyState<string[] | null>("snapshot:fStatuses", null);
+  /* Persisted per browser: whatever someone last narrowed to is still there after a
+     refresh or a re-login, so a daily "3 BHK in New Gurgaon" share isn't re-picked
+     every morning. Reset clears them. */
+  const [fCities, setFCities] = usePersistedState<string[]>("dd_inv_cities", [], asStrings);
+  const [fConfigs, setFConfigs] = usePersistedState<string[]>("dd_inv_configs", [], asStrings);
+  const [fRegions, setFRegions] = usePersistedState<string[]>("dd_inv_regions", [], asStrings);
+  const [priceMin, setPriceMin] = usePersistedState<string>("dd_inv_price_min", "", asString);
+  const [priceMax, setPriceMax] = usePersistedState<string>("dd_inv_price_max", "", asString);
+  /* null = "never chosen". The default is the sellable subset of whatever statuses the
+     data actually holds, which isn't knowable until the fetch lands — so it can't be a
+     literal initial value the way the CRM's was. Storing null rather than the resolved
+     set also means someone who never touched this filter keeps following the default
+     if the sheet's status vocabulary changes. */
+  const [fStatusesRaw, setFStatuses] =
+    usePersistedState<string[] | null>("dd_inv_statuses", null, asStringsOrNull);
 
   /* distinct option lists, off the full set */
   const cityOpts = useMemo(() => citiesOf(all), [all]);

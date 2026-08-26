@@ -1352,3 +1352,198 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .rd-move{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;color:var(--muted)}
 .rd-note{max-width:280px}
 .rd-note span{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px}
+
+/* ============================================================
+   LIVE INVENTORY — Inventory Snapshot
+   ------------------------------------------------------------
+   Ported from the Demand CRM so the page reads identically to the
+   one the team already shares from. The CRM's orange Openhouse
+   palette is redeclared on .snap-page rather than at :root, so it
+   cannot leak into the rest of the portal — and the scoped .btn /
+   .modal-* rules below beat the global ones by exactly one class.
+   ============================================================ */
+.snap-page{
+  --acc:#FA541C;--accDark:#D4380D;--accBg:#FFF2E8;--accBg2:#FFE4D2;
+  --txt:#1C252E;--mut:#637381;--mut2:#919EAB;
+  --panel:#fff;--panel2:#F4F6F8;--line:#E5E1DA;--line2:#DFE3E8;
+  --goodBg:#E8F8EE;--goodDk:#15803D;--warnBg:#FEF3C7;--warnDk:#9A6700;
+  --badBg:#FEE2E2;--badDk:#B91C1C;--blueBg:#DBEAFE;--blueDk:#1E40AF;
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+  color:var(--txt);
+  animation:snap-fade-in .26s cubic-bezier(.23,1,.32,1);
+}
+@keyframes snap-fade-in{from{opacity:0}to{opacity:1}}
+
+/* ---- buttons: restore the CRM's orange primary inside this page only ---- */
+.snap-page .btn{
+  padding:7px 13px;border:1px solid var(--line);background:var(--panel);border-radius:8px;
+  font-size:12.5px;font-weight:600;color:var(--txt);display:inline-flex;align-items:center;
+  gap:5px;white-space:nowrap;transition:all .12s;
+}
+.snap-page .btn:hover:not(:disabled){background:var(--panel2);transform:none}
+.snap-page .btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.snap-page .btn.primary:hover:not(:disabled){background:var(--accDark);border-color:var(--accDark);transform:none}
+.snap-page .btn.sm{padding:4px 9px;font-size:11.5px;border-radius:6px}
+.snap-page .btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+
+/* ---- multi-select dropdown ---- */
+.snap-page .an-ms{position:relative}
+.snap-page .an-ms-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);color:var(--txt);border-radius:8px;padding:7px 10px;font:inherit;font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap}
+.snap-page .an-ms-btn.has{border-color:var(--acc);background:var(--accBg);color:var(--accDark)}
+.snap-page .an-ms-btn:hover{background:var(--panel2)}
+.snap-page .an-ms-btn.has:hover{background:var(--accBg2)}
+.snap-page .an-ms-count{background:var(--acc);color:#fff;font-size:10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+.snap-page .an-ms-caret{color:var(--mut2);font-size:10px}
+.snap-page .an-ms-pop{position:absolute;z-index:40;top:calc(100% + 5px);left:0;width:260px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:0 12px 32px rgba(22,28,36,.16);padding:8px}
+.snap-page .an-ms-search{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;margin-bottom:6px;outline:none}
+.snap-page .an-ms-search:focus{border-color:var(--acc)}
+.snap-page .an-ms-actions{display:flex;align-items:center;gap:8px;padding:0 2px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.snap-page .an-ms-actions button{border:none;background:none;color:var(--acc);font-weight:700;cursor:pointer;font-size:12px;padding:0}
+.snap-page .an-ms-n{margin-left:auto;color:var(--mut2);font-size:11px}
+.snap-page .an-ms-list{max-height:260px;overflow:auto}
+.snap-page .an-ms-opt{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:6px;cursor:pointer;font-size:12px}
+.snap-page .an-ms-opt:hover{background:var(--panel2)}
+.snap-page .an-ms-more{color:var(--mut2);font-size:11px;padding:6px 4px}
+.snap-page .an-chip{border:1px solid var(--line);background:var(--panel2);color:var(--mut);border-radius:20px;padding:4px 10px;font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.snap-page .an-chip:hover{border-color:var(--acc);background:var(--accBg);color:var(--accDark)}
+
+/* ---- filter bar ---- */
+.snap-page .snap-filters{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
+.snap-page .snap-filters-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.snap-page .snap-filters-lbl{font-size:12px;font-weight:700;color:#161C24;margin-right:2px}
+.snap-page .snap-price{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--panel)}
+.snap-page .snap-price-lbl{font-size:11px;font-weight:600;color:var(--mut)}
+.snap-page .snap-price-in{width:92px;border:1px solid var(--line);border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;color:var(--txt);background:var(--panel);outline:none}
+.snap-page .snap-price-in:focus{border-color:var(--acc)}
+.snap-page .snap-price-dash{color:var(--mut2)}
+.snap-page .snap-match{font-size:12.5px;color:var(--txt)}
+.snap-page .snap-match strong{font-size:15px;font-weight:800;color:var(--accDark);letter-spacing:-.2px}
+.snap-page .snap-match.zero strong{color:var(--mut2)}
+.snap-page .snap-match-sub{color:var(--mut);font-weight:500}
+.snap-page .snap-filters-row .btn.primary{margin-left:auto}
+
+/* ---- count / share row ---- */
+.snap-page .list-head{display:flex;justify-content:space-between;align-items:center;padding:10px 4px 8px;color:var(--mut);font-size:12px;flex-wrap:wrap;gap:8px}
+.snap-page .pager{display:flex;align-items:center;gap:6px;font-size:12px}
+.snap-page .snap-share-lbl{font-size:11px;color:var(--mut);align-self:center;margin:0 4px}
+
+/* ---- city block ---- */
+.snap-page .snap-city{margin-bottom:20px;border-radius:14px;overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 4px rgba(0,0,0,.03)}
+.snap-page .snap-city-head{background:linear-gradient(135deg,var(--acc),var(--accDark));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.snap-page .snap-city-head h2{font-size:16px;font-weight:700;letter-spacing:-.2px;margin:0}
+.snap-page .snap-city-head .sub{font-size:11.5px;opacity:.9;margin-top:2px;font-weight:500}
+.snap-page .snap-city-head .count-pills{display:flex;gap:6px;flex-wrap:wrap}
+.snap-page .snap-city-head .cp{background:rgba(255,255,255,.18);padding:3px 9px;border-radius:7px;font-size:11px;font-weight:700}
+.snap-page .snap-cluster{border-bottom:1px solid var(--line)}
+.snap-page .snap-cluster:last-child{border-bottom:0}
+.snap-page .snap-cluster-head{background:#FFF6EC;padding:9px 18px;font-size:11.5px;font-weight:700;color:var(--accDark);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #FCE3CB}
+
+/* ---- unit table ---- */
+.snap-page .snap-tbl{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
+/* Widened off the CRM's 9% status column: it was sized for "Ready"/"Coming Soon",
+   and the live vocabulary puts longer words there — at 9% the pill ellipsised. */
+.snap-page .snap-tbl col.col-soc{width:26%}
+.snap-page .snap-tbl col.col-unit{width:10%}
+.snap-page .snap-tbl col.col-area{width:10%}
+.snap-page .snap-tbl col.col-cfg{width:14%}
+.snap-page .snap-tbl col.col-loc{width:16%}
+.snap-page .snap-tbl col.col-status{width:13%}
+.snap-page .snap-tbl col.col-price{width:11%}
+.snap-page .snap-tbl thead th{background:#FFFAF3;color:var(--mut);font-weight:600;padding:9px 14px;text-align:left;font-size:10.5px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.snap-page .snap-tbl thead th.right{text-align:right}
+.snap-page .snap-tbl tbody td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.snap-page .snap-tbl tbody td.right{text-align:right}
+.snap-page .snap-tbl tbody tr:last-child td{border-bottom:0}
+.snap-page .snap-tbl tbody tr:hover{background:#FFFAF3}
+.snap-page .snap-tbl .society{font-weight:700;color:var(--txt)}
+.snap-page .snap-tbl .cell-pm{font-size:10.5px;color:var(--mut);font-weight:500;margin-top:2px}
+.snap-page .snap-tbl .unit{font-family:'SF Mono',Menlo,monospace;font-size:11.5px;color:var(--mut)}
+.snap-page .snap-tbl .area{font-weight:600;color:var(--txt)}
+.snap-page .snap-tbl .cfg{font-weight:600;color:var(--txt)}
+.snap-page .snap-tbl .ask-price{font-weight:700;color:#059669;font-size:13px}
+
+/* ---- status pills. The CRM only ever saw Ready / Coming Soon; the live
+       availability vocabulary (Booked / Sold / Dead) adds three kinds here. ---- */
+.snap-page .status-pill{display:inline-block;padding:2px 9px;border-radius:5px;font-size:10.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--panel2);color:var(--mut)}
+.snap-page .status-pill.r{background:var(--goodBg);color:var(--goodDk)}
+.snap-page .status-pill.cs{background:var(--warnBg);color:var(--warnDk)}
+.snap-page .status-pill.bk{background:var(--blueBg);color:var(--blueDk)}
+.snap-page .status-pill.sd{background:var(--panel2);color:var(--mut)}
+.snap-page .status-pill.dd{background:var(--badBg);color:var(--badDk)}
+.snap-page .new-badge{background:#FF3B30;color:#fff;font-size:8.5px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.3px;text-transform:uppercase;margin-right:6px;vertical-align:1px}
+
+/* ---- mobile unit cards (<=900px, chosen in JS by useIsMobile) ---- */
+.snap-page .snap-mlist{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
+.snap-page .snap-mcard{border:.5px solid var(--line);border-radius:12px;padding:11px 12px;background:var(--panel)}
+.snap-page .snap-mcard .smc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.snap-page .snap-mcard .smc-soc{font-weight:600;font-size:14px}
+.snap-page .snap-mcard .smc-meta{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.5}
+.snap-page .snap-mcard .smc-price{font-size:15px;font-weight:600;margin-top:6px;color:#059669}
+
+/* ---- empty / loading ---- */
+.snap-page .empty{text-align:center;padding:60px 20px;color:var(--mut)}
+.snap-page .empty .emoji{font-size:32px;margin-bottom:8px}
+.snap-page .empty .t{font-weight:600;font-size:14px;color:var(--txt);margin-bottom:4px}
+.snap-page .empty .s{font-size:12px}
+.snap-page .spinner{width:24px;height:24px;border:3px solid var(--line);border-top-color:var(--acc);border-radius:50%;animation:snap-spin .8s linear infinite;display:inline-block;margin-right:10px;vertical-align:middle}
+@keyframes snap-spin{to{transform:rotate(360deg)}}
+
+/* ---- modals. The portal's own modal is .overlay.show + .modal .mh/.mb/.mf;
+       these are the CRM's, scoped so the two never collide. ---- */
+.snap-page .modal-bg{position:fixed;inset:0;background:rgba(22,28,36,.55);display:flex;align-items:center;justify-content:center;z-index:100;animation:snap-fade-in .12s ease-out}
+.snap-page .modal-bg .modal{background:var(--panel);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.22);max-height:96vh;overflow:hidden;display:flex;flex-direction:column;width:auto;animation:none}
+.snap-page .modal-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}
+.snap-page .modal-head h2{font-size:15px;font-weight:700;margin:0;font-family:inherit}
+.snap-page .modal-body{padding:18px 20px;overflow-y:auto;flex:1}
+.snap-page .modal-foot{padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;background:#FAF8F4;flex-wrap:wrap}
+.snap-page .x-btn{width:30px;height:30px;border-radius:7px;border:0;background:none;color:var(--mut);display:inline-flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex:none}
+.snap-page .x-btn:hover{background:var(--panel2);color:var(--txt)}
+.snap-page .snap-modal-hint{font-size:11.5px;color:var(--mut);margin-bottom:8px}
+.snap-page .modal-foot .snap-modal-hint{margin-bottom:0}
+.snap-page .snap-share-ta{width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font-size:12.5px;background:var(--panel);color:var(--txt);outline:none;resize:vertical;min-height:300px;max-height:60vh;font-family:'SF Mono',Menlo,monospace;line-height:1.55}
+.snap-page .snap-share-ta:focus{border-color:var(--acc)}
+.snap-page .snap-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
+.snap-page .snap-loading{padding:40px;color:var(--mut);text-align:center}
+.snap-page .snap-preview{padding:14px;background:var(--panel2);border-radius:9px;text-align:center}
+.snap-page .snap-preview img{max-width:100%;border-radius:7px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+
+/* ---- poster: off-screen source for html2canvas. Fixed 760px and its own
+       colours, because the PNG is read outside the app. ---- */
+.snap-page .poster{position:absolute;left:-99999px;top:0;width:760px;background:#fff;padding:32px;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:#1C252E}
+.snap-page .poster .ph{display:flex;align-items:center;gap:14px;padding-bottom:18px;border-bottom:3px solid #FA541C;margin-bottom:18px}
+.snap-page .poster .ph svg{width:42px;height:42px}
+.snap-page .poster .ph .pht{font-size:22px;font-weight:800;color:#161C24;letter-spacing:-.3px;line-height:1.1}
+.snap-page .poster .ph .phs{font-size:13px;color:#637381;margin-top:2px;font-weight:500}
+.snap-page .poster .ph .phd{margin-left:auto;text-align:right;font-size:11px;color:#637381;font-weight:600}
+.snap-page .poster .pcity{margin-bottom:22px;page-break-inside:avoid}
+.snap-page .poster .pcity-hd{background:linear-gradient(135deg,#FA541C,#D4380D);color:#fff;padding:11px 16px;border-radius:9px 9px 0 0;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.snap-page .poster .pcity-hd h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.2px}
+.snap-page .poster .pcity-hd .cnt{background:rgba(255,255,255,.22);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.snap-page .poster .pcluster{border:1px solid #E5E1DA;border-top:0;background:#fff}
+.snap-page .poster .pcluster:last-child{border-radius:0 0 9px 9px}
+.snap-page .poster .pcluster .phl{background:#FFF6EC;padding:7px 16px;font-size:11px;font-weight:700;color:#D4380D;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #FCE3CB}
+.snap-page .poster table{width:100%;border-collapse:collapse;font-size:12px}
+.snap-page .poster table thead th{background:#FAFAF8;padding:8px 12px;text-align:left;color:#637381;font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.4px;border-bottom:1px solid #E5E1DA}
+.snap-page .poster table tbody td{padding:8px 12px;border-bottom:1px solid #F1ECE4;vertical-align:middle}
+.snap-page .poster table tbody tr:last-child td{border-bottom:0}
+.snap-page .poster table .ps-soc{font-weight:700;color:#1C252E}
+.snap-page .poster table .ps-unit{font-family:'SF Mono',Menlo,monospace;font-size:10.5px;color:#637381}
+.snap-page .poster table .ps-status{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:#F4F6F8;color:#637381}
+.snap-page .poster table .ps-status.r{background:#E8F8EE;color:#15803D}
+.snap-page .poster table .ps-status.cs{background:#FEF3C7;color:#9A6700}
+.snap-page .poster table .ps-status.bk{background:#DBEAFE;color:#1E40AF}
+.snap-page .poster table .ps-status.sd{background:#F4F6F8;color:#637381}
+.snap-page .poster table .ps-status.dd{background:#FEE2E2;color:#B91C1C}
+.snap-page .poster table .ps-price{font-weight:700;color:#059669;font-size:13px;white-space:nowrap}
+.snap-page .poster table .ps-loc{font-size:10px;color:#637381;font-weight:500;margin-top:2px}
+.snap-page .poster .pfoot{margin-top:24px;padding-top:14px;border-top:1px solid #E5E1DA;font-size:11px;color:#637381;text-align:center;font-weight:500}
+.snap-page .poster .pnew{background:#FF3B30;color:#fff;font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:1px;letter-spacing:.3px;text-transform:uppercase}
+
+@media (max-width:900px){
+  .snap-page .snap-city-head{flex-wrap:wrap}
+  .snap-page .snap-city-head .count-pills{width:100%}
+  .snap-page .snap-filters-row .btn.primary{margin-left:0;width:100%;justify-content:center}
+  .snap-page .list-head{font-size:11.5px;padding:0 2px 6px}
+  .snap-page .pager{flex-wrap:wrap;gap:6px}
+  .snap-page .x-btn{min-width:44px;min-height:44px}
+}

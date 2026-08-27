@@ -93,11 +93,20 @@ async def run_migrations(engine) -> None:
     from .core.auth import build_assignee_canon_map, canonical_assignee
     from .services.leads_sync import parse_lead_date
 
+    # Schema changes go FIRST, in their own committed transaction. They must not share
+    # a transaction with the back-fills below: a back-fill that raises would otherwise
+    # roll the ALTERs back out, and freshly-deployed code that references a new column
+    # (e.g. leads.assigned_at on the assign endpoint) would then hit a table without it
+    # and 500 on every request — which the browser reports as "Load Failed".
     try:
         async with engine.begin() as conn:
             for table, col, coltype in _ADD_COLUMNS:
                 await conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}'))
+    except Exception:
+        log.exception("schema (ADD COLUMN) migrations failed")
 
+    try:
+        async with engine.begin() as conn:
             # one-time back-fill of listing leads' real source date from the raw table
             # (the cron is insert-only, so existing spine rows never get updated by it)
             rows = await conn.execute(text(

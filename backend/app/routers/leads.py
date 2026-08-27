@@ -944,7 +944,7 @@ async def assign_lead(lead_id: UUID, payload: AssignPayload,
         # what it changed FROM, and a separate SELECT could race another assign.
         res = await conn.execute(text(
             "UPDATE leads SET assigned_to = :a, "
-            "assigned_at = CASE WHEN :a::text IS NULL THEN NULL ELSE now() END WHERE id = :id "
+            "assigned_at = CASE WHEN CAST(:a AS text) IS NULL THEN NULL ELSE now() END WHERE id = :id "
             "RETURNING (SELECT assigned_to FROM leads WHERE id = :id) AS before"),
             {"a": name, "id": lead_id})
         row = res.first()
@@ -977,7 +977,7 @@ async def bulk_assign(payload: BulkAssign, user: dict = Depends(current_user)):
             {"ids": payload.lead_ids})).all())
         res = await conn.execute(
             text("UPDATE leads SET assigned_to = :a, "
-                 "assigned_at = CASE WHEN :a::text IS NULL THEN NULL ELSE now() END WHERE id = ANY(:ids)"),
+                 "assigned_at = CASE WHEN CAST(:a AS text) IS NULL THEN NULL ELSE now() END WHERE id = ANY(:ids)"),
             {"a": name, "ids": payload.lead_ids},
         )
         actor = activity.Actor.of(user)

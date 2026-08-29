@@ -62,3 +62,23 @@ def test_backfill_assigns_one_at_a_time():
     src = inspect.getsource(wa_assign.backfill)
     assert "for (p10,) in rows" in src
     assert "assign_if_unassigned" in src
+
+
+def test_an_inbound_message_does_not_assign_the_conversation():
+    """A deliberate reversal, so it gets a guard.
+
+    Arrival used to hand the thread to the least-loaded RM. It no longer does —
+    ownership is only ever taken on purpose. Re-adding the call would silently
+    restore the old behaviour, and nothing else in the suite would notice.
+    """
+    import inspect
+    from app.routers import gupshup
+    assert "assign_if_unassigned" not in inspect.getsource(gupshup._persist)
+
+
+def test_assignment_still_happens_when_something_asks_for_it():
+    """The other half: not-on-arrival must not become not-at-all. Converting a chat
+    with `assign=true` still routes through the same one definition of ownership."""
+    import inspect
+    from app.routers import gupshup
+    assert "assign_if_unassigned" in inspect.getsource(gupshup._designated_rm)

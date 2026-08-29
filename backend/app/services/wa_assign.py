@@ -1,5 +1,11 @@
 """Who owns a WhatsApp conversation.
 
+Nothing here runs automatically any more. An inbound message used to assign the
+thread on arrival; it doesn't — a new conversation stays unowned until someone
+chooses an owner (the admin picker on the thread, converting the chat with
+"Assign designated RM", or the backfill below). These rules decide WHO gets it once
+that choice is made, not WHEN.
+
 Three rules, in order:
 
   1. The number already has a lead with an owner  → the same RM.
@@ -62,10 +68,12 @@ async def pick_owner(conn, phone10: str) -> str | None:
 
 
 async def assign_if_unassigned(conn, phone10: str) -> str | None:
-    """Give a conversation an owner the first time we see it.
+    """Give a conversation an owner, when something asks for one.
 
-    Only fills blanks: an existing owner — auto or hand-picked — is never overwritten,
-    because reshuffling a live conversation confuses the customer more than it helps.
+    Only fills blanks: an existing owner is never overwritten, because reshuffling a
+    live conversation confuses the customer more than it helps. Returns the owner
+    either way, or None when there is nobody to give it to — including for a
+    `rejected` contact, which is left unowned on purpose.
     """
     row = (await conn.execute(
         text("SELECT assigned_to, tag FROM wa_contacts WHERE phone10 = :p"), {"p": phone10}

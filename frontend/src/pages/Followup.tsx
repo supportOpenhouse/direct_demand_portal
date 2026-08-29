@@ -120,7 +120,8 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
         </div>
       </div>
 
-      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
+      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear}
+        total={sel.visibleCount} onSelectFirst={sel.selectFirst} />
 
       <div className="card">
         <div className="table-wrap">

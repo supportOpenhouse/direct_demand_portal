@@ -26,5 +26,13 @@ export function useRowSelection(visibleIds: string[]) {
 
   const clear = () => setSelected(new Set());
 
-  return { selected, activeIds, count: activeIds.length, allChecked, toggle, toggleAll, clear, has: (id: string) => selected.has(id) };
+  /* First N in the order they're rendered — visibleIds is already filtered and sorted
+     by the page, which `selected` is not (it's a Set, so insertion order). REPLACES
+     the selection rather than adding to it: "first 10" has to mean ten, not ten more.
+     Fewer than N rows on screen selects all of them. */
+  const selectFirst = (n: number) => setSelected(new Set(visibleIds.slice(0, n)));
+
+  return { selected, activeIds, count: activeIds.length, visibleCount: visibleIds.length,
+           allChecked, toggle, toggleAll, clear, selectFirst,
+           has: (id: string) => selected.has(id) };
 }

@@ -124,7 +124,8 @@ export default function NewLeads() {
         </div>
       </div>
 
-      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} />
+      <BulkAssignBar ids={sel.activeIds} onDone={sel.clear}
+        total={sel.visibleCount} onSelectFirst={sel.selectFirst} />
 
       <div className="card panel-pad" id="needing-action">
         <div className="section-head">

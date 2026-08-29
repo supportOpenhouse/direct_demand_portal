@@ -127,10 +127,14 @@ async def _persist(entry: dict) -> None:
                     raw=body,
                     **_media_of(inner),
                 ))
-                # first message from this number → give the conversation an owner
-                from ..services.wa_assign import assign_if_unassigned
-                await assign_if_unassigned(conn, normalize_phone(
-                    payload.get("sender", {}).get("phone") or payload.get("source"))[-10:])
+                # Deliberately NOT assigned here. An inbound message used to hand the
+                # conversation to the least-loaded RM on arrival; it no longer does.
+                # Ownership is now only ever taken on purpose — an admin picking an RM
+                # on the thread, or converting the chat with "Assign designated RM".
+                #
+                # Consequence, on purpose: _thread_scope shows an RM only the threads
+                # assigned to them, so an unowned conversation is visible to ADMINS
+                # ONLY until somebody assigns it.
         elif entry["type"] == "message-event" and payload.get("id"):
             # delivery receipts arrive minutes later, keyed by the id /send stored
             async with engine.begin() as conn:

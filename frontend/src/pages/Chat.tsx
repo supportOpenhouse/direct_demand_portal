@@ -9,11 +9,11 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
+import { SelectFirst } from "../components/SelectFirst";
 import { CITIES } from "../lib/leads";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
-  useBackfillWaAssign, useSocietiesByCity, useGupshupRecent, useBulkCreateWaLeads,
-  formatDateTime,
+  useSocietiesByCity, useBulkCreateWaLeads,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
 import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
@@ -76,7 +76,6 @@ export default function Chat() {
   const { data, isLoading, error } = useWaMessages();
   const toast = useToast();
   const [active, setActive] = useState<string | null>(null);
-  const [showRaw, setShowRaw] = useState(false);
   const [creating, setCreating] = useState(false);
   const [marking, setMarking] = useState(false);
   // bulk lead creation: off until the button is pressed, so the list stays a plain
@@ -148,7 +147,12 @@ export default function Chat() {
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
                 {picked.size} of {convertible.length} selected
               </span>
-              <button className="btn ghost sm"
+              {/* Same shortcut, same wording, same sizes as the lead worklists —
+                  `convertible` is already in the order the list renders, and
+                  replaces the selection rather than adding to it. */}
+              <SelectFirst total={convertible.length}
+                onPick={(n) => setPicked(new Set(convertible.slice(0, n)))} />
+              <button className="btn ghost sm" disabled={!convertible.length}
                 onClick={() => setPicked(picked.size === convertible.length
                   ? new Set() : new Set(convertible))}>
                 {picked.size === convertible.length && convertible.length > 0 ? "Clear all" : "Select all"}
@@ -167,10 +171,6 @@ export default function Chat() {
                   ? "Turn conversations into leads in bulk"
                   : "Every conversation already has a lead"}>
                 Create leads ({convertible.length})
-              </button>
-              {isAdmin && <BackfillButton />}
-              <button className="btn ghost sm" onClick={() => setShowRaw((v) => !v)}>
-                {showRaw ? "Hide" : "Show"} raw callbacks
               </button>
             </>
           )}
@@ -302,7 +302,6 @@ export default function Chat() {
         </div>
       )}
 
-      {showRaw && <RawFeed />}
 
       {marking && thread && (
         <MarkModal phone={thread.phone} current={tag} onClose={() => setMarking(false)} />
@@ -320,18 +319,6 @@ export default function Chat() {
 }
 
 /* One-shot distribution of conversations that predate assignment. */
-function BackfillButton() {
-  const fill = useBackfillWaAssign();
-  return (
-    <button className="btn ghost sm" disabled={fill.isPending}
-      title="Give every unassigned conversation an owner"
-      onClick={() => fill.mutate()}>
-      {fill.isPending ? "Assigning…"
-        : fill.data ? `Assigned ${fill.data.assigned}` : "Assign unowned"}
-    </button>
-  );
-}
-
 /* Reassign a conversation. Admin-only — an RM moving their own threads away would
    defeat the point of distributing them, so the API refuses it too. */
 function OwnerPicker({ phone, owner }: { phone: string; owner?: string }) {
@@ -532,29 +519,3 @@ function CreateLeadModal(
   );
 }
 
-/* Every callback as received — delivery receipts, opt-ins, billing. The reference
-   for anything wa_messages doesn't model yet. Its own component so the query only
-   runs while the panel is open. */
-function RawFeed() {
-  const { data } = useGupshupRecent();
-  const items = data?.items ?? [];
-  return (
-    <div className="card" style={{ marginTop: 12 }}>
-      {items.length === 0 ? (
-        <div className="empty" style={{ padding: 24 }}>Nothing received yet.</div>
-      ) : (
-        items.map((e, i) => (
-          <details key={i} style={{ borderTop: i ? "1px solid var(--line)" : undefined, padding: "8px 0" }}>
-            <summary style={{ cursor: "pointer", fontSize: 12.5 }}>
-              <b>{e.type ?? "unknown"}</b>
-              <span style={{ color: "var(--muted)", marginLeft: 8 }}>{formatDateTime(e.received_at)}</span>
-            </summary>
-            <pre style={{ fontSize: 11.5, overflowX: "auto", marginTop: 6, color: "var(--ink-2)" }}>
-              {JSON.stringify(e.body, null, 2)}
-            </pre>
-          </details>
-        ))
-      )}
-    </div>
-  );
-}

@@ -1,11 +1,5 @@
 /* Action bar for the lead worklists — bulk reassign / unassign, plus the
-   "select first N" shortcuts.
-
-   Shown at zero selected, not only once something is ticked. The shortcuts live in
-   here, so a bar that appears only after you've already selected something could
-   never offer the fast way to select. The destructive half is disabled instead of
-   hidden: the row stays put rather than shifting the table down under the cursor the
-   moment a checkbox is clicked. */
+   "select first N" shortcuts. Appears only once at least one row is ticked. */
 import { useState } from "react";
 import { useAssignees, useBulkAssign } from "../lib/queries";
 import { SelectFirst } from "./SelectFirst";
@@ -23,7 +17,8 @@ export function BulkAssignBar(
   const bulk = useBulkAssign();
   const toast = useToast();
   const [pick, setPick] = useState("");
-  const none = ids.length === 0;
+
+  if (ids.length === 0) return null;
 
   const apply = (assigned_to: string | null) => {
     bulk.mutate({ ids, assigned_to }, {
@@ -45,7 +40,7 @@ export function BulkAssignBar(
       <div style={{ flex: 1 }} />
       <select
         value={pick}
-        disabled={bulk.isPending || none}
+        disabled={bulk.isPending}
         onChange={(e) => { const v = e.target.value; setPick(""); if (v) apply(v); }}
         style={{ border: 0, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: "var(--ink)" }}
       >
@@ -53,9 +48,9 @@ export function BulkAssignBar(
         {(data?.items ?? []).map((a) => <option key={a.email} value={a.name}>{a.name}</option>)}
       </select>
       <button className="btn sm" style={{ background: "rgba(255,255,255,.16)", color: "#fff" }}
-        disabled={bulk.isPending || none} onClick={() => apply(null)}>Unassign</button>
+        disabled={bulk.isPending} onClick={() => apply(null)}>Unassign</button>
       <button className="btn sm" style={{ background: "rgba(255,255,255,.16)", color: "#fff" }}
-        disabled={none} onClick={onDone}>Clear</button>
+        onClick={onDone}>Clear</button>
     </div>
   );
 }

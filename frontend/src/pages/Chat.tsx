@@ -6,7 +6,7 @@
 
    RMs see only the conversations assigned to them; admins see everything and can
    reassign. Scoping is enforced server-side — this page just reflects it. */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
 import { CITIES } from "../lib/leads";
@@ -101,17 +101,21 @@ export default function Chat() {
     [threads, data],
   );
   const bulkCreate = useBulkCreateWaLeads();
+  const [bulkAssign, setBulkAssign] = useState(false);   // unassigned by default
   const toggleOne = (phone: string) => setPicked((prev) => {
     const next = new Set(prev);
     next.has(phone) ? next.delete(phone) : next.add(phone);
     return next;
   });
-  const exitBulk = () => { setBulk(false); setPicked(new Set()); };
-  const runBulk = () => bulkCreate.mutate([...picked], {
+  const exitBulk = () => { setBulk(false); setPicked(new Set()); setBulkAssign(false); };
+  const runBulk = () => bulkCreate.mutate({ phones: [...picked], assign: bulkAssign }, {
     onSuccess: (r) => {
       const skipped = r.skipped_existing ? ` · ${r.skipped_existing} already had one` : "";
-      // they land unassigned by design — say so, or nobody goes looking for them
-      toast(`Created ${r.created} unassigned lead${r.created === 1 ? "" : "s"}${skipped}`,
+      // Say which way they went. Unassigned leads need saying or nobody goes looking
+      // for them; assigned ones need saying because r.assigned can be short of
+      // r.created — a conversation tagged `rejected` is never given an owner.
+      const how = r.assigned ? `${r.assigned} assigned` : "unassigned";
+      toast(`Created ${r.created} lead${r.created === 1 ? "" : "s"} · ${how}${skipped}`,
             r.created ? "green" : "gold", r.created ? "✓" : "⚠");
       exitBulk();
     },
@@ -149,6 +153,7 @@ export default function Chat() {
                   ? new Set() : new Set(convertible))}>
                 {picked.size === convertible.length && convertible.length > 0 ? "Clear all" : "Select all"}
               </button>
+              <AssignChoice value={bulkAssign} onChange={setBulkAssign} compact />
               <button className="btn primary sm" disabled={!picked.size || bulkCreate.isPending}
                 onClick={runBulk}>
                 {bulkCreate.isPending ? "Creating…" : `Create ${picked.size} lead${picked.size === 1 ? "" : "s"}`}
@@ -411,11 +416,43 @@ function MarkModal(
 
 /* Name and number come from the conversation; city and society are optional because
    a WhatsApp lead usually hasn't told us either yet. Source is fixed server-side. */
+/* Who owns the lead that comes out of a conversation.
+
+   Converting a chat and owning the lead are two decisions, so the page asks rather
+   than guessing. Unassigned is the default because it's the recoverable outcome: a
+   lead nobody owns sits in the unassigned pool where the next person picks it up,
+   while a lead owned by the wrong RM is invisible to everyone else. */
+const ASSIGN_OPTIONS = [
+  { v: false, label: "Keep RM unassigned",
+    hint: "The lead lands in the unassigned pool — ownership stays a separate step" },
+  { v: true, label: "Assign designated RM",
+    hint: "The RM who owns this conversation. If it has none, the conversation is assigned first (least-loaded RM), so the chat and the lead can't end up with different owners" },
+];
+
+function AssignChoice(
+  { value, onChange, compact }: { value: boolean; onChange: (v: boolean) => void; compact?: boolean },
+) {
+  // two of these can be mounted at once (modal + bulk bar); useId keeps the radio
+  // groups from bleeding into each other
+  const group = useId();
+  return (
+    <div className={"wa-assign" + (compact ? " compact" : "")} role="radiogroup" aria-label="Lead owner">
+      {ASSIGN_OPTIONS.map((o) => (
+        <label key={String(o.v)} className={"wa-assign-opt" + (value === o.v ? " on" : "")} title={o.hint}>
+          <input type="radio" name={group} checked={value === o.v} onChange={() => onChange(o.v)} />
+          <span>{o.label}</span>
+        </label>
+      ))}
+    </div>
+  );
+}
+
 function CreateLeadModal(
   { phone, name, onClose }: { phone: string; name: string; onClose: () => void },
 ) {
   const create = useCreateWaLead();
   const [form, setForm] = useState({ name, city: "", society: "" });
+  const [assign, setAssign] = useState(false);   // unassigned by default
   const societies = useSocietiesByCity(form.city);
   const societyOptions = societies.data?.items ?? [];
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -424,7 +461,8 @@ function CreateLeadModal(
   const submit = () => {
     if (!form.name.trim() || create.isPending) return;
     create.mutate(
-      { phone, name: form.name.trim(), city: form.city.trim(), society: form.society.trim() },
+      { phone, name: form.name.trim(), city: form.city.trim(),
+        society: form.society.trim(), assign },
       { onSuccess: onClose },
     );
   };
@@ -472,6 +510,10 @@ function CreateLeadModal(
               </option>
               {societyOptions.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
+          </div>
+          <div className="field" style={{ marginTop: 15, marginBottom: 0 }}>
+            <label>Lead owner</label>
+            <AssignChoice value={assign} onChange={setAssign} />
           </div>
           {create.isError && (
             <div style={{ marginTop: 10, fontSize: 12, color: "var(--coral)" }}>

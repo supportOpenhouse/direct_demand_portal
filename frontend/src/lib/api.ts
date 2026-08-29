@@ -528,17 +528,18 @@ export const api = {
     }),
   waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
   /* Bulk: names are resolved server-side, so the client only sends which
-     conversations to convert. Leads are created unassigned; already-lead contacts are
-     skipped, not duplicated. */
-  waBulkCreateLeads: (phones: string[]) =>
+     conversations to convert. Already-lead contacts are skipped, not duplicated.
+     `assign` copies each conversation's RM onto its lead (assigning an unowned thread
+     first); omitted, the leads land unassigned. */
+  waBulkCreateLeads: (phones: string[], assign = false) =>
     request<{ status: string; created: number; skipped_existing: number;
-              requested: number }>("/v1/gupshup/leads/bulk", {
-      method: "POST", body: JSON.stringify({ phones }),
+              requested: number; assigned: number }>("/v1/gupshup/leads/bulk", {
+      method: "POST", body: JSON.stringify({ phones, assign }),
     }),
-  waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
-    request<{ status: string; lead_id: string | null }>("/v1/gupshup/leads", {
-      method: "POST", body: JSON.stringify(payload),
-    }),
+  waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string;
+                            assign?: boolean }) =>
+    request<{ status: string; lead_id: string | null; assigned_to: string | null }>(
+      "/v1/gupshup/leads", { method: "POST", body: JSON.stringify(payload) }),
   waSend: (phone: string, text: string) =>
     request<{ status: string; gupshup_id: string | null }>("/v1/gupshup/send", {
       method: "POST", body: JSON.stringify({ phone, text }),

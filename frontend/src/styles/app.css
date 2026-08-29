@@ -1547,3 +1547,15 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
   .snap-page .pager{flex-wrap:wrap;gap:6px}
   .snap-page .x-btn{min-width:44px;min-height:44px}
 }
+
+/* Lead-owner choice on the WhatsApp page (create-lead modal + bulk bar) */
+.wa-assign{display:flex;gap:8px;flex-wrap:wrap}
+.wa-assign-opt{display:inline-flex;align-items:center;gap:7px;cursor:pointer;
+  padding:8px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);
+  font-size:12.5px;color:var(--ink-2);transition:border-color .15s,background .15s,color .15s}
+.wa-assign-opt:hover{background:var(--panel-2)}
+.wa-assign-opt.on{border-color:var(--blue);background:var(--blue-soft);color:var(--blue-deep);font-weight:600}
+.wa-assign-opt input{accent-color:var(--blue);margin:0}
+/* In the bulk bar it sits beside the buttons, so it has to stay on their line. */
+.wa-assign.compact{flex-wrap:nowrap}
+.wa-assign.compact .wa-assign-opt{padding:5px 9px;font-size:11.5px;border-radius:8px;white-space:nowrap}

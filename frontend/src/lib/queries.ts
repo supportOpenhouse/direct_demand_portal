@@ -243,7 +243,8 @@ export function useCreateWaLead() {
 export function useBulkCreateWaLeads() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (phones: string[]) => api.waBulkCreateLeads(phones),
+    mutationFn: ({ phones, assign }: { phones: string[]; assign: boolean }) =>
+      api.waBulkCreateLeads(phones, assign),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wa-messages"] });  // rows become lead-tagged
       qc.invalidateQueries({ queryKey: ["leads"] });

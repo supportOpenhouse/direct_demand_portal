@@ -32,7 +32,7 @@ from ..config import get_settings
 # callback feed stays admin-only — it's a debugging surface, not a worklist.
 from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
 from ..db import neon_engine
-from ..services import activity
+from ..services import activity, wa_assign
 from ..models import Lead, WaContact, WaMessage
 
 log = logging.getLogger("gupshup")
@@ -367,11 +367,34 @@ async def gupshup_latest(user: dict = Depends(current_user)):
     return {"last_inbound_at": row[0].isoformat() if row and row[0] else None}
 
 
+# Converting a conversation and owning the lead that comes out of it are two
+# decisions, and the default keeps them apart: a lead lands unassigned unless the
+# caller explicitly ticks the box. `assign=True` gives it the conversation's RM —
+# and when the conversation has no RM either, the thread is assigned FIRST (the
+# ordinary least-loaded pick, written to wa_contacts) so the lead and the chat can't
+# end up owned by two different people.
+ASSIGN_HELP = "assign the conversation's RM to the lead (assigning the thread first if it has none)"
+
+
+async def _designated_rm(conn, phone10: str) -> str | None:
+    """The RM to put on a lead made from this conversation.
+
+    Delegates to wa_assign so there is one definition of who owns a thread. That call
+    only ever FILLS a blank — an existing owner, auto or hand-picked, is returned
+    untouched — and it declines to assign a `rejected` contact, which then correctly
+    yields an unassigned lead rather than burning an RM's share on a dead number.
+    """
+    return await wa_assign.assign_if_unassigned(conn, phone10)
+
+
 class CreateLeadRequest(BaseModel):
     phone: str
     name: str = Field(min_length=1, max_length=120)
     city: str | None = None
     society: str | None = None
+    # Default False: unassigned is the safe outcome — a lead nobody owns is visible in
+    # the unassigned pool, where a lead owned by the wrong person is not.
+    assign: bool = Field(default=False, description=ASSIGN_HELP)
 
 
 @router.post("/gupshup/leads")
@@ -398,6 +421,9 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
     }
     async with engine.begin() as conn:
         await _assert_owns(conn, user, phone10)
+        owner = await _designated_rm(conn, phone10) if req.assign else None
+        if owner:
+            values["assigned_to"] = owner
         await conn.execute(
             pg_insert(Lead).values(values).on_conflict_do_nothing(index_elements=["origin_key"])
         )
@@ -411,21 +437,30 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
                 activity.Actor.of(user), entity_type="lead", entity_id=row[0],
                 action="lead_created",
                 metadata={"source": "whatsapp", "name": req.name.strip()}))
-    return {"status": "ok", "lead_id": str(row[0]) if row else None}
+            # A lead that gained an owner without an `assigned` event is invisible on
+            # the Reports page, which counts events and not current state.
+            if owner:
+                await activity.record(conn, activity.row_for(
+                    activity.Actor.of(user), entity_type="lead", entity_id=row[0],
+                    action="assigned", after_value=owner,
+                    metadata={"source": "whatsapp"}))
+    return {"status": "ok", "lead_id": str(row[0]) if row else None, "assigned_to": owner}
 
 
 class BulkLeadRequest(BaseModel):
     # capped so one click can't fan out into an unbounded write
     phones: list[str] = Field(min_length=1, max_length=500)
+    assign: bool = Field(default=False, description=ASSIGN_HELP)
 
 
 @router.post("/gupshup/leads/bulk")
 async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(current_user)):
     """Create spine leads from many WhatsApp conversations in one go.
 
-    Leads are created UNASSIGNED. The conversation's RM is still read here, but only
-    to enforce who may convert what — it is deliberately not copied onto the lead, so
-    lead ownership stays a separate decision made through the normal assign flow.
+    Leads are created UNASSIGNED by default: lead ownership is its own decision, and a
+    lead nobody owns is visible in the unassigned pool where a wrongly-owned one is
+    not. `assign=True` copies each conversation's RM onto its lead instead, assigning
+    any unowned thread first so the chat and the lead never end up with two owners.
 
     The name is taken server-side from the latest inbound WhatsApp profile name
     rather than the client's list, so a stale browser can't stamp the wrong name on
@@ -473,6 +508,14 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             {"ps": phones10},
         )).mappings()}
 
+        # One at a time, deliberately — assign_if_unassigned re-reads load on every
+        # call, so each pick sees the previous one's effect. A set-based version would
+        # hand the whole batch to whoever happens to be least loaded right now.
+        owners = {}
+        if req.assign:
+            for p in phones10:
+                owners[p] = contacts.get(p) or await _designated_rm(conn, p)
+
         keys = [f"whatsapp:{p}" for p in phones10]
         already = {r[0] for r in (await conn.execute(
             text("SELECT origin_key FROM leads WHERE origin_key = ANY(:ks)"), {"ks": keys})).all()}
@@ -481,9 +524,9 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             "origin_key": f"whatsapp:{p}", "source_category": "whatsapp", "source": "whatsapp",
             "name": (names.get(p) or "").strip() or display_phone(p),
             "phone": display_phone(p),
-            # explicit: the chat's RM is NOT carried over. Assignment is its own step,
-            # so these land in the unassigned pool like any other new lead.
-            "assigned_to": None,
+            # None unless the caller asked for it — assignment is its own step, and
+            # these otherwise land in the unassigned pool like any other new lead.
+            "assigned_to": owners.get(p),
             "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
             "source_meta": {"created_from": "whatsapp_bulk", "created_by": user.get("email")},
         } for p in phones10 if f"whatsapp:{p}" not in already]
@@ -492,10 +535,11 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             await conn.execute(
                 pg_insert(Lead).on_conflict_do_nothing(index_elements=["origin_key"]), rows)
 
-    log.info("whatsapp: bulk-created %d unassigned leads (%d already existed) by %s",
-             len(rows), len(already), user.get("email"))
+    assigned = sum(1 for r in rows if r["assigned_to"])
+    log.info("whatsapp: bulk-created %d leads (%d assigned, %d already existed) by %s",
+             len(rows), assigned, len(already), user.get("email"))
     return {"status": "ok", "created": len(rows), "skipped_existing": len(already),
-            "requested": len(phones10)}
+            "requested": len(phones10), "assigned": assigned}
 
 
 class SendRequest(BaseModel):

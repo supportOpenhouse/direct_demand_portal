@@ -7,7 +7,7 @@ import { useCallLog, useSyncCallLog, useCallLogActors, callDuration, formatDateT
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
-import RecordingPlayer from "../components/RecordingPlayer";
+import RecordingPlayer, { RecordingLink } from "../components/RecordingPlayer";
 import { PLACED_BY_LEAD, PLACED_BY_UNKNOWN, DURATION_OPTIONS } from "../lib/api";
 
 const PAGE = 50;
@@ -134,7 +134,9 @@ export default function CallLog() {
                     </span>{" "}
                     <span style={{ color: "var(--muted)", fontSize: 11.5 }}>{c.status || c.agent_status || ""}</span>
                   </td>
-                  <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{callDuration(c.start_at, c.end_at)}</td>
+                  <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>
+                    <RecordingLink url={c.recording_url}>{callDuration(c.start_at, c.end_at)}</RecordingLink>
+                  </td>
                   <td>
                     {/* ponytail: streams Bonvoice's ResourceURL straight from their
                         CDN — proxy it through the API only if it starts 401ing */}

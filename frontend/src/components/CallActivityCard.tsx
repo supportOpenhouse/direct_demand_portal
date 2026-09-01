@@ -5,7 +5,7 @@
    nobody has rung yet is just noise in the column. */
 import { useLeadCalls, callDuration, formatDateTime } from "../lib/queries";
 import { LeadCallRow } from "../lib/api";
-import RecordingPlayer from "./RecordingPlayer";
+import RecordingPlayer, { RecordingLink } from "./RecordingPlayer";
 
 const IconPhone = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -45,7 +45,7 @@ export default function CallActivityCard({ leadId }: { leadId: string }) {
               </span>
               <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{formatDateTime(c.start_at) || "—"}</span>
               <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "'Spline Sans Mono'", marginLeft: "auto" }}>
-                {callDuration(c.start_at, c.end_at)}
+                <RecordingLink url={c.recording_url}>{callDuration(c.start_at, c.end_at)}</RecordingLink>
               </span>
             </div>
             {/* Streams straight off Bonvoice's url — same as the Call Log page.

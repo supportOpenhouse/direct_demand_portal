@@ -12,7 +12,7 @@
 import { useState } from "react";
 import { useLeadHuvoCalls, formatDateTime } from "../lib/queries";
 import { HuvoCallDetail } from "../lib/api";
-import RecordingPlayer from "./RecordingPlayer";
+import RecordingPlayer, { RecordingLink } from "./RecordingPlayer";
 
 /* Same three tiers as the Huvo Call Log's chips — a lead's card and the log must not
    colour the same outcome differently. */
@@ -75,7 +75,7 @@ function CallRow({ c }: { c: HuvoCallDetail }) {
           {formatDateTime(c.started_at) || formatDateTime(c.received_at) || "—"}
         </span>
         <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "'Spline Sans Mono'", marginLeft: "auto" }}>
-          {mmss(c.duration_sec)}
+          <RecordingLink url={c.recording_url}>{mmss(c.duration_sec)}</RecordingLink>
         </span>
       </div>
 

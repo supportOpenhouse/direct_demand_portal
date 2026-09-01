@@ -1,10 +1,30 @@
-/* Call-recording player: one button, a progress ring around it, elapsed time.
+/* Call-recording player: one button, a progress ring around it, and an elapsed-time
+   readout that doubles as a link to the audio file itself.
 
    Replaces the browser's native <audio controls>, which renders a different
    widget in every browser and is far too wide for the Call Log's cell. The
    <audio> element is still doing all the real work — it's just not drawing
    itself. */
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
+
+/* A call's duration, wrapped so it opens the recording in a new tab — where the
+   browser gives you scrubbing, playback speed and Save As for nothing.
+
+   Plain text when there's no file: a link that 404s is worse than no link, and a
+   zero-duration call never has one. stopPropagation because these sit inside rows
+   and cards that carry their own click. */
+export function RecordingLink(
+  { url, children }: { url?: string | null; children: React.ReactNode },
+) {
+  if (!url) return <>{children}</>;
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="rec-time"
+       onClick={(e) => e.stopPropagation()}
+       title="Open this recording in a new tab — to download, scrub or change speed">
+      {children}
+    </a>
+  );
+}
 
 const R = 16;                       // ring radius in the 36×36 viewBox
 const C = 2 * Math.PI * R;          // circumference — the dash length we offset
@@ -88,8 +108,11 @@ export default function RecordingPlayer({ src, size = 34 }: { src: string; size?
         </svg>
         {playing ? <IconPause /> : <IconPlay />}
       </button>
+      {/* Both providers hand us a direct URL — Bonvoice's downloadvoice endpoint,
+          Huvo's GCS object — neither of which needs an Authorization header from us,
+          so a plain link works and no token goes anywhere near the URL. */}
       <span style={{ fontFamily: "'Spline Sans Mono'", fontSize: 12, color: "var(--muted)" }}>
-        {fmt(t)}
+        <RecordingLink url={src}>{fmt(t)}</RecordingLink>
       </span>
     </span>
   );

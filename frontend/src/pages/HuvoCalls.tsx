@@ -19,7 +19,7 @@ import {
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
-import RecordingPlayer from "../components/RecordingPlayer";
+import RecordingPlayer, { RecordingLink } from "../components/RecordingPlayer";
 
 const PAGE = 50;
 const LINKED_OPTIONS = [
@@ -465,7 +465,9 @@ export default function HuvoCalls() {
                         {c.summary || "—"}
                       </div>
                     </td>
-                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>{mmss(c.duration_sec)}</td>
+                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>
+                      <RecordingLink url={c.recording_url}>{mmss(c.duration_sec)}</RecordingLink>
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {c.recording_url
                         ? <RecordingPlayer src={c.recording_url} />

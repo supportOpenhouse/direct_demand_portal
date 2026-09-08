@@ -131,10 +131,11 @@ function LoginGate({ onSignedIn }: { onSignedIn: (token: string) => void }) {
   return (
     <div style={{ height: "100vh", display: "grid", placeItems: "center", background: "var(--bg)" }}>
       <div className="card panel-pad" style={{ width: 360, textAlign: "center", padding: 32 }}>
-        <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 700, fontSize: 22, marginBottom: 4 }}>Openhouse</div>
-        <div style={{ fontSize: 10.5, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--muted)", marginBottom: 22 }}>
-          Direct Demand
-        </div>
+        {/* The card is light, so the artwork goes in untouched — the blue in
+            DIRECT DEMAND survives here, unlike the sidebar copy. */}
+        <img src="/direct_demand_logo.png" alt="Openhouse Direct Demand"
+             style={{ width: "100%", maxWidth: 232, display: "block",
+                      margin: "4px auto 22px" }} />
         <p className="sec-sub" style={{ marginBottom: 20 }}>Sign in with your Openhouse Google account.</p>
         <div id="g-signin" style={{ display: "flex", justifyContent: "center" }} />
         {err && <div className="mand-flag show" style={{ marginTop: 16 }}>⚠ {err}</div>}

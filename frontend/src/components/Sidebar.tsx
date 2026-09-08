@@ -87,14 +87,16 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
   const inDialer = useLocation().pathname.startsWith("/dialer");
   return (
     <aside className="sidebar">
+      {/* Both marks stay mounted; CSS shows one. The full lockup is ~4:1 and has no
+          business in a 72px rail, so the collapsed rail falls back to the square
+          OpenhouseLogo it always used. Alt text on the image only — the icon is
+          decorative once the wordmark beside it says the same thing. */}
       <div className="brand">
         <div className="logo">
           <OpenhouseLogo />
         </div>
-        <div>
-          <div className="nm">Openhouse</div>
-          <div className="sub">Direct&nbsp;Demand</div>
-        </div>
+        <img className="brand-logo" src="/direct_demand_logo.png"
+             alt="Openhouse Direct Demand" />
       </div>
       <button
         className="nav-collapse"

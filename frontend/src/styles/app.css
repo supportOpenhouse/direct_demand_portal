@@ -52,8 +52,7 @@ body{
 .app.collapsed .sidebar{padding:18px 10px}
 .app.collapsed .nav-t,
 .app.collapsed .nav-label,
-.app.collapsed .brand .nm,
-.app.collapsed .brand .sub,
+.app.collapsed .brand-logo,
 .app.collapsed .user .un,
 .app.collapsed .user .ur,
 .app.collapsed .user .role-chip,
@@ -96,13 +95,32 @@ body{
 #nav::-webkit-scrollbar-thumb{background:#2a3445;border-radius:3px}
 #nav::-webkit-scrollbar-thumb:hover{background:#3a4a6b}
 .brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
+/* The lockup already carries the (h) mark, so the standalone SVG would double it —
+   it exists only for the collapsed rail. */
+.app:not(.collapsed) .brand .logo{display:none}
 .brand .logo{
   width:38px;height:38px;flex:none;
   display:grid;place-items:center;
 }
 .brand .logo svg{width:38px;height:38px;display:block}
-.brand .nm{font-family:"Bricolage Grotesque";font-weight:700;font-size:17px;color:#fff;letter-spacing:-.01em;line-height:1}
-.brand .sub{font-size:10.5px;color:#7c879c;letter-spacing:.14em;text-transform:uppercase;margin-top:3px}
+/* The lockup is #000000 + #2563EA ink on transparent, and the rail is #111a2b, so
+   the black has to be lifted to white. Same pair the other repos use, not a second
+   image file:
+
+     invert(1)            black -> white, but takes the blue with it (-> #DA9C15)
+     hue-rotate(180deg)   every row of the 180° matrix sums to 1.0, so white maps to
+                          white and survives untouched, while the flipped ink is
+                          carried back toward blue
+
+   Plain invert() alone is what we must NOT do — it leaves DIRECT DEMAND amber. The
+   PNG is RGBA (colour type 6), so only the ink is filtered; there's no plate behind
+   it to drop, and no black box appears.
+
+   ponytail: our accent is #2563EA, not the orange the other repos round-trip. Its
+   blue channel clamps, so it lands near #65A3FF — a lighter blue, not the original.
+   Derived, not eyeballed. Hand-cut a white-text variant of the PNG only if that
+   lightening actually bothers you on a real screen. */
+.brand-logo{width:100%;max-width:174px;display:block;filter:invert(1) hue-rotate(180deg)}
 .proto-pill{
   margin:2px 8px 14px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
   color:#f0c34a;background:rgba(184,134,11,.16);border:1px solid rgba(184,134,11,.34);

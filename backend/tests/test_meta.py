@@ -239,3 +239,126 @@ def test_the_log_reads_newest_first():
 def test_every_delivery_records_which_lead_it_landed_on():
     """Without this the join above has nothing to join on."""
     assert "origin_key = :origin_key" in str(meta_leads.MARK_EVENT)
+
+
+# ---- process_value, with the two IO boundaries stubbed --------------------------
+
+
+class _Result:
+    def __init__(self, value=None):
+        self._value = value
+
+    def scalar(self):
+        return self._value
+
+
+class _Conn:
+    def __init__(self, calls, prior):
+        self.calls, self.prior = calls, prior
+
+    async def execute(self, sql, params=None):
+        self.calls.append((str(sql), params))
+        return _Result(self.prior)
+
+
+class _Begin:
+    def __init__(self, conn):
+        self.conn = conn
+
+    async def __aenter__(self):
+        return self.conn
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _Engine:
+    """Records every statement instead of running it. `prior` is what the upsert's
+    subselect reports the row's status was before this delivery."""
+
+    def __init__(self, calls, prior=None):
+        self.calls, self.prior = calls, prior
+
+    def begin(self):
+        return _Begin(_Conn(self.calls, self.prior))
+
+
+def _stub(monkeypatch, calls, *, field_data, prior=None, valid=1):
+    monkeypatch.setattr(meta_leads, "neon_engine", lambda: _Engine(calls, prior))
+
+    async def fake_fetch(leadgen_id):
+        return {"id": leadgen_id, "field_data": field_data, "campaign_name": "Noida Q3"}
+
+    async def fake_ingest(rows, actor):
+        return {"received": len(rows), "valid": valid, "new": valid, "city_fixed": 0}
+
+    monkeypatch.setattr(meta_leads, "fetch_lead", fake_fetch)
+    monkeypatch.setattr(meta_leads, "ingest_meta_rows", fake_ingest)
+
+
+def _marked(calls):
+    return [p for sql, p in calls if "UPDATE meta_lead_events" in sql][-1]
+
+
+async def test_a_lead_with_a_phone_lands_and_is_stamped(monkeypatch):
+    calls = []
+    _stub(monkeypatch, calls, field_data=[
+        {"name": "full_name", "values": ["Rahul Sharma"]},
+        {"name": "phone_number", "values": ["+91 99997 99588"]},
+    ])
+
+    assert await meta_leads.process_value({"leadgen_id": "L1"}, {}) == "success"
+    row = _marked(calls)
+    assert row["status"] == "success"
+    assert row["origin_key"] == "meta:9999799588"
+    assert row["campaign_name"] == "Noida Q3"
+    # and the lead itself carries the delivery id, so the log can join to it
+    stamps = [p for sql, p in calls if "UPDATE leads SET meta_lead_id" in sql]
+    assert stamps == [{"lid": "L1", "origin_key": "meta:9999799588"}]
+
+
+async def test_a_delivery_that_produced_no_lead_is_not_called_success(monkeypatch):
+    """`build_meta` skipping a phoneless row is right — phone is the lead's identity.
+
+    But the delivery still put nothing in the CRM, and a green "in CRM" chip on a lead
+    that exists only at Meta is the one lie this log must not tell."""
+    calls = []
+    _stub(monkeypatch, calls,
+          field_data=[{"name": "full_name", "values": ["No Phone"]}], valid=0)
+
+    assert await meta_leads.process_value({"leadgen_id": "L2"}, {}) == "failed"
+    row = _marked(calls)
+    assert row["status"] == "failed"
+    assert "phone" in (row["error_message"] or "")
+    assert row["origin_key"] is None
+    assert not [sql for sql, _ in calls if "UPDATE leads SET meta_lead_id" in sql]
+
+
+async def test_metas_retry_of_a_delivered_lead_touches_nothing(monkeypatch):
+    """The whole reason meta_lead_id is UNIQUE: a resend must not re-ingest."""
+    calls = []
+    _stub(monkeypatch, calls, prior="success", field_data=[
+        {"name": "phone_number", "values": ["9999799588"]},
+    ])
+
+    assert await meta_leads.process_value({"leadgen_id": "L1"}, {}) == "duplicate"
+    # exactly one statement: the upsert that recorded the resend. No fetch, no ingest,
+    # no stamp, no mark. (Matching on "UPDATE" would not work here — the upsert's own
+    # ON CONFLICT DO UPDATE contains the word.)
+    assert len(calls) == 1
+    assert "INSERT INTO meta_lead_events" in calls[0][0]
+
+
+async def test_a_graph_failure_is_recorded_not_raised(monkeypatch):
+    """A raise here becomes a 500, which Meta reads as \"resend the whole batch\" —
+    re-running the deliveries in it that already worked."""
+    calls = []
+    _stub(monkeypatch, calls, field_data=[])
+
+    async def boom(leadgen_id):
+        raise RuntimeError("graph is down")
+
+    monkeypatch.setattr(meta_leads, "fetch_lead", boom)
+
+    assert await meta_leads.process_value({"leadgen_id": "L3"}, {}) == "failed"
+    assert "graph is down" in _marked(calls)["error_message"]

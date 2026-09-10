@@ -222,8 +222,16 @@ async def process_value(value: dict, payload: dict) -> str:
         origin_key = f"meta:{phone}" if phone else None
         if origin_key:
             await _record(STAMP_LEAD, {"lid": lid, "origin_key": origin_key})
-        status, error = "success", None
-        log.info("meta lead %s ingested: %s", lid, result)
+            status, error = "success", None
+        else:
+            # `build_meta` skips a row with no phone, which is the right call — phone is
+            # the lead's identity and a half-filled form row is normal. But the delivery
+            # still produced no lead, and calling that `success` would put a green "in
+            # CRM" chip on a lead that is only at Meta. That is precisely the gap this
+            # log exists to show, so it lands with the rest of the not-in-CRM rows.
+            status = "failed"
+            error = "no phone number in the form — phone is the lead's identity"
+        log.info("meta lead %s ingested (%s): %s", lid, status, result)
     except Exception as exc:  # noqa: BLE001 — recorded, then reported to the caller
         lead, origin_key, status = {}, None, "failed"
         error = f"{type(exc).__name__}: {exc}"

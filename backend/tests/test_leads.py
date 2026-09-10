@@ -217,3 +217,88 @@ def test_the_rewrite_never_erases_a_city_with_a_blank_one():
              {"origin_key": "meta:2", "city": None},
              {"origin_key": "meta:3", "city": ""}]
     assert [(s["origin_key"], s["city"]) for s in spine if s.get("city")] == [("meta:1", "Noida")]
+
+
+# ── the pushed Noida sheet ──────────────────────────────────────────────────────
+# Its nine headers, verbatim from the sheet including the '?'s. The whole point of
+# these is that a rename in the form is caught here rather than in production as a
+# column of nulls.
+NOIDA_HEADERS = [
+    "where_do_you_currently_live?",
+    "where_are_you_looking_to_buy_a_home?",
+    "your_budget_range?",
+    "which_flat/apartment_size_do_you_need?",
+    "preferred_site_visit_day?",
+    "email",
+    "full_name",
+    "phone_number",
+    "zip_code",
+]
+NOIDA_ROW = dict(zip(NOIDA_HEADERS, [
+    "Delhi", "Greater Noida West", "₹1 cr– ₹1.25 cr", "3BHK",
+    "This Saturday", "a@b.com", "Ravi Kumar", "p:+919876543210", "110092",
+]))
+
+
+def test_every_noida_header_lands_on_a_key_build_meta_reads():
+    """No column may fall through to a name nothing looks at — that's a silent
+    column of nulls, which is the failure mode this whole map exists to prevent."""
+    from app.services.leads_sync import _norm_header
+
+    known = {"current_location", "city", "your_budget_range", "configuration",
+             "preferred_site_visit_day", "email", "full_name", "phone_number", "zip_code"}
+    assert {_norm_header(h) for h in NOIDA_HEADERS} == known
+
+
+def test_a_question_mark_is_not_part_of_the_column_name():
+    """Three headers only match because _norm_header strips the trailing '?'. If it
+    ever stopped, budget and visit-day would go quietly null."""
+    from app.services.leads_sync import _norm_header
+
+    assert _norm_header("your_budget_range?") == "your_budget_range"
+    assert _norm_header("preferred_site_visit_day?") == "preferred_site_visit_day"
+
+
+def test_looking_to_buy_is_the_city_and_currently_live_is_not():
+    """`city` means the demand side everywhere in this app — where they want to buy.
+    Swapping these would file a Delhi resident's Noida enquiry under Delhi."""
+    from app.services.leads_sync import normalise_pushed
+
+    _, spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    assert spine[0]["city"] == "Noida"              # 'Greater Noida West' normalised
+    assert spine[0]["current_location"] == "Delhi"
+
+
+def test_the_pushed_row_fills_the_columns_it_should():
+    from app.services.leads_sync import normalise_pushed
+
+    ingest, spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    assert spine[0]["configuration"] == "3 BHK"
+    assert spine[0]["budget_band"] == "₹1 cr– ₹1.25 cr"
+    assert spine[0]["preferred_visit_day"] == "This Saturday"
+    assert spine[0]["zip_code"] == "110092"
+    assert spine[0]["phone"] == "+91 98765 43210"
+    assert spine[0]["origin_key"] == "meta:9876543210"
+    # the Noida form doesn't ask it, so it must not be invented
+    assert spine[0]["plan_to_buy"] is None
+    assert ingest[0]["dedupe_key"] == "9876543210"
+
+
+def test_a_formula_error_in_a_pushed_cell_is_not_stored_as_a_value():
+    """Same guard as the pulled worksheet — applied server-side, because the poster
+    is not the thing we trust."""
+    from app.services.leads_sync import normalise_pushed
+
+    row = dict(NOIDA_ROW, **{"where_are_you_looking_to_buy_a_home?": "#N/A"})
+    _, spine, _ = build_meta([normalise_pushed(row)])
+    assert spine[0]["city"] is None
+
+
+def test_a_pushed_row_dedupes_against_the_pulled_sheet():
+    """Both paths key on meta:<last-10-digits>, so the same buyer on both forms is one
+    lead. A different origin_key here would silently double every shared number."""
+    from app.services.leads_sync import normalise_pushed
+
+    _, pushed, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    _, pulled, _ = build_meta([{"phone_number": "91-9876543210", "full_name": "Ravi"}])
+    assert pushed[0]["origin_key"] == pulled[0]["origin_key"]

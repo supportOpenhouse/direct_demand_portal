@@ -176,6 +176,12 @@ class Settings(BaseSettings):
     # to serve rather than accept call outcomes for arbitrary numbers.
     HUVO_WEBHOOK_SECRET: str = ""
 
+    # Shared secret for sheet-bound Apps Scripts that PUSH rows to /v1/sheet-leads,
+    # sent as X-Sync-Token. Header, not ?token=, because a querystring lands in access
+    # logs. Unset = open in dev; in prod the endpoint refuses to serve rather than let
+    # anyone insert leads.
+    SHEET_SYNC_TOKEN: str = ""
+
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (

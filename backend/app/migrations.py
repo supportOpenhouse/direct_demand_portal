@@ -11,6 +11,22 @@ from sqlalchemy import text
 log = logging.getLogger("migrations")
 
 # (table, column, type) — additive only
+# Every uuid primary key here is filled by SQLAlchemy's `default=uuid.uuid4`, which
+# is CLIENT side — the column itself was NOT NULL with nothing behind it, so any
+# INSERT that skips the ORM (psql, an Apps Script, a hand-run backfill) failed with
+# 23502 on a column that looks defaulted. gen_random_uuid() has been built in since
+# PG13 and this database is 18.6; wiring it up as the column default costs nothing and
+# the ORM is unaffected — it still binds its own uuid, which simply wins over the
+# default.
+#
+# lead_confirmed_data.lead_id is deliberately NOT here: it is a FOREIGN KEY to
+# leads.id, so generating one would invent a reference to a lead that doesn't exist.
+_ID_DEFAULT_TABLES = [
+    "activity_log", "audit_logs", "crm_visits", "dial_campaigns", "dial_queue",
+    "huvo_call_updates", "lead_notes", "leads", "listing_leads", "meta_leads",
+    "users", "visits", "wa_messages",
+]
+
 _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
     ("users", "assignment_name", "TEXT"),
@@ -18,6 +34,12 @@ _ADD_COLUMNS = [
     ("users", "smid", "INTEGER"),
     ("meta_leads", "city", "TEXT"),
     ("meta_leads", "society", "TEXT"),
+    # Noida lead form (10 Sep onwards) asks three things the older Meta form didn't
+    ("meta_leads", "configuration", "TEXT"),
+    ("meta_leads", "current_location", "TEXT"),
+    ("meta_leads", "zip_code", "TEXT"),
+    ("leads", "current_location", "TEXT"),
+    ("leads", "zip_code", "TEXT"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),
@@ -102,6 +124,11 @@ async def run_migrations(engine) -> None:
         async with engine.begin() as conn:
             for table, col, coltype in _ADD_COLUMNS:
                 await conn.execute(text(f'ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {col} {coltype}'))
+            # Idempotent: setting the same default twice is a no-op, and it rewrites
+            # no rows — it only applies to inserts that omit the column.
+            for table in _ID_DEFAULT_TABLES:
+                await conn.execute(text(
+                    f'ALTER TABLE {table} ALTER COLUMN id SET DEFAULT gen_random_uuid()'))
     except Exception:
         log.exception("schema (ADD COLUMN) migrations failed")
 

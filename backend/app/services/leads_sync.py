@@ -18,7 +18,7 @@ from ..config import get_settings
 from ..core.auth import build_assignee_canon_map, canonical_assignee
 from ..db import neon_engine
 from ..models import Lead, ListingLead, MetaLead, SyncState
-from .normalize import normalize_city
+from .normalize import normalize_city, normalize_config
 from .sheets import clean_cell
 
 log = logging.getLogger("leads_sync")
@@ -115,8 +115,23 @@ def map_plan(raw: str | None) -> str | None:
     return PLAN_MAP.get((p or "").lower(), p)
 
 
+# The Noida form (10 Sep onwards) asks the same questions in longer words, so its
+# columns are RENAMED onto the keys build_meta already reads rather than added as
+# duplicates. Three more need no entry here at all — `_norm_header` strips the
+# trailing '?', so `your_budget_range?`, `preferred_site_visit_day?` and `full_name`
+# already land on the canonical key.
+_HEADER_ALIASES = {
+    # `city` is the demand side everywhere in this app — where they want to buy, not
+    # where they are. The other question gets its own column instead of overwriting it.
+    "where_are_you_looking_to_buy_a_home": "city",
+    "where_do_you_currently_live": "current_location",
+    "which_flat_apartment_size_do_you_need": "configuration",
+}
+
+
 def _norm_header(h: str) -> str:
-    return re.sub(r"[^\w]+", "_", h.strip().lower()).strip("_")
+    key = re.sub(r"[^\w]+", "_", h.strip().lower()).strip("_")
+    return _HEADER_ALIASES.get(key, key)
 
 
 # listing sheet dates are MM/DD/YYYY (confirmed: '06/01/2026' co-occurs with 'Jun 1, 2026')
@@ -216,21 +231,31 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
         city = normalize_city(r.get("city"))  # Meta sheet gained a city column
         society = r.get("society") or None    # Meta sheet gained a society column
         budget = pretty_enum(r.get("your_budget_range"))
+        # The Noida form doesn't ask this, so it stays null there rather than guessed.
         plan = map_plan(r.get("when_are_you_planning_to_buy"))
         visit_day = pretty_enum(r.get("preferred_site_visit_day"))
         email = r.get("email") or None
+        # Noida form only. current_location goes through normalize_city too, so
+        # "Gr Noida West" and "Noida Extension" don't read as two different places.
+        config = normalize_config(r.get("configuration"))
+        current = normalize_city(r.get("current_location"))
+        zip_code = r.get("zip_code") or None
         ingest.append({
             "dedupe_key": phone, "full_name": name, "phone": display_phone(phone), "email": email,
             "city": city, "society": society, "budget_range": budget, "plan_to_buy": plan,
-            "preferred_visit_day": visit_day, "is_test": False, "raw": r,
+            "preferred_visit_day": visit_day, "configuration": config,
+            "current_location": current, "zip_code": zip_code, "is_test": False, "raw": r,
         })
         spine.append({
             "origin_key": f"meta:{phone}", "source_category": "meta", "source": "meta",
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,
-            "city": city, "society": society, "configuration": None, "budget_band": budget,
+            "city": city, "society": society, "configuration": config, "budget_band": budget,
             "plan_to_buy": plan, "preferred_visit_day": visit_day, "source_remarks": None, "is_test": False,
+            "current_location": current, "zip_code": zip_code,
             "received_at": None,  # meta sheet has no date → filled with ingest time below
-            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day, "city": city, "society": society},
+            "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day,
+                            "city": city, "society": society, "configuration": config,
+                            "current_location": current, "zip_code": zip_code},
         })
     return ingest, spine, synced
 
@@ -353,6 +378,62 @@ async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
                 .on_conflict_do_nothing(index_elements=[conflict_col]))
         total += (await conn.execute(stmt)).rowcount or 0
     return total
+
+
+def normalise_pushed(row: dict) -> dict:
+    """One pushed row, made to look exactly like a row the worksheet reader produced.
+
+    Headers go through `_norm_header` (so the aliases apply) and values through
+    `clean_cell` (so a `#N/A` from a broken lookup lands as empty). Both server-side,
+    deliberately: the sheet's own values are what gets stored, and the poster is not
+    the thing we trust — nor does it have to be redeployed when an alias changes.
+    """
+    return {_norm_header(str(k)): clean_cell("" if v is None else str(v))
+            for k, v in row.items()}
+
+
+async def ingest_meta_rows(rows: list[dict], actor: str) -> dict:
+    """Insert one PUSHED batch of Meta-form rows.
+
+    Same builder, same insert-only rule and same city rewrite as the 4-hourly cron —
+    only the transport differs, so a lead arriving this way is indistinguishable from
+    one the cron pulled, right down to `origin_key = meta:<phone>`. That shared key is
+    the point: the same buyer submitting on both forms is one lead, not two.
+    """
+    engine = neon_engine()
+    if engine is None:
+        raise RuntimeError("DATABASE_URL not configured")
+
+    ingest, spine, _ = build_meta([normalise_pushed(r) for r in rows])
+    if not spine:
+        # Every row was phoneless. Not an error — a half-filled form row is normal.
+        return {"received": len(rows), "valid": 0, "raw_new": 0, "new": 0, "city_fixed": 0}
+
+    now = datetime.now(timezone.utc)
+    tat = now + timedelta(hours=TAT_HOURS)
+    for s in spine:
+        s.setdefault("tat_deadline", tat)
+        # The form carries no submission date, so arrival time is the honest answer.
+        if s.get("received_at") is None:
+            s["received_at"] = now
+
+    # No assignee canonicalisation here, unlike run_leads_sync: a Meta row never
+    # carries an owner, so there would be nothing to canonicalise.
+    city_updates = [(s["origin_key"], s["city"]) for s in spine if s.get("city")]
+
+    async with engine.begin() as conn:
+        raw_new = await _insert_only(conn, MetaLead, ingest, "dedupe_key")
+        new = await _insert_only(conn, Lead, spine, "origin_key")
+        city_fixed = 0
+        if city_updates:
+            oks, cities = zip(*city_updates)
+            city_fixed = (await conn.execute(
+                SYNC_CITY, {"oks": list(oks), "cities": list(cities)})).rowcount or 0
+
+    log.info("sheet push (%s): %d rows, %d with a phone, %d new leads, %d cities rewritten",
+             actor, len(rows), len(spine), new, city_fixed)
+    return {"received": len(rows), "valid": len(spine), "raw_new": raw_new,
+            "new": new, "city_fixed": city_fixed}
 
 
 async def run_leads_sync(trigger: str = "manual") -> dict:

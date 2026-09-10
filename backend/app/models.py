@@ -190,6 +190,11 @@ class MetaLead(Base):
     budget_range: Mapped[str | None] = mapped_column(Text)
     plan_to_buy: Mapped[str | None] = mapped_column(Text)
     preferred_visit_day: Mapped[str | None] = mapped_column(Text)
+    # asked by the Noida form, not by the older Meta one — null on every row that
+    # predates it. `city` is where they want to BUY; this is where they live now.
+    configuration: Mapped[str | None] = mapped_column(Text)
+    current_location: Mapped[str | None] = mapped_column(Text)
+    zip_code: Mapped[str | None] = mapped_column(Text)
     is_test: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     ingested_at: Mapped[str] = mapped_column(
@@ -250,6 +255,10 @@ class Lead(Base):
     budget_band: Mapped[str | None] = mapped_column(Text)
     plan_to_buy: Mapped[str | None] = mapped_column(Text)
     preferred_visit_day: Mapped[str | None] = mapped_column(Text)
+    # where the buyer lives today, and their pincode — Noida form only. `city` stays
+    # the demand side (where they're looking), because every filter reads it that way.
+    current_location: Mapped[str | None] = mapped_column(Text)
+    zip_code: Mapped[str | None] = mapped_column(Text)
     source_remarks: Mapped[str | None] = mapped_column(Text)
     source_meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 

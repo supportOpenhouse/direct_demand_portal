@@ -34,12 +34,13 @@ _ADD_COLUMNS = [
     ("users", "smid", "INTEGER"),
     ("meta_leads", "city", "TEXT"),
     ("meta_leads", "society", "TEXT"),
-    # Noida lead form (10 Sep onwards) asks three things the older Meta form didn't
-    ("meta_leads", "configuration", "TEXT"),
-    ("meta_leads", "current_location", "TEXT"),
-    ("meta_leads", "zip_code", "TEXT"),
+    # Noida lead form (10 Sep onwards) asks two things the older Meta form didn't.
+    # Only on `leads`: meta_leads and listing_leads are frozen — nothing writes them
+    # any more, so widening them would be dead schema.
     ("leads", "current_location", "TEXT"),
     ("leads", "zip_code", "TEXT"),
+    # Took over from meta_leads.raw / listing_leads.raw when those stopped being written
+    ("leads", "raw", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),

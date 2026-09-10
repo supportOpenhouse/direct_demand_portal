@@ -260,6 +260,10 @@ class Lead(Base):
     current_location: Mapped[str | None] = mapped_column(Text)
     zip_code: Mapped[str | None] = mapped_column(Text)
     source_remarks: Mapped[str | None] = mapped_column(Text)
+    # The whole source row, verbatim. meta_leads/listing_leads used to hold this and
+    # are no longer written, so without it a question the mapped columns can't answer
+    # would have nowhere to go — same reason huvo_call_updates.payload exists.
+    raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     source_meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     # when the lead came in (source date for listing; ingest time for meta)

@@ -13,11 +13,9 @@
  * 1. Run the DDL below ONCE (Neon SQL Editor). Safe to re-run; the backend's own
  *    migrations issue the identical statements, so a deploy won't conflict.
  *
- *      ALTER TABLE meta_leads ADD COLUMN IF NOT EXISTS configuration    TEXT;
- *      ALTER TABLE meta_leads ADD COLUMN IF NOT EXISTS current_location TEXT;
- *      ALTER TABLE meta_leads ADD COLUMN IF NOT EXISTS zip_code         TEXT;
- *      ALTER TABLE leads      ADD COLUMN IF NOT EXISTS current_location TEXT;
- *      ALTER TABLE leads      ADD COLUMN IF NOT EXISTS zip_code         TEXT;
+ *      ALTER TABLE leads ADD COLUMN IF NOT EXISTS current_location TEXT;
+ *      ALTER TABLE leads ADD COLUMN IF NOT EXISTS zip_code         TEXT;
+ *      ALTER TABLE leads ADD COLUMN IF NOT EXISTS raw JSONB NOT NULL DEFAULT '{}'::jsonb;
  *
  * 2. Sheet → Extensions → Apps Script. Paste this in as a new .gs file.
  * 3. Project Settings → Script Properties → add:
@@ -35,11 +33,28 @@
 
 const ND_SHEET_NAME = 'Noida Leads 10 Sep Onwards';
 const ND_BATCH_SIZE = 200;   // rows per HTTP round trip
+const ND_PUSHED_COLUMN = 'pushed';   // TRUE once the row is in the database
 
-/* The Noida form asks the same questions in longer words. Renamed onto the column
-   they belong in rather than added as new ones. Three more need no entry: the
-   normaliser strips the trailing '?', so `your_budget_range?`,
-   `preferred_site_visit_day?` and `full_name` already land correctly. */
+/* TRUE means "already in the database, skip it". Anything else — FALSE, blank, a
+   typo, a stray note — means push again. Deliberately permissive in that direction:
+   a re-push costs one round trip and inserts nothing (ON CONFLICT DO NOTHING), while
+   a wrongly-skipped row is a lead nobody ever calls.
+
+   Sheets hands back a real boolean for a TRUE cell or a checkbox, and a string if
+   someone typed it, so both are accepted. */
+function ND_isPushed_(v) {
+  return v === true || String(v == null ? '' : v).trim().toLowerCase() === 'true';
+}
+
+/* Sheet header -> DATABASE column, applied in memory while building each row.
+
+   Nothing is written back: the sheet's own header row is never touched (the only
+   column this script ever adds is `pushed`). The Noida form just asks the same
+   questions in longer words, so those answers go into the columns that already hold
+   them rather than causing new ones to be created.
+
+   Three more need no entry here — the normaliser strips the trailing '?', so
+   `your_budget_range?`, `preferred_site_visit_day?` and `full_name` already match. */
 const ND_HEADER_ALIASES = {
   // `city` is the demand side everywhere in this app — where they want to BUY.
   // Where they live now is its own column, and the two must not be swapped.
@@ -168,35 +183,34 @@ function ND_sql_(statements) {
    `id` is supplied explicitly. It looks like it has a default, but the default is
    uuid.uuid4 on the SQLAlchemy model — CLIENT side. The column itself is NOT NULL
    with nothing behind it, so a raw INSERT that omits id fails with 23502. */
-const ND_INSERT_RAW = `
-INSERT INTO meta_leads (id, dedupe_key, full_name, phone, email, city, society,
-                        budget_range, plan_to_buy, preferred_visit_day,
-                        configuration, current_location, zip_code, is_test, raw)
-SELECT gen_random_uuid(), r.dedupe_key, r.full_name, r.phone, r.email, r.city, NULL,
-       r.budget_range, NULL, r.preferred_visit_day,
-       r.configuration, r.current_location, r.zip_code, false, r.raw
-  FROM jsonb_to_recordset($1::jsonb) AS r(
-       dedupe_key text, full_name text, phone text, email text, city text,
-       budget_range text, preferred_visit_day text, configuration text,
-       current_location text, zip_code text, raw jsonb)
- ON CONFLICT (dedupe_key) DO NOTHING`;
+/* `leads` is the only table written — meta_leads and listing_leads are frozen, and
+   `raw` carries the verbatim sheet row that meta_leads.raw used to hold.
 
-/* origin_key is 'meta:<phone10>' — the SAME key the 4-hourly cron uses for its Meta
+   origin_key is 'meta:<phone10>' — the SAME key the 4-hourly cron uses for its Meta
    rows, deliberately. A different one here would double every buyer who appears on
-   both forms. stage and id come from their column defaults. */
+   both forms.
+
+   jsonb_to_recordset($1::jsonb) rather than a VALUES list with $1..$2800: one
+   parameter whatever the batch size, so there is no placeholder arithmetic to get
+   wrong and no bind-parameter ceiling to chunk around.
+
+   `id` is supplied explicitly. It looks like it has a default, but on an
+   un-migrated database the default is uuid.uuid4 on the SQLAlchemy model — CLIENT
+   side — and the column is NOT NULL with nothing behind it, so a raw INSERT that
+   omits id fails 23502. Harmless once the migration adds gen_random_uuid(). */
 const ND_INSERT_LEAD = `
 INSERT INTO leads (id, origin_key, source_category, source, name, phone, email, city,
                    configuration, budget_band, preferred_visit_day,
                    current_location, zip_code, is_test, received_at, tat_deadline,
-                   source_meta)
+                   source_meta, raw)
 SELECT gen_random_uuid(), r.origin_key, 'meta', 'meta', r.name, r.phone, r.email, r.city,
        r.configuration, r.budget_band, r.preferred_visit_day,
        r.current_location, r.zip_code, false, now(), now() + interval '1 hour',
-       r.source_meta
+       r.source_meta, r.raw
   FROM jsonb_to_recordset($1::jsonb) AS r(
        origin_key text, name text, phone text, email text, city text,
        configuration text, budget_band text, preferred_visit_day text,
-       current_location text, zip_code text, source_meta jsonb)
+       current_location text, zip_code text, source_meta jsonb, raw jsonb)
  ON CONFLICT (origin_key) DO NOTHING`;
 
 /* ── the sync ─────────────────────────────────────────────────────────────── */
@@ -217,14 +231,33 @@ function ND_runSync() {
   if (values.length < 2) { Logger.log('Sheet has no data rows.'); return; }
 
   const headers = values[0].map(ND_header_);
+
+  // The marker column, created on first run so nobody has to set the sheet up.
+  let pushedCol = headers.indexOf(ND_PUSHED_COLUMN) + 1;   // 1-based, 0 = absent
+  if (!pushedCol) {
+    pushedCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, pushedCol).setValue(ND_PUSHED_COLUMN);
+    headers[pushedCol - 1] = ND_PUSHED_COLUMN;
+  }
+  // One in-memory copy of the whole column, written back per batch. Cheaper and
+  // simpler than addressing scattered cells, and it survives rows being skipped.
+  const marks = [];
+  for (let i = 1; i < values.length; i++) marks.push([values[i][pushedCol - 1]]);
+  const flushMarks = () =>
+    { sheet.getRange(2, pushedCol, marks.length, 1).setValues(marks); SpreadsheetApp.flush(); };
+
   const seen = {};       // the same number twice in one run would violate the unique
-  const raws = [];       // key inside a single statement, which DO NOTHING can't fix
-  const leads = [];
+  const leads = [];      // key inside a single statement, which DO NOTHING can't fix
+  const rowsOf = [];     // sheet rows behind each record — a duplicate marks with its twin
+  let alreadyPushed = 0;
 
   for (let i = 1; i < values.length; i++) {
+    const mark = i - 1;                      // this row's index into `marks`
+    if (ND_isPushed_(values[i][pushedCol - 1])) { alreadyPushed++; continue; }
+
     const row = {};
     for (let j = 0; j < headers.length; j++) {
-      if (!headers[j]) continue;
+      if (!headers[j] || headers[j] === ND_PUSHED_COLUMN) continue;   // our own column isn't form data
       let v = values[i][j];
       // A Date would serialise as UTC and shift back a day across the IST boundary.
       if (v instanceof Date) v = Utilities.formatDate(v, 'Asia/Kolkata', 'yyyy-MM-dd');
@@ -232,10 +265,15 @@ function ND_runSync() {
     }
 
     // The phone IS the identity and the dedupe key, so a row without one can't be
-    // stored. A half-filled form row is normal, not an error.
+    // stored. A half-filled form row is normal, not an error — but say so in the
+    // sheet, because FALSE forever is the honest answer for a row that can't go.
     const p10 = ND_phone10_(row.phone_number);
-    if (!p10 || seen[p10]) continue;
-    seen[p10] = true;
+    if (!p10) { marks[mark] = [false]; continue; }
+    // A repeat of a number already in this run rides along with its twin: it's the
+    // same lead, so it's marked when that lead lands, not before.
+    if (seen[p10] !== undefined) { rowsOf[seen[p10]].push(mark); continue; }
+    seen[p10] = leads.length;
+    rowsOf.push([mark]);
 
     const city = ND_city_(row.city);
     const config = ND_config_(row.configuration);
@@ -247,12 +285,6 @@ function ND_runSync() {
     const name = ND_name_(row.full_name);
     const phone = ND_displayPhone_(p10);
 
-    raws.push({
-      dedupe_key: p10, full_name: name, phone: phone, email: email, city: city,
-      budget_range: budget, preferred_visit_day: visitDay, configuration: config,
-      current_location: current, zip_code: zip,
-      raw: row,   // the whole sheet row, so nothing is lost to a column we didn't map
-    });
     leads.push({
       origin_key: 'meta:' + p10, name: name, phone: phone, email: email, city: city,
       configuration: config, budget_band: budget, preferred_visit_day: visitDay,
@@ -262,25 +294,36 @@ function ND_runSync() {
         preferred_visit_day: visitDay, city: city, configuration: config,
         current_location: current, zip_code: zip,
       },
+      raw: row,   // the whole sheet row, so nothing is lost to a column we didn't map
     });
   }
 
-  const batches = Math.ceil(raws.length / ND_BATCH_SIZE);
-  Logger.log(raws.length + ' unique rows with a phone → ' + batches + ' batch(es).');
+  const batches = Math.ceil(leads.length / ND_BATCH_SIZE);
+  Logger.log(alreadyPushed + ' already pushed, ' + leads.length +
+             ' to push → ' + batches + ' batch(es).');
+  if (!batches) { flushMarks(); return; }      // still record the unpushable rows
 
-  let newRaw = 0, newLeads = 0;
+  let newLeads = 0, marked = 0;
   for (let b = 0; b < batches; b++) {
-    const lo = b * ND_BATCH_SIZE, hi = lo + ND_BATCH_SIZE;
+    const lo = b * ND_BATCH_SIZE, hi = Math.min(lo + ND_BATCH_SIZE, leads.length);
     const res = ND_sql_([
-      { query: ND_INSERT_RAW,  params: [JSON.stringify(raws.slice(lo, hi))] },
       { query: ND_INSERT_LEAD, params: [JSON.stringify(leads.slice(lo, hi))] },
     ]);
-    newRaw += res[0].rowCount || 0;
-    newLeads += res[1].rowCount || 0;
-    Logger.log('Batch ' + (b + 1) + '/' + batches + ' → raw +' + res[0].rowCount +
-               ', leads +' + res[1].rowCount);
+    newLeads += res[0].rowCount || 0;
+
+    /* Marked AFTER the write lands, and per batch rather than at the end. If batch 5
+       throws, batches 1-4 stay TRUE and only the rest are retried — and the flush
+       makes that durable before the exception unwinds the run.
+
+       rowCount is 0 for a row that was already in the database. That still counts as
+       pushed: the lead exists, which is the only thing TRUE claims. */
+    for (let k = lo; k < hi; k++) rowsOf[k].forEach(m => { marks[m] = [true]; marked++; });
+    flushMarks();
+    Logger.log('Batch ' + (b + 1) + '/' + batches + ' → leads +' + res[0].rowCount +
+               ', marked ' + marked);
   }
 
-  Logger.log('DONE — ' + raws.length + ' rows offered, ' + newRaw +
-             ' new raw rows, ' + newLeads + ' new leads (the rest already existed).');
+  Logger.log('DONE — ' + leads.length + ' offered, ' + newLeads +
+             ' new leads (the rest already existed), ' + marked +
+             ' rows marked TRUE, ' + alreadyPushed + ' skipped as already pushed.');
 }

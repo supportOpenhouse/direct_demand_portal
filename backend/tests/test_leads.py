@@ -80,10 +80,9 @@ def test_build_meta_skips_phoneless_and_normalizes():
          "preferred_site_visit_day": "this_sunday", "email": "p@x.com"},
         {"full_name": "No Phone", "phone_number": "", "your_budget_range": "x"},  # skipped
     ]
-    ingest, spine, synced = build_meta(rows)
-    assert len(ingest) == 1 and len(spine) == 1
+    spine, synced = build_meta(rows)
+    assert len(spine) == 1
     assert synced == []  # no _row on these rows → nothing to stamp
-    assert ingest[0]["dedupe_key"] == "9953998821"
     assert spine[0]["origin_key"] == "meta:9953998821"
     assert spine[0]["source"] == "meta"
     assert spine[0]["plan_to_buy"] == "Within 30 days"
@@ -96,9 +95,9 @@ def test_build_meta_tracks_sheet_row_for_writeback():
         {"full_name": "X", "phone_number": "9953998821", "_row": 7},
         {"full_name": "No Phone", "phone_number": "", "_row": 8},  # skipped → not stamped
     ]
-    ingest, _, synced = build_meta(rows)
+    spine, synced = build_meta(rows)
     assert synced == [7]
-    assert "_row" not in ingest[0]["raw"]  # _row never leaks into stored raw
+    assert "_row" not in spine[0]["raw"]  # _row never leaks into the stored raw row
 
 
 def test_build_listing_maps_source_and_property():
@@ -107,8 +106,8 @@ def test_build_listing_maps_source_and_property():
          "city": "Noida", "property": "Supertech Cape Town", "type": "Individual",
          "assigned_to": "Dheeraj", "remarks": "RNR", "remarks_2": ""},
     ]
-    ingest, spine, synced = build_listing(rows)
-    assert len(ingest) == 1 and len(spine) == 1
+    spine, synced = build_listing(rows)
+    assert len(spine) == 1
     assert spine[0]["source"] == "99acres"
     assert spine[0]["society"] == "Supertech Cape Town"
     assert spine[0]["city"] == "Noida"
@@ -122,8 +121,8 @@ def test_build_listing_keeps_nameless_rows_but_drops_phoneless():
         {"name": "", "contactno": "91-9000000000"},        # no name, HAS phone → kept
         {"name": "Ghost", "contactno": ""},                 # no phone → dropped
     ]
-    ingest, spine, synced = build_listing(rows)
-    assert len(ingest) == 1 and len(spine) == 1
+    spine, synced = build_listing(rows)
+    assert len(spine) == 1
     assert spine[0]["name"] is None                         # name stays null, lead kept
     assert spine[0]["origin_key"] == "listing:9000000000"
 
@@ -188,9 +187,9 @@ def test_the_normalizer_alone_would_still_let_it_through():
 
 
 def test_build_meta_drops_a_city_the_sheet_could_not_compute():
-    ingest, spine, _ = build_meta([{"phone_number": "p:+919876543210",
-                                    "full_name": "A", "city": clean_cell("#N/A")}])
-    assert spine[0]["city"] is None and ingest[0]["city"] is None
+    spine, _ = build_meta([{"phone_number": "p:+919876543210",
+                            "full_name": "A", "city": clean_cell("#N/A")}])
+    assert spine[0]["city"] is None
 
 
 def test_the_city_rewrite_only_touches_rows_that_actually_change():
@@ -264,7 +263,7 @@ def test_looking_to_buy_is_the_city_and_currently_live_is_not():
     Swapping these would file a Delhi resident's Noida enquiry under Delhi."""
     from app.services.leads_sync import normalise_pushed
 
-    _, spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
     assert spine[0]["city"] == "Noida"              # 'Greater Noida West' normalised
     assert spine[0]["current_location"] == "Delhi"
 
@@ -272,7 +271,7 @@ def test_looking_to_buy_is_the_city_and_currently_live_is_not():
 def test_the_pushed_row_fills_the_columns_it_should():
     from app.services.leads_sync import normalise_pushed
 
-    ingest, spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    spine, _ = build_meta([normalise_pushed(NOIDA_ROW)])
     assert spine[0]["configuration"] == "3 BHK"
     assert spine[0]["budget_band"] == "₹1 cr– ₹1.25 cr"
     assert spine[0]["preferred_visit_day"] == "This Saturday"
@@ -281,7 +280,8 @@ def test_the_pushed_row_fills_the_columns_it_should():
     assert spine[0]["origin_key"] == "meta:9876543210"
     # the Noida form doesn't ask it, so it must not be invented
     assert spine[0]["plan_to_buy"] is None
-    assert ingest[0]["dedupe_key"] == "9876543210"
+    # the whole sheet row travels along, so an unmapped column is still recoverable
+    assert spine[0]["raw"]["zip_code"] == "110092"
 
 
 def test_a_formula_error_in_a_pushed_cell_is_not_stored_as_a_value():
@@ -290,7 +290,7 @@ def test_a_formula_error_in_a_pushed_cell_is_not_stored_as_a_value():
     from app.services.leads_sync import normalise_pushed
 
     row = dict(NOIDA_ROW, **{"where_are_you_looking_to_buy_a_home?": "#N/A"})
-    _, spine, _ = build_meta([normalise_pushed(row)])
+    spine, _ = build_meta([normalise_pushed(row)])
     assert spine[0]["city"] is None
 
 
@@ -299,6 +299,62 @@ def test_a_pushed_row_dedupes_against_the_pulled_sheet():
     lead. A different origin_key here would silently double every shared number."""
     from app.services.leads_sync import normalise_pushed
 
-    _, pushed, _ = build_meta([normalise_pushed(NOIDA_ROW)])
-    _, pulled, _ = build_meta([{"phone_number": "91-9876543210", "full_name": "Ravi"}])
+    pushed, _ = build_meta([normalise_pushed(NOIDA_ROW)])
+    pulled, _ = build_meta([{"phone_number": "91-9876543210", "full_name": "Ravi"}])
     assert pushed[0]["origin_key"] == pulled[0]["origin_key"]
+
+
+# ── meta_leads / listing_leads are frozen ───────────────────────────────────────
+# Their history stays and nothing reads them at runtime, but no new row lands there:
+# `leads` is the only table the ingest writes. Re-introducing a write would split the
+# truth across three tables again, which is the thing this removed.
+
+def test_nothing_outside_the_model_file_touches_the_raw_tables():
+    """The models stay defined so the tables keep their history and migrations still
+    know about them — but importing one is how a write creeps back in."""
+    import pathlib
+
+    app_dir = pathlib.Path(__file__).resolve().parents[1] / "app"
+    offenders = []
+    for f in app_dir.rglob("*.py"):
+        if f.name == "models.py":
+            continue
+        src = f.read_text()
+        for cls in ("MetaLead", "ListingLead"):
+            # substring, not word-boundary: `MetaLeadThing` would be just as wrong
+            if cls in src:
+                offenders.append(f"{f.relative_to(app_dir)}: {cls}")
+    assert not offenders, offenders
+
+
+def test_the_builders_return_spine_rows_only():
+    """One list out, not two. A second list is where a raw-table insert used to be
+    fed from, so its absence is the structural half of the guarantee above."""
+    assert len(build_meta([{"phone_number": "9953998821"}])) == 2
+    assert len(build_listing([{"contactno": "9971652700"}])) == 2
+
+
+def test_everything_the_raw_tables_held_still_has_a_home():
+    """The point of freezing them is that nothing is lost. Each field the raw tables
+    carried is asserted at its new address rather than assumed to have moved."""
+    meta, _ = build_meta([{
+        "phone_number": "9953998821", "full_name": "@Pankaj_Joshi",
+        "your_budget_range": "up_to_₹75_lacs", "city": "Noida",
+    }])
+    assert meta[0]["name"] == "Pankaj Joshi"                # was meta_leads.full_name
+    assert meta[0]["budget_band"] == "Up to ₹75 lacs"       # was meta_leads.budget_range
+    assert meta[0]["raw"]["city"] == "Noida"                # was meta_leads.raw
+
+    listing, _ = build_listing([{
+        "contactno": "9971652700", "name": "P", "source": "99acre", "date": "06/01/2026",
+        "property": "Supertech Cape Town", "type": "Individual",
+        "phoneverificationstatus": "VERIFIED", "remarks": "RNR",
+    }])
+    row = listing[0]
+    assert row["society"] == "Supertech Cape Town"          # was listing_leads.property
+    assert row["source_remarks"] == "RNR"                   # was listing_leads.remarks
+    assert row["received_at"] is not None                   # was listing_leads.lead_date
+    assert row["source_meta"]["lead_type"] == "Individual"  # was listing_leads.lead_type
+    # the one field that had no spine column at all before this change
+    assert row["source_meta"]["phone_verification_status"] == "VERIFIED"
+    assert row["raw"]["phoneverificationstatus"] == "VERIFIED"

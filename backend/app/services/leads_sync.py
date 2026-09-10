@@ -1,10 +1,16 @@
 """Leads ingest — reads the two source worksheets and adds NEW leads only.
 
-INSERT-ONLY by design: the 4-hourly cron never updates or deletes. Each raw row
-lands in its source table (meta_leads / listing_leads) keyed by a unique
-normalized-phone dedupe_key (ON CONFLICT DO NOTHING), and a matching row is
-created in the unified `leads` spine the same way. Re-running is therefore safe
-and idempotent — already-seen leads are skipped.
+INSERT-ONLY by design (one exception, `city`, see SYNC_CITY): the 4-hourly cron never
+updates or deletes. A row becomes one row in the unified `leads` spine, keyed by a
+unique `origin_key` of `<source>:<phone10>` (ON CONFLICT DO NOTHING), so re-running is
+safe and idempotent.
+
+`leads` is now the ONLY table this writes. `meta_leads` and `listing_leads` are frozen
+— their history is kept and nothing reads them at runtime, but no new row lands there.
+Everything they carried has a home on the spine: full_name→name, budget_range→
+budget_band, property→society, remarks→source_remarks, lead_date→received_at,
+lead_type and phone_verification_status→source_meta, and the verbatim sheet row→
+`leads.raw`.
 """
 import asyncio
 import logging
@@ -17,7 +23,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..core.auth import build_assignee_canon_map, canonical_assignee
 from ..db import neon_engine
-from ..models import Lead, ListingLead, MetaLead, SyncState
+from ..models import Lead, SyncState
 from .normalize import normalize_city, normalize_config
 from .sheets import clean_cell
 
@@ -115,9 +121,10 @@ def map_plan(raw: str | None) -> str | None:
     return PLAN_MAP.get((p or "").lower(), p)
 
 
-# The Noida form (10 Sep onwards) asks the same questions in longer words, so its
-# columns are RENAMED onto the keys build_meta already reads rather than added as
-# duplicates. Three more need no entry here at all — `_norm_header` strips the
+# Sheet header -> the key build_meta reads, i.e. the database column. Applied while
+# parsing a row; no sheet is ever modified. The Noida form (10 Sep onwards) asks the
+# same questions in longer words, so its answers go into the columns that already hold
+# them instead of new ones. Three more need no entry here — `_norm_header` strips the
 # trailing '?', so `your_budget_range?`, `preferred_site_visit_day?` and `full_name`
 # already land on the canonical key.
 _HEADER_ALIASES = {
@@ -217,9 +224,9 @@ def _mark_synced(name: str, valid_rows: list[int]) -> int:
 # ---- row -> table dicts -------------------------------------------------------
 
 
-def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
-    """Returns (meta_leads rows, leads spine rows, synced sheet-row numbers). Skips no-phone rows."""
-    ingest, spine, synced = [], [], []
+def build_meta(rows: list[dict]) -> tuple[list[dict], list[int]]:
+    """Returns (leads spine rows, synced sheet-row numbers). Skips no-phone rows."""
+    spine, synced = [], []
     for r in rows:
         row_num = r.pop("_row", None)
         phone = norm_phone(r.get("phone_number"))
@@ -240,12 +247,6 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
         config = normalize_config(r.get("configuration"))
         current = normalize_city(r.get("current_location"))
         zip_code = r.get("zip_code") or None
-        ingest.append({
-            "dedupe_key": phone, "full_name": name, "phone": display_phone(phone), "email": email,
-            "city": city, "society": society, "budget_range": budget, "plan_to_buy": plan,
-            "preferred_visit_day": visit_day, "configuration": config,
-            "current_location": current, "zip_code": zip_code, "is_test": False, "raw": r,
-        })
         spine.append({
             "origin_key": f"meta:{phone}", "source_category": "meta", "source": "meta",
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,
@@ -256,12 +257,15 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
             "source_meta": {"budget_range": budget, "plan_to_buy": plan, "preferred_visit_day": visit_day,
                             "city": city, "society": society, "configuration": config,
                             "current_location": current, "zip_code": zip_code},
+            # the sheet row verbatim, so a column nobody mapped is still recoverable
+            "raw": r,
         })
-    return ingest, spine, synced
+    return spine, synced
 
 
-def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
-    ingest, spine, synced = [], [], []
+def build_listing(rows: list[dict]) -> tuple[list[dict], list[int]]:
+    """Returns (leads spine rows, synced sheet-row numbers). Skips no-phone rows."""
+    spine, synced = [], []
     for r in rows:
         row_num = r.pop("_row", None)
         phone = norm_phone(r.get("contactno"))
@@ -279,50 +283,41 @@ def build_listing(rows: list[dict]) -> tuple[list[dict], list[dict], list[int]]:
         assigned = r.get("assigned_to") or None
         email = r.get("email_id") or None
         remarks = " | ".join(x for x in [r.get("remarks"), r.get("remarks_2")] if x) or None
-        ingest.append({
-            "dedupe_key": phone, "name": name, "phone": display_phone(phone), "email": email,
-            "source": source, "city": city, "property": prop, "lead_type": ltype,
-            "phone_verification_status": r.get("phoneverificationstatus") or None,
-            "assigned_to": assigned, "lead_date": r.get("date") or None, "remarks": remarks,
-            "is_test": False, "raw": r,
-        })
         spine.append({
             "origin_key": f"listing:{phone}", "source_category": "listing", "source": source,
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": assigned,
             "city": city, "society": prop, "configuration": None, "budget_band": None,
             "plan_to_buy": None, "preferred_visit_day": None, "source_remarks": remarks, "is_test": False,
             "received_at": parse_lead_date(r.get("date")),
-            "source_meta": {"property": prop, "lead_type": ltype, "source": source},
+            # phone_verification_status had no spine column and lived only on
+            # listing_leads — it goes in the bag rather than being dropped.
+            "source_meta": {"property": prop, "lead_type": ltype, "source": source,
+                            "phone_verification_status": r.get("phoneverificationstatus") or None},
+            "raw": r,
         })
-    return ingest, spine, synced
+    return spine, synced
 
 
 # ---- the two test leads (idempotent via fixed dedupe_key) ---------------------
 
 TEST_META = {
-    "ingest": {"dedupe_key": "0000000001", "full_name": "TEST Meta Lead", "phone": "+91 00000 00001",
-               "email": "test.meta@openhouse.in", "city": "Gurgaon", "society": "Signature Global City 93 (test)",
-               "budget_range": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
-               "preferred_visit_day": "This Sunday", "is_test": True, "raw": {"_test": "true"}},
-    "spine": {"origin_key": "meta:0000000001", "source_category": "meta", "source": "meta",
-              "name": "TEST Meta Lead", "phone": "+91 00000 00001", "email": "test.meta@openhouse.in",
-              "assigned_to": "RM 1", "city": "Gurgaon", "society": "Signature Global City 93 (test)",
-              "configuration": None, "budget_band": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
-              "preferred_visit_day": "This Sunday", "source_remarks": None, "is_test": True,
-              "source_meta": {"budget_range": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days"}},
+    "origin_key": "meta:0000000001", "source_category": "meta", "source": "meta",
+    "name": "TEST Meta Lead", "phone": "+91 00000 00001", "email": "test.meta@openhouse.in",
+    "assigned_to": "RM 1", "city": "Gurgaon", "society": "Signature Global City 93 (test)",
+    "configuration": None, "budget_band": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days",
+    "preferred_visit_day": "This Sunday", "source_remarks": None, "is_test": True,
+    "source_meta": {"budget_range": "Up to ₹75 lacs", "plan_to_buy": "Within 30 days"},
+    "raw": {"_test": "true"},
 }
 TEST_LISTING = {
-    "ingest": {"dedupe_key": "0000000002", "name": "TEST Listing Lead", "phone": "+91 00000 00002",
-               "email": "test.listing@openhouse.in", "source": "99acres", "city": "Noida",
-               "property": "ATS Picturesque, Sec 152", "lead_type": "Individual",
-               "phone_verification_status": "VERIFIED", "assigned_to": "RM 2",
-               "lead_date": "test", "remarks": "Seeded test lead", "is_test": True, "raw": {"_test": "true"}},
-    "spine": {"origin_key": "listing:0000000002", "source_category": "listing", "source": "99acres",
-              "name": "TEST Listing Lead", "phone": "+91 00000 00002", "email": "test.listing@openhouse.in",
-              "assigned_to": "RM 2", "city": "Noida", "society": "ATS Picturesque, Sec 152",
-              "configuration": None, "budget_band": None, "plan_to_buy": None, "preferred_visit_day": None,
-              "source_remarks": "Seeded test lead", "is_test": True,
-              "source_meta": {"property": "ATS Picturesque, Sec 152", "source": "99acres"}},
+    "origin_key": "listing:0000000002", "source_category": "listing", "source": "99acres",
+    "name": "TEST Listing Lead", "phone": "+91 00000 00002", "email": "test.listing@openhouse.in",
+    "assigned_to": "RM 2", "city": "Noida", "society": "ATS Picturesque, Sec 152",
+    "configuration": None, "budget_band": None, "plan_to_buy": None, "preferred_visit_day": None,
+    "source_remarks": "Seeded test lead", "is_test": True,
+    "source_meta": {"property": "ATS Picturesque, Sec 152", "source": "99acres",
+                    "phone_verification_status": "VERIFIED"},
+    "raw": {"_test": "true"},
 }
 
 
@@ -404,10 +399,10 @@ async def ingest_meta_rows(rows: list[dict], actor: str) -> dict:
     if engine is None:
         raise RuntimeError("DATABASE_URL not configured")
 
-    ingest, spine, _ = build_meta([normalise_pushed(r) for r in rows])
+    spine, _ = build_meta([normalise_pushed(r) for r in rows])
     if not spine:
         # Every row was phoneless. Not an error — a half-filled form row is normal.
-        return {"received": len(rows), "valid": 0, "raw_new": 0, "new": 0, "city_fixed": 0}
+        return {"received": len(rows), "valid": 0, "new": 0, "city_fixed": 0}
 
     now = datetime.now(timezone.utc)
     tat = now + timedelta(hours=TAT_HOURS)
@@ -422,7 +417,6 @@ async def ingest_meta_rows(rows: list[dict], actor: str) -> dict:
     city_updates = [(s["origin_key"], s["city"]) for s in spine if s.get("city")]
 
     async with engine.begin() as conn:
-        raw_new = await _insert_only(conn, MetaLead, ingest, "dedupe_key")
         new = await _insert_only(conn, Lead, spine, "origin_key")
         city_fixed = 0
         if city_updates:
@@ -432,8 +426,8 @@ async def ingest_meta_rows(rows: list[dict], actor: str) -> dict:
 
     log.info("sheet push (%s): %d rows, %d with a phone, %d new leads, %d cities rewritten",
              actor, len(rows), len(spine), new, city_fixed)
-    return {"received": len(rows), "valid": len(spine), "raw_new": raw_new,
-            "new": new, "city_fixed": city_fixed}
+    return {"received": len(rows), "valid": len(spine), "new": new,
+            "city_fixed": city_fixed}
 
 
 async def run_leads_sync(trigger: str = "manual") -> dict:
@@ -450,14 +444,12 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
             asyncio.to_thread(_fetch_worksheet, settings.LEADS_LISTING_WORKSHEET),
             asyncio.to_thread(_fetch_worksheet, settings.LEADS_META_WORKSHEET),
         )
-        meta_ingest, meta_spine, meta_synced = build_meta(meta_rows)
-        listing_ingest, listing_spine, listing_synced = build_listing(listing_rows)
+        meta_spine, meta_synced = build_meta(meta_rows)
+        listing_spine, listing_synced = build_listing(listing_rows)
 
         # seed the two test leads (idempotent)
-        meta_ingest.insert(0, TEST_META["ingest"])
-        meta_spine.insert(0, TEST_META["spine"])
-        listing_ingest.insert(0, TEST_LISTING["ingest"])
-        listing_spine.insert(0, TEST_LISTING["spine"])
+        meta_spine.insert(0, TEST_META)
+        listing_spine.insert(0, TEST_LISTING)
 
         now = datetime.now(timezone.utc)
         tat = now + timedelta(hours=TAT_HOURS)
@@ -484,9 +476,11 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
                 if s.get("assigned_to"):
                     s["assigned_to"] = canonical_assignee(s["assigned_to"], canon)
 
-            m_new = await _insert_only(conn, MetaLead, meta_ingest, "dedupe_key")
-            l_new = await _insert_only(conn, ListingLead, listing_ingest, "dedupe_key")
-            spine_new = await _insert_only(conn, Lead, [*meta_spine, *listing_spine], "origin_key")
+            # One table now, but still one insert per source: sync_state reports a
+            # count per worksheet, and a single merged insert couldn't tell them apart.
+            m_new = await _insert_only(conn, Lead, meta_spine, "origin_key")
+            l_new = await _insert_only(conn, Lead, listing_spine, "origin_key")
+            spine_new = m_new + l_new
             city_fixed = 0
             if city_updates:
                 oks, cities = zip(*city_updates)
@@ -495,7 +489,7 @@ async def run_leads_sync(trigger: str = "manual") -> dict:
 
         await _write_state(META_KEY, "ok", f"{m_new} new via {trigger}", m_new)
         await _write_state(LISTING_KEY, "ok", f"{l_new} new via {trigger}", l_new)
-        log.info("leads sync ok (%s): meta +%d, listing +%d, spine +%d, city fixed %d",
+        log.info("leads sync ok (%s): meta +%d, listing +%d, %d leads total, city fixed %d",
                  trigger, m_new, l_new, spine_new, city_fixed)
 
         # stamp the source sheet so the team sees which rows we've captured (fail-soft:

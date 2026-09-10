@@ -41,6 +41,12 @@ _ADD_COLUMNS = [
     ("leads", "zip_code", "TEXT"),
     # Took over from meta_leads.raw / listing_leads.raw when those stopped being written
     ("leads", "raw", "JSONB NOT NULL DEFAULT '{}'::jsonb"),
+    # Meta's leadgen_id for the delivery that produced this lead — the join key into
+    # meta_lead_events, where the campaign/ad set/ad attribution lives.
+    # ponytail: plain TEXT, no unique index. meta_lead_events.meta_lead_id is already
+    # UNIQUE, so a given leadgen_id is processed once and can stamp at most one lead;
+    # add a partial unique index here if that ever stops being true.
+    ("leads", "meta_lead_id", "TEXT"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),

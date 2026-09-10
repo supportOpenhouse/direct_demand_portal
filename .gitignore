@@ -30,3 +30,6 @@ leads-2026-08-13.csv
 
 # private working context for Claude sessions
 claude.md
+
+# local auth-bypass dev launcher — must never be committed
+dev.sh

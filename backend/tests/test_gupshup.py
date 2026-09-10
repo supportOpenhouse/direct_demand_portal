@@ -13,7 +13,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch):
-    """Settings load the developer's real ../.env, so a filled-in GUPSHUP_* would
+    """Settings load the developer's real backend/.env, so a filled-in GUPSHUP_* would
     otherwise decide these tests — and a configured send would fire real WhatsApp
     traffic. Each test starts from unconfigured and opts in explicitly.
 

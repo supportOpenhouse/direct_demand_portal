@@ -237,15 +237,32 @@ async def _enrich_micromarket(units: list[dict]) -> None:
                 u["micro_market"] = meta.get("micro_market")
 
 
+# What matching is allowed to offer. A SHOW-list, not a hide-list like supply's:
+# a status nobody has seen yet — a new value in the source sheet, a typo, NULL —
+# must default to HIDDEN. Offering a home that turns out to be sold costs an RM a
+# wasted site visit with a buyer in the car; withholding one costs a suggestion.
+#
+# Verified against production (10 Sep): the column holds exactly Available (177),
+# Booked (26), Ready (16), Dead (1).
+INVENTORY_STATUS_SHOW = ("Available", "Ready")
+
+# `status = ANY(:show)` rather than `NOT IN (...)`: NULL <> ALL(...) is NULL, so a
+# hide-list would leak a status-less row into the results. This drops it.
+INVENTORY_FOR_MATCHING = text("""
+    SELECT id, name, society, locality, city, configuration, area_sqft,
+           price_text, price_lacs, status, image_url
+      FROM inventory_units
+     WHERE status = ANY(:show)
+""")
+
+
 async def _inventory_units() -> list[dict]:
     engine = neon_engine()
     if engine is None:
         return []
     async with engine.connect() as conn:
-        res = await conn.execute(text(
-            "SELECT id, name, society, locality, city, configuration, area_sqft, "
-            "price_text, price_lacs, status, image_url FROM inventory_units"
-        ))
+        res = await conn.execute(
+            INVENTORY_FOR_MATCHING, {"show": list(INVENTORY_STATUS_SHOW)})
         units = [dict(m) for m in res.mappings()]
     for u in units:
         u["price_lacs"] = float(u["price_lacs"]) if u.get("price_lacs") is not None else None

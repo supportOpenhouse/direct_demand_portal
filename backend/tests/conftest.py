@@ -1,6 +1,6 @@
 """Shared test setup.
 
-Settings load the developer's real ../.env, which on a working machine has REDIS_URL
+Settings load the developer's real backend/.env, which on a working machine has REDIS_URL
 filled in. Without this every test that reaches a publish or a cache helper would open
 a socket to the live Redis — slow, flaky offline, and it would let one developer's
 running app see events emitted by another's test run.

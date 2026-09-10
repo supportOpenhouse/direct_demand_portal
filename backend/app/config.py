@@ -182,6 +182,29 @@ class Settings(BaseSettings):
     # anyone insert leads.
     SHEET_SYNC_TOKEN: str = ""
 
+    # --- Meta lead ads (leadgen webhook -> the same ingest the sheet uses) ---
+    # From the "Openhouse Lead App" dashboard -> Settings -> Basic.
+    META_APP_ID: str = ""
+    # Verifies X-Hub-Signature-256 on every POST. Meta signs the raw body with the app
+    # secret, and that signature is the only thing standing between this endpoint and
+    # anyone who knows the URL inserting leads. Unset = open in dev; in prod the
+    # endpoint refuses to serve, same rule as the Huvo and Gupshup callbacks.
+    META_APP_SECRET: str = ""
+    # A string we invent, echoed back during the one-time GET handshake. Must match
+    # what is typed into the dashboard's webhook config.
+    META_VERIFY_TOKEN: str = ""
+    # Never-expiring system-user token. The webhook carries no lead data, only a
+    # leadgen_id, so every delivery costs one Graph call authenticated with this.
+    META_ACCESS_TOKEN: str = ""
+    # A var, not a constant, so a version bump is config and not a deploy.
+    META_GRAPH_VERSION: str = "v23.0"
+    # The Openhouse Page. Only used by scripts/subscribe_page.py.
+    META_PAGE_ID: str = ""
+
+    @property
+    def meta_graph_base(self) -> str:
+        return f"https://graph.facebook.com/{self.META_GRAPH_VERSION.strip('/')}"
+
     # returns {"homePhoto":[{homeId, images:[...]}]} for ALL homes; joined on the
     # sheet's home_id column during sync
     PHOTOS_API_URL: str = (

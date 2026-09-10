@@ -53,3 +53,19 @@ def test_added_columns_name_real_tables_too():
     """Same transaction, same failure mode."""
     unknown = sorted({t for t, _, _ in _ADD_COLUMNS if t not in Base.metadata.tables})
     assert not unknown, f"not real tables: {unknown}"
+
+
+def test_added_columns_name_real_columns_too():
+    """The table check above passes for a column the ORM has never heard of.
+
+    That gap is real: `leads.meta_lead_id` was added to _ADD_COLUMNS and to the
+    database while the model still didn't declare it, and every test stayed green.
+    A column Postgres has and the ORM doesn't is invisible to every query built from
+    the model — which reads as data loss, not as a schema error.
+    """
+    missing = sorted(
+        f"{table}.{col}"
+        for table, col, _ in _ADD_COLUMNS
+        if col not in Base.metadata.tables[table].columns
+    )
+    assert not missing, f"in _ADD_COLUMNS but not on the model: {missing}"

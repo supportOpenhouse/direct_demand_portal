@@ -265,6 +265,10 @@ class Lead(Base):
     # would have nowhere to go — same reason huvo_call_updates.payload exists.
     raw: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     source_meta: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    # Meta's leadgen_id for the webhook delivery that produced this lead — the join
+    # into meta_lead_events, where the campaign/ad set/ad attribution lives. Null for
+    # every lead that arrived by sheet, which is all of them before 10 Sep.
+    meta_lead_id: Mapped[str | None] = mapped_column(Text)
 
     # when the lead came in (source date for listing; ingest time for meta)
     received_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
@@ -280,6 +284,10 @@ class Lead(Base):
     # miss_total = lifetime misses (never reset). From the active calling stages,
     # 5 consecutive OR 8 total misses escalate the lead to 'rnr' (Rejected, reason RNR).
     follow_up_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    # when the lead entered the Follow-up tab (cleared when it leaves) — drives the
+    # "moved here today" highlight. Written by raw SQL in routers/leads.py, which is
+    # why the column lived in prod without the ORM ever declaring it.
+    follow_up_since: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     miss_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     miss_total: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     # when "No" was last logged on this lead. Rapid repeats are rejected for 2 hours
@@ -641,3 +649,41 @@ class AuditLog(Base):
         Index("ix_audit_logs_actor_email", actor_email),
         Index("ix_audit_logs_category", category),
     )
+
+
+class MetaLeadEvent(Base):
+    """One Meta leadgen webhook DELIVERY. A delivery log, not a second lead table.
+
+    Two keys doing two different jobs, and not confusing them is the whole design:
+
+      * `meta_lead_id` (Meta's `leadgen_id`) is DELIVERY idempotency. Meta retries,
+        and a retry must not run the ingest a second time.
+      * `leads.origin_key` (`meta:<phone10>`) stays LEAD identity, unchanged from the
+        4-hourly cron and the Apps Script — so the same buyer arriving by sheet AND
+        by webhook is one lead, which is what makes running both during cutover free.
+
+    Attribution lives here rather than as eight more columns on `leads`; the funnel
+    (campaign -> ad set -> ad -> lead -> visit) is `leads.meta_lead_id` joined to this.
+    """
+
+    __tablename__ = "meta_lead_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    meta_lead_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    page_id: Mapped[str | None] = mapped_column(Text)
+    form_id: Mapped[str | None] = mapped_column(Text)
+    campaign_id: Mapped[str | None] = mapped_column(Text)
+    campaign_name: Mapped[str | None] = mapped_column(Text)
+    adset_id: Mapped[str | None] = mapped_column(Text)
+    ad_id: Mapped[str | None] = mapped_column(Text)
+    ad_name: Mapped[str | None] = mapped_column(Text)
+    # pending | success | failed | duplicate
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    error_message: Mapped[str | None] = mapped_column(Text)
+    received_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+    processed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    raw_webhook: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    raw_lead: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")

@@ -1,4 +1,13 @@
-from app.services.matching import _budget_closeness, _size_closeness, parse_band, score_unit
+import re
+
+from app.services.matching import (
+    INVENTORY_FOR_MATCHING,
+    INVENTORY_STATUS_SHOW,
+    _budget_closeness,
+    _size_closeness,
+    parse_band,
+    score_unit,
+)
 
 
 def test_parse_band():
@@ -48,3 +57,23 @@ def test_in_budget_reason_present():
     req = _req(city="Gurgaon", bmin=70, bmax=90)
     m = score_unit(req, {"city": "Gurgaon", "society": "Z", "configuration": "2 BHK", "price_lacs": 80})
     assert any("In budget" in r for r in m["reasons"])
+
+
+# ── CH-01: matching only offers homes that can actually be sold ─────────────────
+
+def test_matching_filters_inventory_by_status():
+    """The query had no WHERE at all — `status` was selected for display and never
+    filtered on, so 26 Booked homes were being suggested to buyers."""
+    src = re.sub(r"\s+", " ", str(INVENTORY_FOR_MATCHING)).strip()
+    assert "WHERE status = ANY(:show)" in src
+
+
+def test_inventory_filter_is_a_show_list_not_a_hide_list():
+    """A status nobody has seen yet — a new value in the source sheet, a typo, NULL —
+    must default to hidden. `NULL <> ALL(...)` is NULL, so a hide-list would leak a
+    status-less row through; `= ANY(...)` drops it."""
+    src = str(INVENTORY_FOR_MATCHING)
+    assert "= ANY(" in src and "ALL(" not in src
+    assert set(INVENTORY_STATUS_SHOW) == {"Available", "Ready"}
+    # the two that must never be offered are absent by construction
+    assert "Booked" not in INVENTORY_STATUS_SHOW and "Dead" not in INVENTORY_STATUS_SHOW

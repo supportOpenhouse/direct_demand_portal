@@ -12,7 +12,7 @@ client = TestClient(app)
 
 @pytest.fixture(autouse=True)
 def _isolate_env(monkeypatch):
-    """Settings read the developer's real ../.env. Without this, filled-in BONVOICE_*
+    """Settings read the developer's real backend/.env. Without this, filled-in BONVOICE_*
     values would decide these tests — and a configured account would place REAL CALLS."""
     s = config.get_settings()
     # GOOGLE_OAUTH_CLIENT_ID too: once it's set in .env, auth_enabled flips on and the

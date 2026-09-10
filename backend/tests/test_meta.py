@@ -214,3 +214,28 @@ def test_the_webhook_payload_is_stored_as_sent():
     payload = {"entry": [{"changes": [{"field": "leadgen", "value": {"leadgen_id": "L1"}}]}]}
     assert json.loads(json.dumps(payload)) == payload
     assert "raw_webhook" in str(meta_leads.UPSERT_EVENT)
+
+
+# ---- the list endpoint's SQL ---------------------------------------------------
+
+
+def test_the_log_joins_its_lead_on_origin_key_not_leadgen_id():
+    """`leads.meta_lead_id` only ever holds the FIRST delivery's id (STAMP_LEAD is
+    guarded on IS NULL), so joining the log on it would render every repeat submission
+    from the same buyer as an orphan with no lead."""
+    from app.routers.meta import LIST_EVENTS
+
+    sql = str(LIST_EVENTS)
+    assert "l.origin_key = e.origin_key" in sql
+    assert "l.meta_lead_id = e.meta_lead_id" not in sql
+
+
+def test_the_log_reads_newest_first():
+    from app.routers.meta import LIST_EVENTS
+
+    assert "ORDER BY e.received_at DESC" in str(LIST_EVENTS)
+
+
+def test_every_delivery_records_which_lead_it_landed_on():
+    """Without this the join above has nothing to join on."""
+    assert "origin_key = :origin_key" in str(meta_leads.MARK_EVENT)

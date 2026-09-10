@@ -47,6 +47,9 @@ _ADD_COLUMNS = [
     # UNIQUE, so a given leadgen_id is processed once and can stamp at most one lead;
     # add a partial unique index here if that ever stops being true.
     ("leads", "meta_lead_id", "TEXT"),
+    # create_all() builds meta_lead_events whole on a fresh database; this is only for
+    # the window where the table shipped before origin_key was added to it.
+    ("meta_lead_events", "origin_key", "TEXT"),
     ("lead_confirmed_data", "budget_min_lacs", "NUMERIC"),
     ("lead_confirmed_data", "budget_max_lacs", "NUMERIC"),
     ("lead_confirmed_data", "size_sqft", "NUMERIC"),

@@ -157,6 +157,7 @@ UPSERT_EVENT = text("""
 MARK_EVENT = text("""
     UPDATE meta_lead_events
        SET status = :status,
+           origin_key = :origin_key,
            attempts = attempts + 1,
            error_message = :error_message,
            processed_at = now(),
@@ -218,17 +219,20 @@ async def process_value(value: dict, payload: dict) -> str:
         row = flatten(lead)
         phone = norm_phone(row.get("phone_number"))
         result = await ingest_meta_rows([row], actor="meta-webhook")
-        if phone:
-            await _record(STAMP_LEAD, {"lid": lid, "origin_key": f"meta:{phone}"})
+        origin_key = f"meta:{phone}" if phone else None
+        if origin_key:
+            await _record(STAMP_LEAD, {"lid": lid, "origin_key": origin_key})
         status, error = "success", None
         log.info("meta lead %s ingested: %s", lid, result)
     except Exception as exc:  # noqa: BLE001 — recorded, then reported to the caller
-        lead, status, error = {}, "failed", f"{type(exc).__name__}: {exc}"
+        lead, origin_key, status = {}, None, "failed"
+        error = f"{type(exc).__name__}: {exc}"
         log.exception("meta lead %s failed", lid)
 
     await _record(MARK_EVENT, {
         "lid": lid,
         "status": status,
+        "origin_key": origin_key,
         "error_message": error,
         "campaign_id": lead.get("campaign_id"),
         "campaign_name": lead.get("campaign_name"),

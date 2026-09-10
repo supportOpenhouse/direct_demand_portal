@@ -24,6 +24,14 @@ const IconReport = () => (
   </svg>
 );
 
+/* Meta's double loop, drawn as two arcs — the same mark the platform uses, at the
+   stroke weight the rest of this rail is drawn at. */
+const IconMeta = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 15c0-4 2-7 4.2-7 2.6 0 3.7 3 4.8 5s2.2 5 4.8 5c2.2 0 4.2-3 4.2-7s-2-7-4.2-7c-2.6 0-3.7 3-4.8 5s-2.2 5-4.8 5C5 14 3 11 3 7" />
+  </svg>
+);
+
 const navClass = ({ isActive }: { isActive: boolean }) => "nav-item" + (isActive ? " active" : "");
 
 /* Share of the role-scoped total this segment holds. Intentionally omitted for
@@ -181,6 +189,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           <NavLink to="/huvo-calls" className={navClass} title="Huvo Call Log">
             <img src="/huvo_icon.png" alt="" className="nav-img" />
             <span className="nav-t">Huvo Call Log</span>
+          </NavLink>
+        )}
+        {/* Meta lead-ads deliveries. Admin-only both here and server-side: it's a
+            record of what arrived from Meta, not a worklist anyone owns. */}
+        {isAdmin && (
+          <NavLink to="/meta-leads" className={navClass} title="Meta Leads">
+            <IconMeta /> <span className="nav-t">Meta Leads</span>
           </NavLink>
         )}
         {/* Admin-only in the nav; the endpoint itself scopes an RM to their own row,

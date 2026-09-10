@@ -1,8 +1,11 @@
-/* 1:1 port of the prototype's .topbar. Reminders / Add New Lead are later-phase. */
+/* 1:1 port of the prototype's .topbar.
+
+   Reminders and Add New Lead used to sit here. Both only ever raised a toast saying
+   the feature was coming, so they were two permanently disabled controls taking the
+   most valuable space on every page — removed rather than left as furniture. */
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { IconBell, IconPlusBold, WhatsAppIcon } from "./icons";
-import { useToast } from "./Toast";
+import { WhatsAppIcon } from "./icons";
 import { useAuth } from "./AuthContext";
 import { useAppSettings, useIncomingCalls, useMyCalls, useWaLatest } from "../lib/queries";
 import { markCallsSeen, readCallsSeenAt } from "../lib/calls";
@@ -34,6 +37,7 @@ const TITLES: Record<string, string> = {
   "/call-log": "Bonvoice Call Log",
   "/huvo-calls": "Huvo Call Log",
   "/chat": "WhatsApp",
+  "/meta-leads": "Meta Leads",
   "/live-calls": "Live Calls",
 };
 
@@ -125,7 +129,6 @@ function IncomingCallsBell() {
 
 export default function Topbar() {
   const { pathname } = useLocation();
-  const toast = useToast();
   // WhatsApp button visibility: admins always; RMs only when an admin has enabled it
   // (globally for all RMs, or for this specific person).
   const { enabled, user } = useAuth();
@@ -161,12 +164,6 @@ export default function Topbar() {
         )}
       </h1>
       <GlobalSearch />
-      <button className="btn orange" onClick={() => toast("Reminders arrive in a later phase", "gold", "⏰")}>
-        <IconBell /> Reminders
-      </button>
-      <button className="btn green" onClick={() => toast("Lead capture arrives in a later phase", "blue", "＋")}>
-        <IconPlusBold /> Add New Lead
-      </button>
       <IncomingCallsBell />
       <LiveCallsButton />
       {/* RMs see their assigned conversations (API-scoped) — but only if an admin has

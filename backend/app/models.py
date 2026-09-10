@@ -670,6 +670,11 @@ class MetaLeadEvent(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     meta_lead_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    # The lead this delivery landed on, whether it created it or was absorbed into one
+    # that already existed. Stored because `leads.meta_lead_id` only ever holds the
+    # FIRST delivery's id — joining the log to its lead on that alone would drop every
+    # repeat submission from the same buyer.
+    origin_key: Mapped[str | None] = mapped_column(Text)
     page_id: Mapped[str | None] = mapped_column(Text)
     form_id: Mapped[str | None] = mapped_column(Text)
     campaign_id: Mapped[str | None] = mapped_column(Text)

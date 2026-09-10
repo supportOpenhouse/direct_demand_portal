@@ -636,6 +636,19 @@ export function useCampaignAction() {
   });
 }
 
+/* Meta lead-ads deliveries. Admin-only server-side; the nav entry mirrors that.
+
+   Polled like the WhatsApp inbox rather than loaded once — leads arrive by webhook
+   within seconds of a form submit, and a page that needs reloading to show them
+   would hide exactly the thing it exists to prove. */
+export function useMetaLeads() {
+  return useQuery({
+    queryKey: ["meta-leads"],
+    queryFn: api.metaLeads,
+    refetchInterval: 15_000,
+  });
+}
+
 /** "86.5 L" / 132 lacs → display string like the prototype's ₹ pricing */
 export function formatPrice(priceLacs: number | null, priceText: string | null): string {
   if (priceLacs != null) {

@@ -500,6 +500,41 @@ export interface RMSummaryResp {
   generated_at: string;
 }
 
+/* One Meta lead-ads webhook delivery, and what became of it.
+
+   `responses` is the form as it was answered, in the order it was asked — a form
+   read out of order reads wrong. `lead` is null only when the delivery never reached
+   the ingest (a `failed` row), because a successful one always lands on a lead. */
+export interface MetaLeadResponse {
+  question: string;
+  answer: string;
+}
+export interface MetaLeadEvent {
+  meta_lead_id: string;
+  status: "pending" | "success" | "failed" | "duplicate";
+  attempts: number;
+  error_message: string | null;
+  received_at: string | null;
+  processed_at: string | null;
+  created_time: string | null;
+  form_id: string | null;
+  campaign_id: string | null;
+  campaign_name: string | null;
+  adset_id: string | null;
+  adset_name: string | null;
+  ad_id: string | null;
+  ad_name: string | null;
+  responses: MetaLeadResponse[];
+  lead: {
+    id: string;
+    name: string | null;
+    phone: string | null;
+    stage: string;
+    city: string | null;
+    assigned_to: string | null;
+  } | null;
+}
+
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
   rmSummary: (body: {
@@ -527,6 +562,8 @@ export const api = {
       method: "POST", body: JSON.stringify({ phone, tag }),
     }),
   waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
+  metaLeads: () =>
+    request<{ status: string; count: number; items: MetaLeadEvent[] }>("/v1/meta/leads"),
   /* Bulk: names are resolved server-side, so the client only sends which
      conversations to convert. Already-lead contacts are skipped, not duplicated.
      `assign` copies each conversation's RM onto its lead (assigning an unowned thread

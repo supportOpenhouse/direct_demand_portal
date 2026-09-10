@@ -17,6 +17,7 @@ import ReportDetail from "./pages/ReportDetail";
 import CallLog from "./pages/CallLog";
 import HuvoCalls from "./pages/HuvoCalls";
 import Chat from "./pages/Chat";
+import MetaLeads from "./pages/MetaLeads";
 import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
 import LiveCalls from "./pages/LiveCalls";
@@ -88,6 +89,8 @@ const desktopRoutes = [
       { path: "call-log", element: <CallLog /> },
       { path: "huvo-calls", element: <HuvoCalls /> },
       { path: "chat", element: <Chat /> },
+      // admin-only: the page itself refuses a non-admin, and so does the endpoint
+      { path: "meta-leads", element: <MetaLeads /> },
     ],
   },
 ];

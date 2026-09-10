@@ -99,6 +99,14 @@ function ND_displayPhone_(p10) {
   return '+91 ' + p10.slice(0, 5) + ' ' + p10.slice(5);
 }
 
+/* Meta's export tags some answers with a type letter — 'p:+919876543210',
+   'z:201305'. ND_phone10_ never sees it because it keeps digits only; a pin code has
+   no such filter, so without this it stores as 'z:201305'. */
+function ND_stripPrefix_(raw) {
+  const s = String(raw == null ? '' : raw).trim();
+  return (/^[a-zA-Z]:/.test(s) ? s.slice(2).trim() : s) || null;
+}
+
 function ND_name_(raw) {
   const s = String(raw == null ? '' : raw).trim().replace(/^@+/, '').replace(/_/g, ' ').trim();
   return s || null;
@@ -280,7 +288,7 @@ function ND_runSync() {
     const current = ND_city_(row.current_location);
     const budget = ND_prettyEnum_(row.your_budget_range);
     const visitDay = ND_prettyEnum_(row.preferred_site_visit_day);
-    const zip = row.zip_code || null;
+    const zip = ND_stripPrefix_(row.zip_code);
     const email = row.email || null;
     const name = ND_name_(row.full_name);
     const phone = ND_displayPhone_(p10);

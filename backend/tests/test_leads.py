@@ -358,3 +358,26 @@ def test_everything_the_raw_tables_held_still_has_a_home():
     # the one field that had no spine column at all before this change
     assert row["source_meta"]["phone_verification_status"] == "VERIFIED"
     assert row["raw"]["phoneverificationstatus"] == "VERIFIED"
+
+
+def test_metas_export_prefix_is_stripped_from_the_pin_code():
+    """Found in production: all 85 pushed leads stored `z:201305` as their pin.
+
+    Meta tags exported answers with a type letter — `p:` on a phone, `z:` on a pin.
+    norm_phone never noticed because it keeps digits only; the pin has no such filter.
+    """
+    from app.services.leads_sync import strip_export_prefix
+
+    assert strip_export_prefix("z:201305") == "201305"
+    assert strip_export_prefix("p:+919876543210") == "+919876543210"
+    # a single letter + colon only — a real answer that happens to contain a colon stays
+    assert strip_export_prefix("Sector 62: near metro") == "Sector 62: near metro"
+    assert strip_export_prefix("201305") == "201305"
+    assert strip_export_prefix("") is None and strip_export_prefix(None) is None
+
+
+def test_a_pushed_row_stores_a_clean_pin():
+    from app.services.leads_sync import normalise_pushed
+
+    spine, _ = build_meta([normalise_pushed(dict(NOIDA_ROW, zip_code="z:201305"))])
+    assert spine[0]["zip_code"] == "201305"

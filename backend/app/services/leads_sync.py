@@ -78,6 +78,20 @@ def display_phone(norm: str | None) -> str | None:
     return f"+91 {norm[:5]} {norm[5:]}"
 
 
+def strip_export_prefix(raw: str | None) -> str | None:
+    """Shed Meta's export type-tag: 'p:+919876543210', 'z:201305'.
+
+    norm_phone never sees it because it keeps digits only, so the prefix went
+    unnoticed until the Noida form added a pin code — which has no such filter and
+    was stored verbatim as 'z:201305'. Single letter + colon only, so a real answer
+    that merely contains a colon is left alone.
+    """
+    if not raw:
+        return None
+    s = str(raw).strip()
+    return (s[2:].strip() if re.match(r"^[a-zA-Z]:", s) else s) or None
+
+
 def clean_name(raw: str | None) -> str | None:
     if not raw:
         return None
@@ -246,7 +260,7 @@ def build_meta(rows: list[dict]) -> tuple[list[dict], list[int]]:
         # "Gr Noida West" and "Noida Extension" don't read as two different places.
         config = normalize_config(r.get("configuration"))
         current = normalize_city(r.get("current_location"))
-        zip_code = r.get("zip_code") or None
+        zip_code = strip_export_prefix(r.get("zip_code"))
         spine.append({
             "origin_key": f"meta:{phone}", "source_category": "meta", "source": "meta",
             "name": name, "phone": display_phone(phone), "email": email, "assigned_to": None,

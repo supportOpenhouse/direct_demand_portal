@@ -13,7 +13,7 @@ import { SelectFirst } from "../components/SelectFirst";
 import { CITIES } from "../lib/leads";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
-  useSocietiesByCity, useBulkCreateWaLeads,
+  useSocietiesByCity, useBulkCreateWaLeads, useBackfillWaAssign,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
 import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
@@ -172,6 +172,7 @@ export default function Chat() {
                   : "Every conversation already has a lead"}>
                 Create leads ({convertible.length})
               </button>
+              {isAdmin && <BackfillButton />}
             </>
           )}
         </div>
@@ -319,6 +320,24 @@ export default function Chat() {
 }
 
 /* One-shot distribution of conversations that predate assignment. */
+/* One-shot distribution of every conversation nobody owns.
+
+   It matters more than it used to. Assignment IS visibility — _thread_scope shows an
+   RM only the threads assigned to them — and the inbound webhook no longer assigns on
+   arrival, so unowned conversations now accumulate instead of being a one-off
+   migration artefact. Without this the only tool is the per-thread dropdown below. */
+function BackfillButton() {
+  const fill = useBackfillWaAssign();
+  return (
+    <button className="btn ghost sm" disabled={fill.isPending}
+      title="Give every unassigned conversation an owner (least-loaded RM)"
+      onClick={() => fill.mutate()}>
+      {fill.isPending ? "Assigning…"
+        : fill.data ? `Assigned ${fill.data.assigned}` : "Assign unowned"}
+    </button>
+  );
+}
+
 /* Reassign a conversation. Admin-only — an RM moving their own threads away would
    defeat the point of distributing them, so the API refuses it too. */
 function OwnerPicker({ phone, owner }: { phone: string; owner?: string }) {

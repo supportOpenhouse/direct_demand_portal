@@ -18,7 +18,7 @@ import { useInventory, useSyncInventory } from "../lib/queries";
 import { InventoryItem } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
-import { useSearch, matches } from "../components/SearchContext";
+import { matches } from "../components/SearchContext";
 import { usePersistedState, asString, asStrings, asStringsOrNull } from "../lib/persistedState";
 import useIsMobile from "../lib/useIsMobile";
 import { waShare } from "../lib/whatsapp";
@@ -48,6 +48,8 @@ import {
   ymd,
   type CityGroup,
 } from "../lib/snapshot";
+import { IconChevronDown, IconCopy, IconDownload, IconImage, IconPackage, IconShare, IconWarn, IconX } from "../components/icons";
+import { NewBadge } from "../components/StageChip";
 
 /* ============================== multi-select ============================== */
 /* Dependency-free checkbox dropdown — the CRM's, same classes. */
@@ -90,7 +92,7 @@ function MultiSelect({
       >
         {label}
         {value.length ? <span className="an-ms-count">{value.length}</span> : null}
-        <span className="an-ms-caret">▾</span>
+        <span className="an-ms-caret"><IconChevronDown /></span>
       </button>
       {open && (
         <div className="an-ms-pop">
@@ -148,7 +150,8 @@ export default function Inventory() {
   const sync = useSyncInventory();
   const toast = useToast();
   const { user } = useAuth();
-  const { query, setQuery } = useSearch();
+  // Local, now that the topbar no longer carries a global box.
+  const [query, setQuery] = useState("");
 
   const all = useMemo(() => data?.items ?? [], [data]);
 
@@ -336,7 +339,7 @@ export default function Inventory() {
         if (cancelled || !posterRef.current) return;
         const canvas = await html2canvas(posterRef.current, {
           scale: 2,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: "#FFFFFF", // theme-exempt: rasterised poster, not app chrome
           logging: false,
           useCORS: true,
         });
@@ -346,7 +349,7 @@ export default function Inventory() {
         );
       } catch {
         if (cancelled) return;
-        toast("Image generation failed", "gold", "⚠");
+        toast("Image generation failed", "gold");
         setImg((cur) => (cur ? { ...cur, loading: false, dataUrl: null, canvas: null } : cur));
       }
     })();
@@ -363,6 +366,11 @@ export default function Inventory() {
       <div className="snap-filters">
         <div className="snap-filters-row">
           <span className="snap-filters-lbl">Build a request-specific share</span>
+          {/* Local search — the topbar's global box is gone, and without this the
+              query below would be permanently empty and the filter silently dead. */}
+          <input className="snap-price-in" style={{ minWidth: 220, flex: 1 }}
+                 value={query} onChange={(e) => setQuery(e.target.value)}
+                 placeholder="Search society, locality, config, status" />
           <MultiSelect label="City" options={cityOpts} value={fCities} onChange={setFCities} />
           <MultiSelect label="BHK / Config" options={configOpts} value={fConfigs} onChange={setFConfigs} />
           <MultiSelect label="Region" options={regionOpts} value={fRegions} onChange={setFRegions} />
@@ -398,7 +406,7 @@ export default function Inventory() {
             disabled={!filtered.length}
             onClick={openFilteredImage}
           >
-            🖼 Share filtered selection
+            <IconImage /> Share filtered selection
           </button>
         </div>
       </div>
@@ -407,22 +415,22 @@ export default function Inventory() {
         <span>{countLabel}</span>
         <div className="pager" style={{ flexWrap: "wrap", gap: 6 }}>
           <span className="snap-share-lbl">As image:</span>
-          <button className="btn sm primary" onClick={() => openCityImage(["Gurgaon"])}>🖼 Gurgaon</button>
-          <button className="btn sm primary" onClick={() => openCityImage(["Noida"])}>🖼 Noida</button>
-          <button className="btn sm primary" onClick={() => openCityImage(["Ghaziabad"])}>🖼 Ghaziabad</button>
-          <button className="btn sm primary" onClick={() => openCityImage(["Noida", "Ghaziabad"])}>🖼 Noida + Ghaziabad</button>
+          <button className="btn sm primary" onClick={() => openCityImage(["Gurgaon"])}><IconImage /> Gurgaon</button>
+          <button className="btn sm primary" onClick={() => openCityImage(["Noida"])}><IconImage /> Noida</button>
+          <button className="btn sm primary" onClick={() => openCityImage(["Ghaziabad"])}><IconImage /> Ghaziabad</button>
+          <button className="btn sm primary" onClick={() => openCityImage(["Noida", "Ghaziabad"])}><IconImage /> Noida + Ghaziabad</button>
           <span className="snap-share-lbl">As text:</span>
-          <button className="btn sm" onClick={() => openShare(["Gurgaon"])}>📤 Gurgaon</button>
-          <button className="btn sm" onClick={() => openShare(["Noida"])}>📤 Noida</button>
-          <button className="btn sm" onClick={() => openShare(["Ghaziabad"])}>📤 Ghaziabad</button>
-          <button className="btn sm" onClick={() => openShare(["Noida", "Ghaziabad"])}>📤 NCR</button>
+          <button className="btn sm" onClick={() => openShare(["Gurgaon"])}><IconShare /> Gurgaon</button>
+          <button className="btn sm" onClick={() => openShare(["Noida"])}><IconShare /> Noida</button>
+          <button className="btn sm" onClick={() => openShare(["Ghaziabad"])}><IconShare /> Ghaziabad</button>
+          <button className="btn sm" onClick={() => openShare(["Noida", "Ghaziabad"])}><IconShare /> NCR</button>
           <button
             className="btn sm"
             disabled={sync.isPending}
             onClick={() =>
               sync.mutate(undefined, {
-                onSuccess: (r) => toast(`Inventory synced · ${r.rows} units`, "green", "⟳"),
-                onError: (e) => toast(e.message, "gold", "⚠"),
+                onSuccess: (r) => toast(`Inventory synced · ${r.rows} units`, "green"),
+                onError: (e) => toast(e.message, "gold"),
               })
             }
           >
@@ -439,13 +447,13 @@ export default function Inventory() {
           </div>
         ) : notReady ? (
           <div className="empty">
-            <div className="emoji">⚠️</div>
+            <div className="emoji"><IconWarn /></div>
             <div className="t">Inventory not available</div>
             <div className="s">{data?.detail || "Sync is not configured yet."}</div>
           </div>
         ) : cities.length === 0 ? (
           <div className="empty">
-            <div className="emoji">📦</div>
+            <div className="emoji"><IconPackage /></div>
             <div className="t">
               {all.length === 0 ? "No inventory loaded" : "No units match these filters"}
             </div>
@@ -507,7 +515,7 @@ function CityBlock({ city, g }: { city: string; g: CityGroup }) {
                   <div className="snap-mcard" key={p.id ?? i}>
                     <div className="smc-top">
                       <span className="smc-soc">
-                        {isNew(p) ? <span className="new-badge">NEW</span> : null}
+                        {isNew(p) ? <NewBadge size={18} /> : null}
                         {societyOf(p) || "—"}
                       </span>
                       <span className={`status-pill ${statusKind(statusOf(p))}`}>
@@ -540,7 +548,7 @@ function CityBlock({ city, g }: { city: string; g: CityGroup }) {
                     <tr key={p.id ?? i}>
                       <td className="cell-society" title={societyOf(p)}>
                         <span className="society">
-                          {isNew(p) ? <span className="new-badge">NEW</span> : null}
+                          {isNew(p) ? <NewBadge size={18} /> : null}
                           {societyOf(p) || "—"}
                         </span>
                         <div className="cell-pm">PM · {pmOf(p) || "—"}</div>
@@ -581,10 +589,10 @@ function ShareModal({ share, onClose }: { share: ShareState; onClose: () => void
   const copy = () => {
     if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text)
-        .then(() => toast("Snapshot copied — paste in any chat", "green", "📋"))
-        .catch(() => toast("Copy failed", "gold", "⚠"));
+        .then(() => toast("Snapshot copied — paste in any chat", "green"))
+        .catch(() => toast("Copy failed", "gold"));
     } else {
-      toast("Clipboard unavailable", "gold", "⚠");
+      toast("Clipboard unavailable", "gold");
     }
   };
   const sendWa = () => {
@@ -597,7 +605,7 @@ function ShareModal({ share, onClose }: { share: ShareState; onClose: () => void
       <div className="modal" style={{ width: 620, maxWidth: "96vw", maxHeight: "96vh" }}>
         <div className="modal-head">
           <h2>{share.title}</h2>
-          <button className="x-btn" onClick={onClose}>✕</button>
+          <button className="x-btn" onClick={onClose}><IconX /></button>
         </div>
         <div className="modal-body">
           <div className="snap-modal-hint">
@@ -610,8 +618,8 @@ function ShareModal({ share, onClose }: { share: ShareState; onClose: () => void
             onChange={(e) => setText(e.target.value)}
           />
           <div className="snap-modal-actions">
-            <button className="btn" onClick={copy}>📋 Copy to clipboard</button>
-            <button className="btn primary" onClick={sendWa}>📤 Share via WhatsApp</button>
+            <button className="btn" onClick={copy}><IconCopy /> Copy to clipboard</button>
+            <button className="btn primary" onClick={sendWa}><IconShare /> Share via WhatsApp</button>
           </div>
         </div>
       </div>
@@ -645,7 +653,7 @@ function ImageModal({
     a.href = img.dataUrl;
     a.download = filename;
     a.click();
-    toast("Image downloaded", "green", "⬇️");
+    toast("Image downloaded", "green");
   };
   const copy = () => {
     if (!img.canvas) return;
@@ -653,13 +661,13 @@ function ImageModal({
       img.canvas.toBlob(async (blob) => {
         if (blob && navigator.clipboard?.write) {
           await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-          toast("Image copied to clipboard", "green", "📋");
+          toast("Image copied to clipboard", "green");
         } else {
-          toast("Clipboard not supported — use Download", "gold", "⚠");
+          toast("Clipboard not supported — use Download", "gold");
         }
       }, "image/png");
     } catch {
-      toast("Copy failed — use Download", "gold", "⚠");
+      toast("Copy failed — use Download", "gold");
     }
   };
   /* wa.me can't carry an attachment, so the image is downloaded first and the chat
@@ -674,7 +682,7 @@ function ImageModal({
       waShare(
         `${img.title} · ${fmtDate(TODAY)}\n\nAttached image has the latest unit list. Ping me for any visit / pricing detail.`,
       );
-      toast("Image downloaded — attach it in WhatsApp", "green", "📤");
+      toast("Image downloaded — attach it in WhatsApp", "green");
     }, 400);
   };
 
@@ -683,7 +691,7 @@ function ImageModal({
       <div className="modal" style={{ width: 880, maxWidth: "96vw", maxHeight: "96vh" }}>
         <div className="modal-head">
           <h2>{img.title}</h2>
-          <button className="x-btn" onClick={onClose}>✕</button>
+          <button className="x-btn" onClick={onClose}><IconX /></button>
         </div>
         <div className="modal-body">
           {img.loading ? (
@@ -694,7 +702,7 @@ function ImageModal({
           ) : img.dataUrl ? (
             <div className="snap-preview"><img src={img.dataUrl} alt="Inventory snapshot" /></div>
           ) : (
-            <div className="empty"><div className="emoji">⚠️</div><div className="t">Could not render image</div></div>
+            <div className="empty"><div className="emoji"><IconWarn /></div><div className="t">Could not render image</div></div>
           )}
           {/* off-screen poster lives here during loading */}
           {children}
@@ -702,9 +710,9 @@ function ImageModal({
         <div className="modal-foot">
           <span className="snap-modal-hint">PNG · ready to share in WhatsApp/Email</span>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button className="btn" disabled={!img.canvas} onClick={copy}>📋 Copy image</button>
-            <button className="btn" disabled={!img.dataUrl} onClick={download}>⬇️ Download PNG</button>
-            <button className="btn primary" disabled={!img.dataUrl} onClick={whatsapp}>📤 Open WhatsApp</button>
+            <button className="btn" disabled={!img.canvas} onClick={copy}><IconCopy /> Copy image</button>
+            <button className="btn" disabled={!img.dataUrl} onClick={download}><IconDownload /> Download PNG</button>
+            <button className="btn primary" disabled={!img.dataUrl} onClick={whatsapp}><IconShare /> Open WhatsApp</button>
           </div>
         </div>
       </div>
@@ -713,7 +721,9 @@ function ImageModal({
 }
 
 /* ============================== poster (off-screen, for html2canvas) ============================== */
-/* Inline Openhouse mark — there's no symbol registry here, so the poster carries the
+/* theme-exempt:start — the poster is rasterised by html2canvas and shared as an
+   image, so its branding is fixed. A dark-mode export would be a black poster.
+   Inline Openhouse mark — there's no symbol registry here, so the poster carries the
    literal paths and rasterizes crisply. */
 const OH_ICON = (
   <svg viewBox="0 0 190 188">
@@ -721,6 +731,7 @@ const OH_ICON = (
     <path fillRule="evenodd" clipRule="evenodd" d="M189.614 94.4359C189.614 131.293 168.528 163.219 137.774 178.777C132.092 181.651 126.08 183.967 119.809 185.652V117.435C119.809 103.952 108.894 93.0228 95.4285 93.0228C81.9635 93.0228 71.0476 103.952 71.0476 117.435V185.721C64.7793 184.055 58.7673 181.76 53.083 178.906C22.1898 163.396 0.984863 131.396 0.984863 94.4359C0.984863 42.2806 43.2114 0 95.3001 0C147.389 0 189.614 42.2806 189.614 94.4359ZM171.649 94.4359C171.649 120.904 158.207 144.253 137.774 157.978V117.435C137.774 94.018 118.815 75.0349 95.4285 75.0349C86.3282 75.0349 77.8985 77.9092 70.9953 82.8005V21.9429C78.6298 19.3778 86.8028 17.9879 95.3001 17.9879C137.467 17.9879 171.649 52.2146 171.649 94.4359ZM53.1582 30.6778C32.5424 44.3665 18.9499 67.8117 18.9499 94.4359C18.9499 121.014 32.5046 144.448 53.083 158.149V117.435C53.083 116.579 53.1083 115.729 53.1582 114.886V30.6778Z" fill="#161C24" />
   </svg>
 );
+/* theme-exempt:end */
 
 const Poster = forwardRef<HTMLDivElement, { props: InventoryItem[]; title: string }>(
   function Poster({ props, title }, ref) {
@@ -780,7 +791,7 @@ const Poster = forwardRef<HTMLDivElement, { props: InventoryItem[]; title: strin
                           <tr key={p.id ?? i}>
                             <td>
                               <span className="ps-soc">
-                                {isNew(p) ? <span className="pnew">NEW</span> : null}
+                                {isNew(p) ? <NewBadge size={16} /> : null}
                                 {societyOf(p) || "—"}
                               </span>
                               {localityOf(p) ? <div className="ps-loc">{localityOf(p)}</div> : null}

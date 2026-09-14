@@ -14,7 +14,7 @@ from sqlalchemy import (
     TIMESTAMP,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -414,6 +414,12 @@ class User(Base):
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)
+    # Cities this RM takes new leads for, e.g. {Gurgaon,Noida}. Drives auto-assignment:
+    # a lead whose city is covered goes to a covering RM, anything else to any RM.
+    # An EMPTY array means "covers nothing specific" — such an RM still receives
+    # uncovered-city leads, they are just never the city-specific choice.
+    city: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}")
     # mobile number — click-to-call rings this handset first, then dials the lead
     phone: Mapped[str | None] = mapped_column(Text)
     # Openhouse Core SalesManager.id — used as sales_manager_id when booking visits.

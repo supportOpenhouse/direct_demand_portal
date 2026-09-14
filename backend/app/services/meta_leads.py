@@ -28,6 +28,7 @@ from sqlalchemy import text
 
 from ..config import get_settings
 from ..db import neon_engine
+from . import activity
 from .leads_sync import ingest_meta_rows, norm_phone
 
 log = logging.getLogger("meta_leads")
@@ -180,6 +181,45 @@ STAMP_LEAD = text("""
 """)
 
 
+LEAD_ID_BY_ORIGIN = text("SELECT id FROM leads WHERE origin_key = :origin_key")
+
+
+async def _stamp_and_log(lid: str, origin_key: str, answers: dict, lead: dict,
+                         new_lead: bool) -> None:
+    """Attribute the lead to this delivery AND log what arrived, in one transaction.
+
+    One `meta_form_submitted` entry per delivery that reached a lead — including a
+    repeat submission from a buyer who already exists, because that is exactly when a
+    second set of answers arrives and someone reading the history needs to see it. A
+    Meta retry of a delivery that already succeeded never gets here: `process_value`
+    returns "duplicate" first, so a retry cannot double the entry.
+
+    Answers are stored as Meta returned them. This is the delivery record, and a
+    cleaned-up answer is no longer what the form said.
+    """
+    engine = neon_engine()
+    if engine is None:
+        raise RuntimeError("DATABASE_URL not configured")
+    async with engine.begin() as conn:
+        await conn.execute(STAMP_LEAD, {"lid": lid, "origin_key": origin_key})
+        lead_id = (await conn.execute(LEAD_ID_BY_ORIGIN, {"origin_key": origin_key})).scalar()
+        if lead_id is None:
+            return
+        await activity.record(conn, activity.row_for(
+            None, entity_type="lead", entity_id=lead_id, action="meta_form_submitted",
+            metadata={
+                "meta_lead_id": lid,
+                "form_id": lead.get("form_id"),
+                "campaign_name": lead.get("campaign_name"),
+                "ad_name": lead.get("ad_name"),
+                # when the buyer pressed submit at Meta — the log row's own created_at
+                # is when it reached us, which can trail it after a retry
+                "submitted_at": lead.get("created_time"),
+                "new_lead": new_lead,
+                "answers": answers,
+            }))
+
+
 async def _record(sql, params: dict) -> None:
     engine = neon_engine()
     if engine is None:
@@ -221,7 +261,8 @@ async def process_value(value: dict, payload: dict) -> str:
         result = await ingest_meta_rows([row], actor="meta-webhook")
         origin_key = f"meta:{phone}" if phone else None
         if origin_key:
-            await _record(STAMP_LEAD, {"lid": lid, "origin_key": origin_key})
+            await _stamp_and_log(lid, origin_key, row, lead,
+                                 new_lead=bool(result.get("new")))
             status, error = "success", None
         else:
             # `build_meta` skips a row with no phone, which is the right call — phone is
@@ -230,7 +271,8 @@ async def process_value(value: dict, payload: dict) -> str:
             # CRM" chip on a lead that is only at Meta. That is precisely the gap this
             # log exists to show, so it lands with the rest of the not-in-CRM rows.
             status = "failed"
-            error = "no phone number in the form — phone is the lead's identity"
+            error = ("no usable phone number — the field held no digits, "
+                     "and phone is the lead's identity")
         log.info("meta lead %s ingested (%s): %s", lid, status, result)
     except Exception as exc:  # noqa: BLE001 — recorded, then reported to the caller
         lead, origin_key, status = {}, None, "failed"

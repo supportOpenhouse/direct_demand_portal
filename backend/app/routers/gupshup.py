@@ -32,6 +32,8 @@ from ..config import get_settings
 # callback feed stays admin-only — it's a debugging surface, not a worklist.
 from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
 from ..db import neon_engine
+import uuid
+
 from ..services import activity, wa_assign
 from ..models import Lead, WaContact, WaMessage
 
@@ -277,6 +279,100 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
     }
 
 
+@router.get("/gupshup/pending")
+async def gupshup_pending(user: dict = Depends(current_user)):
+    """Conversations that never became a lead — the notification bell's WhatsApp
+    reminders.
+
+    Purpose-built rather than derived from /gupshup/messages: that endpoint returns
+    every message body and the Chat page polls it every 5s. Fine for one page, not
+    fine for a control that sits in the topbar of every page. This selects four
+    columns and returns one row per conversation.
+
+    Returns `last_inbound_at` and lets the CLIENT decide whether the 24-hour reply
+    window is still open. The boundary moves with the clock, so deciding it here
+    would be right only at the instant of the response — and the thread view already
+    owns that rule, which the bell must not contradict.
+
+    Same `_thread_scope` as every other read here, so an RM sees their own
+    conversations and an unowned one stays admin-only.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+
+    q = select(WaMessage.phone, WaMessage.direction, WaMessage.name,
+               WaMessage.created_at)
+    scope = _thread_scope(user)
+    if scope is not None:
+        q = q.where(scope)
+
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            q.order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
+        )).mappings().all()
+
+        threads: dict[str, dict] = {}
+        for r in rows:
+            phone = r["phone"]
+            if not phone:
+                continue
+            t = threads.setdefault(phone, {
+                "phone": phone, "name": None,
+                "last_at": None, "last_inbound_at": None,
+            })
+            at = r["created_at"]
+            if t["last_at"] is None or at > t["last_at"]:
+                t["last_at"] = at
+            if r["direction"] == "in":
+                # rows arrive newest-first, so the first inbound name wins — the most
+                # recent one the customer's handset reported
+                if t["name"] is None:
+                    t["name"] = r["name"]
+                if t["last_inbound_at"] is None or at > t["last_inbound_at"]:
+                    t["last_inbound_at"] = at
+
+        phones10 = sorted({p[-10:] for p in threads})
+        have_lead: set[str] = set()
+        tags: dict[str, str | None] = {}
+        owners: dict[str, str | None] = {}
+        if phones10:
+            # same last-10-digits key as everywhere else: leads store "+91 98715 78484",
+            # WhatsApp gives "919871578484"
+            p10 = func.right(func.regexp_replace(Lead.phone, r"\D", "", "g"), 10)
+            have_lead = set((await conn.execute(
+                select(p10).where(p10.in_(phones10))
+            )).scalars().all())
+            trows = (await conn.execute(
+                select(WaContact.phone10, WaContact.tag, WaContact.assigned_to)
+                .where(WaContact.phone10.in_(phones10))
+            )).mappings().all()
+            tags = {t["phone10"]: t["tag"] for t in trows}
+            owners = {t["phone10"]: t["assigned_to"] for t in trows}
+
+    items = []
+    for phone, t in threads.items():
+        p10 = phone[-10:]
+        if p10 in have_lead:
+            continue
+        # `rejected` is a deliberate decision NOT to make a lead — the same reason
+        # wa_assign refuses to hand one out. Reminding about it forever would train
+        # people to ignore the bell.
+        if tags.get(p10) == "rejected":
+            continue
+        items.append({
+            "phone": phone,
+            "name": t["name"],
+            "tag": tags.get(p10),
+            "assigned_to": owners.get(p10),
+            "last_at": t["last_at"].isoformat() if t["last_at"] else None,
+            "last_inbound_at": (t["last_inbound_at"].isoformat()
+                                if t["last_inbound_at"] else None),
+        })
+    items.sort(key=lambda i: i["last_at"] or "", reverse=True)
+    return {"items": items}
+
+
 WA_TAGS = ("broker", "buyer", "seller", "rejected")
 
 
@@ -286,7 +382,7 @@ class AssignRequest(BaseModel):
 
 
 @router.post("/gupshup/assign", dependencies=[Depends(require_admin)])
-async def gupshup_assign(req: AssignRequest):
+async def gupshup_assign(req: AssignRequest, user: dict = Depends(current_user)):
     """Hand a conversation to a specific RM. Admin-only — an RM reassigning their own
     threads away would defeat the point of distributing them."""
     engine = neon_engine()
@@ -303,7 +399,15 @@ async def gupshup_assign(req: AssignRequest):
         set_={"assigned_to": req.assigned_to, "assigned_at": now},
     )
     async with engine.begin() as conn:
+        # The previous owner, read before the upsert lands — "unassigned → Asha" and
+        # "Vikram → Asha" are different events and the log has to tell them apart.
+        prev = (await conn.execute(
+            text("SELECT assigned_to FROM wa_contacts WHERE phone10 = :p"), {"p": phone10})).scalar()
         await conn.execute(stmt)
+        if prev != req.assigned_to:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="wa_contact", entity_id=phone10,
+                action="assigned", field="assigned_to", before=prev, after=req.assigned_to))
     return {"status": "ok", "phone10": phone10, "assigned_to": req.assigned_to}
 
 
@@ -525,6 +629,9 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
             text("SELECT origin_key FROM leads WHERE origin_key = ANY(:ks)"), {"ks": keys})).all()}
 
         rows = [{
+            # The id is minted HERE rather than left to the model's client-side
+            # default, so the activity rows below can name the lead they created.
+            "id": uuid.uuid4(),
             "origin_key": f"whatsapp:{p}", "source_category": "whatsapp", "source": "whatsapp",
             "name": (names.get(p) or "").strip() or display_phone(p),
             "phone": display_phone(p),
@@ -538,6 +645,14 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
         if rows:
             await conn.execute(
                 pg_insert(Lead).on_conflict_do_nothing(index_elements=["origin_key"]), rows)
+            # The single-lead endpoint has always logged `lead_created`; bulk never
+            # did, so leads made this way were invisible on the Reports page.
+            await activity.record(conn, [
+                activity.row_for(activity.Actor.of(user), entity_type="lead",
+                                 entity_id=str(r["id"]), action="lead_created",
+                                 metadata={"source": "whatsapp_bulk",
+                                           "assigned_to": r["assigned_to"]})
+                for r in rows])
 
     assigned = sum(1 for r in rows if r["assigned_to"])
     log.info("whatsapp: bulk-created %d leads (%d assigned, %d already existed) by %s",

@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import text
 
-from ..core.auth import require_admin
+from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..services.meta_leads import (
     check_signature,
@@ -89,6 +89,67 @@ LIST_EVENTS = text("""
 """)
 
 
+def _responses(raw: dict) -> list[dict]:
+    """`field_data` -> [{question, answer}], in the order the form asked them.
+
+    A list, not a dict: `flatten` would collapse it and lose that order, and a form
+    reads wrong out of order. The field NAMES are Meta's own and differ per form —
+    nothing here may assume a fixed set.
+    """
+    return [
+        {"question": (f.get("name") or "").strip(),
+         "answer": (f.get("values") or [""])[0]}
+        for f in (raw.get("field_data") or [])
+        if (f.get("name") or "").strip()
+    ]
+
+
+LEAD_FORM = text("""
+    SELECT e.meta_lead_id, e.received_at, e.raw_lead,
+           e.campaign_name, e.ad_name
+      FROM meta_lead_events e
+      -- origin_key, NEVER leads.meta_lead_id: that column holds only the FIRST
+      -- delivery's id (STAMP_LEAD is guarded IS NULL), so joining on it drops every
+      -- repeat submission from the same buyer -- exactly the case where a second,
+      -- different set of answers exists and is worth showing.
+      JOIN leads l ON l.origin_key = e.origin_key
+      -- cast the uuid to text, not the param to uuid: entity ids reach us as strings
+      -- and casting the other way raises on anything that isn't one
+     WHERE l.id::text = :lead_id
+     ORDER BY e.received_at DESC
+     LIMIT 20
+""")
+
+
+@router.get("/lead/{lead_id}/form")
+async def lead_form(lead_id: str, _: dict = Depends(current_user)):
+    """The Instant Form answers behind one lead — for the lead popup.
+
+    Deliberately NOT admin-gated, unlike the delivery log below: that is an
+    account-wide record of what arrived, this is one lead's own source data and is
+    visible to whoever can already open the lead. Same split as
+    `/activity/entity/{type}/{id}`.
+
+    Newest delivery first. A buyer who submitted twice has two, and the popup says so
+    rather than silently rendering only one.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(LEAD_FORM, {"lead_id": lead_id})).mappings().all()
+    return {"items": [{
+        "meta_lead_id": r["meta_lead_id"],
+        "received_at": r["received_at"].isoformat() if r["received_at"] else None,
+        # Which ad produced this lead. Nullable on purpose: a lead from the Lead Ads
+        # Testing Tool carries no campaign at all, and inventing a label for one would
+        # claim an attribution that does not exist.
+        "campaign_name": r["campaign_name"],
+        "ad_name": r["ad_name"],
+        "responses": _responses(r["raw_lead"] or {}),
+    } for r in rows]}
+
+
 @router.get("/leads")
 async def list_meta_leads(
     limit: int = Query(default=200, ge=1, le=1000),
@@ -110,14 +171,6 @@ async def list_meta_leads(
     items = []
     for r in rows:
         raw = r["raw_lead"] or {}
-        # The answers, in the order the form asked them. `flatten` would collapse to a
-        # dict and lose that order, and a form reads wrong out of order.
-        responses = [
-            {"question": (f.get("name") or "").strip(),
-             "answer": (f.get("values") or [""])[0]}
-            for f in (raw.get("field_data") or [])
-            if (f.get("name") or "").strip()
-        ]
         items.append({
             "meta_lead_id": r["meta_lead_id"],
             "status": r["status"],
@@ -133,7 +186,7 @@ async def list_meta_leads(
             "adset_name": raw.get("adset_name"),
             "ad_id": r["ad_id"],
             "ad_name": r["ad_name"],
-            "responses": responses,
+            "responses": _responses(raw),
             "lead": {
                 "id": str(r["lead_id"]),
                 "name": r["lead_name"],

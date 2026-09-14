@@ -173,6 +173,19 @@ export function useWaMessages(phone?: string) {
   });
 }
 
+/* Backs the notification bell's two WhatsApp categories. Polled slowly on purpose:
+   this runs on EVERY page because the bell is in the topbar, and an un-converted
+   conversation is not a thing that changes second to second. `useWaMessages` beside
+   it stays at 5s because it only ever mounts on the Chat page. */
+export function useWaPending(enabled: boolean) {
+  return useQuery({
+    queryKey: ["wa-pending"],
+    queryFn: api.waPending,
+    enabled,
+    refetchInterval: 60_000,
+  });
+}
+
 export function useSendWa() {
   const qc = useQueryClient();
   return useMutation({
@@ -193,6 +206,12 @@ export function useWaLatest(enabled: boolean) {
 }
 
 /* master_societies is cached server-side and rarely changes — no need to refetch. */
+/* Every master society — the Society filter's options on every lead page. The table
+   changes rarely, so one fetch serves the whole session. */
+export function useAllSocieties() {
+  return useQuery({ queryKey: ["societies-all"], queryFn: api.societiesAll, staleTime: Infinity });
+}
+
 export function useSocietiesByCity(city: string) {
   return useQuery({
     queryKey: ["societies-by-city", city],
@@ -477,6 +496,20 @@ export function useConfirmLead(id: string) {
   });
 }
 
+export function useSetLeadStage(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stage: string) => api.setLeadStage(id, stage),
+    // The lead moves BETWEEN segment lists, so both the old and the new list are
+    // stale — invalidate every lead query rather than guessing which two.
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useRejectLead(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -646,6 +679,18 @@ export function useMetaLeads() {
     queryKey: ["meta-leads"],
     queryFn: api.metaLeads,
     refetchInterval: 15_000,
+  });
+}
+
+/* The Meta form behind one lead, for the popup's "captured from Meta" card.
+   Only fetched for leads that came from Meta — every other source has no delivery and
+   the request would be a guaranteed empty round trip on every popup open. */
+export function useLeadMetaForm(leadId: string, isMeta: boolean) {
+  return useQuery({
+    queryKey: ["lead-meta-form", leadId],
+    queryFn: () => api.leadMetaForm(leadId),
+    enabled: isMeta && !!leadId,
+    staleTime: 5 * 60_000,   // a delivery is immutable once it has landed
   });
 }
 

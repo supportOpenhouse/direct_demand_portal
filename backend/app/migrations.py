@@ -30,6 +30,10 @@ _ID_DEFAULT_TABLES = [
 _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
     ("users", "assignment_name", "TEXT"),
+    # Cities an RM takes new leads for — drives the hourly auto-assignment sweep.
+    # NOT NULL DEFAULT '{}' so every existing RM starts covering nothing specific
+    # rather than NULL, which `= ANY(...)` would silently never match.
+    ("users", "city", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
     ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
     ("users", "smid", "INTEGER"),
     ("meta_leads", "city", "TEXT"),
@@ -209,7 +213,11 @@ async def run_migrations(engine) -> None:
             #                                whether we ever reached them. Without this
             #                                they'd land back on New — they're in
             #                                Follow-up today.
-            #   lost/future_prospect/timepass → rejected (declared in code, zero rows)
+            #   lost/timepass → rejected (declared in code, zero rows)
+            #   future_prospect is NOT folded any more — it was revived as a real stage
+            #   on 14 Sep. This block runs on EVERY boot, so leaving it in the list
+            #   would silently rewrite every future prospect to rejected on the next
+            #   deploy, after the feature had already passed testing.
             await conn.execute(text(
                 "UPDATE leads SET stage = 'qualified' WHERE stage IN ('contacted','visit_planned')"))
             await conn.execute(text(
@@ -220,7 +228,7 @@ async def run_migrations(engine) -> None:
                 "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND ever_connected"))
             await conn.execute(text(
                 "UPDATE leads SET stage = 'rejected' "
-                "WHERE stage IN ('lost','future_prospect','timepass')"))
+                "WHERE stage IN ('lost','timepass')"))
 
             # tag became nullable when assignment arrived — a contact can have an
             # owner before anyone classifies it

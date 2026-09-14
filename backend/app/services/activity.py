@@ -49,6 +49,40 @@ _INSERT = text("""
 """)
 
 
+# ── one-off: a `lead_created` row for every lead that never got one ─────────────
+#
+# Its own INSERT … SELECT rather than `record()`, deliberately. `_INSERT` above stamps
+# created_at = now(), which is right for a live event and wrong here: thousands of
+# historical leads would all claim to have been created today. This carries each
+# lead's own `leads.created_at`, so the entry lands where it belongs in a lead's history.
+#
+# Idempotent: the NOT EXISTS skips any lead that already has one — the WhatsApp create
+# endpoints have always logged it — so a re-run inserts only what is genuinely missing.
+_MISSING_LEAD_CREATED = """
+      FROM leads l
+     WHERE NOT EXISTS (
+            SELECT 1 FROM activity_log a
+             WHERE a.action = 'lead_created' AND a.entity_type = 'lead'
+               -- cast the uuid to text, never the reverse: entity_id holds non-uuid
+               -- keys for other entity types, and a text→uuid cast raises on them
+               AND a.entity_id = l.id::text)
+"""
+
+COUNT_MISSING_LEAD_CREATED = text("SELECT count(*)" + _MISSING_LEAD_CREATED)
+
+BACKFILL_LEAD_CREATED = text("""
+    INSERT INTO activity_log
+           (id, actor_email, actor_name, actor_role, entity_type, entity_id,
+            action, field, before_value, after_value, metadata, created_at)
+    SELECT gen_random_uuid(), NULL, NULL, NULL, 'lead', l.id::text,
+           'lead_created', NULL, NULL, NULL,
+           -- the CURRENT source, as asked: a lead's source is not rewritten after
+           -- ingest, so for these rows current and original are the same thing
+           jsonb_build_object('source', l.source, 'name', l.name, 'backfilled', true),
+           l.created_at
+""" + _MISSING_LEAD_CREATED)
+
+
 @dataclass(frozen=True)
 class Actor:
     """Who did it. None where a background job did — syncs and the dialer act with

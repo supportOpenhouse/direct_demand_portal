@@ -78,13 +78,11 @@ class Settings(BaseSettings):
     VISITS_SHEET_ID: str = "17eEX021t97pGnJasMJ6v7ERE0jezKEC0S8teKepJRWQ"
     VISITS_WORKSHEET: str = "Sheet1"
     VISITS_SYNC_INTERVAL_MINUTES: int = 30
+    # Auto-assignment sweep. Hourly: the balance resets at IST midnight, so a
+    # tighter interval only shortens how long a new lead waits for an owner.
+    LEAD_ASSIGN_INTERVAL_MINUTES: int = 60
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
-
-    # --- Anthropic (Claude) — powers the on-demand RM performance summaries ---
-    # Set on Render to switch the feature on; empty = the endpoint answers 503.
-    ANTHROPIC_API_KEY: str = ""
-    RM_SUMMARY_MODEL: str = "claude-sonnet-5"
 
     # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
     # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.

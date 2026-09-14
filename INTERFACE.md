@@ -142,9 +142,6 @@ White, `--line` border, `--radius`, `--shadow`. `.panel-pad` adds 18px padding. 
 ### Form fields `.field`
 - Label (12px 600 `--ink-2`, required `*` in coral). Inputs/selects/textarea: full-width, `--line` border, radius 9, `--panel-2` bg; **focus** = emerald border + 3px emerald-soft ring. `.invalid` = coral border + soft bg. `.two` = 2-col grid. `.mand-flag` = coral warning, shown on validation fail.
 
-### Office-visit pitch `.office-pitch` (Q6 No/Maybe)
-- Gold-tinted box (`#fdf7e6` gradient, `#ead9a0` border): heading "💬 Pitch the office visit", an English bullet list, a dashed-top "HINGLISH" subheading, then an italic Hinglish bullet list.
-
 ### Modals
 - `.overlay` = `rgba(10,15,25,.46)` + blur, centered. `.modal` = white, radius 18, `--shadow-lg`, slide-up animation. `.mh` header (title + ✕), `.mb` body (22px), `.mf` footer (right-aligned buttons, `--panel-2`). `.modal.wide` = up to 940px (visit planner).
 
@@ -165,7 +162,7 @@ White, `--line` border, `--radius`, `--shadow`. `.panel-pad` adds 18px padding. 
 **Qualified / Pipeline / Converted** — sub-text + one card with the standard lead table (Lead · Source · Stage(+outcome/follow chips) · TAT · Society · Assigned · "📅 Visits" action).
 
 **Lead Details** — top: back link, avatar + name (+🔥 if hot) + phone/source/assignee. Two-column `.detail-grid` (1.4fr / 1fr):
-- **Left:** "Lead data captured from Meta" (Budget, City, Society, Configuration, **Plan to Buy**; Admin-editable, locked badge for others) → "Lead data confirmed on call" (**Q1 Purpose · Q2 Budget ₹→lacs · Q3 Config · Q4 societies multi · Q5 localities multi · Q6 office Yes/No/Maybe + conditional date + pitch**; "Confirm & qualify lead") → **Activity** (timeline).
+- **Left:** "Lead data captured from Meta" (Budget, City, Society, Configuration, **Plan to Buy**; Admin-editable, locked badge for others) → "Lead data confirmed on call" (**Q1 Purpose · Q2 Budget ₹→lacs · Q3 Config · Q4 societies multi · Q5 localities multi · Q6 office Yes/No/Maybe + conditional date**; "Confirm & qualify lead") → **Activity** (timeline).
 - **Right:** "Best matches from inventory" (5 expandable rows, ACQUIRED PROPERTY tag) → "From supply pipeline" (5 expandable rows, SUPPLY CLOSURE TRACKER tag) → "Visit recordings".
 
 **Reminders** — tab filter pills (All / Follow-up / Visit schedule / Visit feedback / Negotiation) + list of typed reminder rows.
@@ -185,7 +182,7 @@ White, `--line` border, `--radius`, `--shadow`. `.panel-pad` adds 18px padding. 
 ---
 
 ## 6. Interaction states to preserve
-- Nav/active highlight + left emerald bar. KPI card hover-lift. Row hover tint. Dropdown open ring + outside-click close. Option-row expand (chevron rotate). Field focus ring; invalid state + mand-flag. Q6 conditional show/hide (date on Yes/Maybe, pitch on No/Maybe). TAT breach pulse. Toast slide-in/out. Modal slide-up.
+- Nav/active highlight + left emerald bar. KPI card hover-lift. Row hover tint. Dropdown open ring + outside-click close. Option-row expand (chevron rotate). Field focus ring; invalid state + mand-flag. Q6 conditional show/hide (date on Yes/Maybe). TAT breach pulse. Toast slide-in/out. Modal slide-up.
 
 ## 7. Icons
 - **Line icons** (Lucide/Feather style, 24-viewBox, stroke `currentColor`) for nav + panel titles — reuse the exact SVG paths.

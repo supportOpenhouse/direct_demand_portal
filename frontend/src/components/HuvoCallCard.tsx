@@ -9,10 +9,11 @@
 
    Renders nothing when the bot has never called this lead: an empty card on a lead
    Huvo hasn't touched is just noise in the column. */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLeadHuvoCalls, formatDateTime } from "../lib/queries";
 import { HuvoCallDetail } from "../lib/api";
 import RecordingPlayer, { RecordingLink } from "./RecordingPlayer";
+import { IconHuvo, IconStar } from "./icons";
 
 /* Same three tiers as the Huvo Call Log's chips — a lead's card and the log must not
    colour the same outcome differently. */
@@ -23,7 +24,7 @@ const DEAD = new Set(["not_interested", "unqualified", "already_booked_elsewhere
 
 function outcomeStyle(outcome: string | null) {
   if (!outcome) return { background: "var(--panel-2)", color: "var(--muted)" };
-  if (GOOD.has(outcome)) return { background: "var(--emerald-soft)", color: "#06694b" };
+  if (GOOD.has(outcome)) return { background: "var(--emerald-soft)", color: "var(--emerald-deep)" };
   if (DEAD.has(outcome)) return { background: "var(--coral-soft)", color: "var(--coral)" };
   return { background: "var(--amber-soft)", color: "var(--amber)" };
 }
@@ -35,11 +36,26 @@ const mmss = (s: number | null) =>
 /* The Huvo logo, same asset as the sidebar entry — this card is the one place on the
    lead page where the source of the information isn't obvious from context. */
 const HuvoMark = () => (
-  <img src="/huvo_icon.png" alt="" style={{ width: 16, height: 16, objectFit: "contain" }} />
+  <IconHuvo size={16} />
 );
 
 function CallRow({ c }: { c: HuvoCallDetail }) {
   const [open, setOpen] = useState(false);
+  /* Does the summary run past ONE line? Measured, not guessed from its length —
+     the answer depends on the card's width, which differs between the popup and the
+     full page and changes when the window does. Only measured while clamped: open,
+     the box is as tall as its text and would always read as "fits". */
+  const sumRef = useRef<HTMLParagraphElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const el = sumRef.current;
+    if (!el || open) return undefined;
+    const check = () => setOverflows(el.scrollHeight > el.clientHeight + 1);
+    check();
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [c.summary, open]);
   const a = (c.payload?.analytics_data ?? {}) as Record<string, unknown>;
 
   /* Only what the caller actually volunteered. Huvo returns all 19 analytics keys on
@@ -63,10 +79,10 @@ function CallRow({ c }: { c: HuvoCallDetail }) {
           {c.call_outcome ? pretty(c.call_outcome) : "no outcome"}
         </span>
         {c.is_interested === "yes" && (
-          <span style={{ color: "var(--emerald)", fontSize: 12 }} title="Caller said they're interested">★</span>
+          <span style={{ color: "var(--emerald)", fontSize: 12 }} title="Caller said they're interested"><IconStar /></span>
         )}
         {c.lead_score != null && (
-          <span style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}
+          <span style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "var(--font-mono)" }}
                 title="Huvo's lead score, 0–10">
             {c.lead_score}/10
           </span>
@@ -74,7 +90,7 @@ function CallRow({ c }: { c: HuvoCallDetail }) {
         <span style={{ fontSize: 12, color: "var(--ink-2)" }}>
           {formatDateTime(c.started_at) || formatDateTime(c.received_at) || "—"}
         </span>
-        <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "'Spline Sans Mono'", marginLeft: "auto" }}>
+        <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginLeft: "auto" }}>
           <RecordingLink url={c.recording_url}>{mmss(c.duration_sec)}</RecordingLink>
         </span>
       </div>
@@ -92,21 +108,25 @@ function CallRow({ c }: { c: HuvoCallDetail }) {
 
       {c.summary && (
         <>
-          {/* Clamped by default — these run to a full paragraph, and three of them
-              unclamped would push everything below this card off the screen. */}
-          <p style={{
+          {/* Clamped to ONE line by default — these run to a full paragraph, and
+              several unclamped push everything below this card off the screen. The
+              button only appears when there is more to read: on a summary that fits
+              one line it would open onto nothing. */}
+          <p ref={sumRef} style={{
             margin: 0, fontSize: 12, lineHeight: 1.5, color: "var(--muted)",
             ...(open ? {} : {
-              display: "-webkit-box", WebkitLineClamp: 2,
+              display: "-webkit-box", WebkitLineClamp: 1,
               WebkitBoxOrient: "vertical" as const, overflow: "hidden",
             }),
           }}>
             {c.summary}
           </p>
-          <button className="btn ghost sm" style={{ alignSelf: "flex-start", fontSize: 11 }}
-            onClick={() => setOpen((v) => !v)}>
-            {open ? "Less" : "Read summary"}
-          </button>
+          {(open || overflows) && (
+            <button className="btn ghost sm" style={{ alignSelf: "flex-start", fontSize: 11 }}
+              onClick={() => setOpen((v) => !v)}>
+              {open ? "Less" : "Read full summary"}
+            </button>
+          )}
         </>
       )}
 

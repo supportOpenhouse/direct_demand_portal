@@ -1,30 +1,31 @@
 /* Analytics — measurable lead & supply parameters, computed client-side from the
-   full lead set (all segments) + the supply pipeline. Opened from the Dashboard's
+   full lead set (all segments) + the supply pipeline. Opened from Home's
    Analytics toggle; the existing overview is left untouched. No backend changes:
    everything here is derived from data the app already loads.
 
    Definitions are labelled inline so every number is unambiguous. `new Date()` is
    fine here (browser runtime). Test leads (is_test) are excluded throughout. */
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from "recharts";
 import { useAllLeads } from "../lib/queries";
 import { useAuth } from "../components/AuthContext";
-import { useSort, SortTh } from "../lib/useSort";
 import { srcLabel } from "../lib/leads";
 import { Lead, api } from "../lib/api";
+import { IconChart, IconTrend, IconMegaphone, IconCity, IconChevronRight } from "../components/icons";
+import { LeadFunnel } from "../components/LeadFunnel";
 
-const SOURCE_COLOR: Record<string, string> = { meta: "#2563eb", "99acres": "#e85d2a", magicbricks: "#e63a73" };
+const SOURCE_COLOR: Record<string, string> = { meta: "var(--blue)", "99acres": "var(--supply-orange)", magicbricks: "var(--coral)" };
 const sourceColor = (s: string) => SOURCE_COLOR[s] || "var(--slate)";
 // categorical palette for the city donut (assigned in byCity order, fixed)
-const CITY_COLORS = ["#4f46e5", "#0e8fa8", "#d68309", "#e11d48", "#059669", "#7c3aed", "#0891b2", "#64748b"];
+const CITY_COLORS = ["var(--indigo)", "var(--cyan)", "var(--amber)", "var(--coral)", "var(--emerald)", "var(--violet)", "var(--cyan)", "var(--slate)"];
 const TREND_RANGES: { v: number | "all"; label: string }[] = [
   { v: 7, label: "7d" }, { v: 15, label: "15d" }, { v: 30, label: "30d" }, { v: "all", label: "All" },
 ];
 const card = { background: "var(--panel)", border: "1px solid var(--line)", borderRadius: "var(--radius)", boxShadow: "var(--shadow)" } as const;
 const HOT_PLAN = "Within 30 days";
 
-// RM performance: one column per lead stage/segment, in funnel order (matches the tabs)
+// My performance: the stage chips, one per lead segment, in funnel order (matches the tabs)
 const STAGE_COLS: { seg: string; label: string }[] = [
   { seg: "new", label: "New Leads" },
   { seg: "call_not_received", label: "Call Not Received" },
@@ -73,7 +74,7 @@ function inRepRange(iso: string | null, preset: string, from: string, to: string
 }
 
 type Rep = { rm: string; total: number; [seg: string]: number | string };
-// extra per-RM signals the AI summary reads (kept off Rep to avoid the index-signature clash)
+// extra per-RM signals behind the personal stat tiles (kept off Rep to avoid the index-signature clash)
 type RepExtra = {
   qualified_reached: number; ever_connected: number; miss_total: number; hot: number;
   followups_overdue: number; active_days: number; leads_per_active_day: number;
@@ -84,11 +85,11 @@ type Row = { lead: Lead; seg: string };
 function ChartTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{ background: "var(--ink)", color: "#fff", padding: "8px 11px", borderRadius: 9, fontSize: 12, boxShadow: "var(--shadow-lg)" }}>
+    <div style={{ background: "var(--ink)", color: "var(--on-accent)", padding: "8px 11px", borderRadius: 9, fontSize: 12, boxShadow: "var(--shadow-lg)" }}>
       {label && <div style={{ fontWeight: 600, marginBottom: 3 }}>{label}</div>}
       {payload.map((p: any) => (
         <div key={p.name} style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
-          <span style={{ color: "#cbd5e1" }}>{p.name}</span><b>{p.value}</b>
+          <span style={{ color: "var(--line-3)" }}>{p.name}</span><b>{p.value}</b>
         </div>
       ))}
     </div>
@@ -105,14 +106,11 @@ function cleanCity(c: string | null | undefined): string | null {
   return v && !CITY_PLACEHOLDERS.has(v.toLowerCase()) ? v : null;
 }
 
-type SummaryState = { status: "loading" | "done" | "error"; text?: string; error?: string; cached?: boolean };
 type MineBundle = { rm: string; total: number; stages: Record<string, number>; extras: Record<string, number> };
 
-// The RM's own dashboard: personal funnel tiles + stage chips + AI coaching summary.
-// (Admins see the full multi-RM table instead.)
-function MyPerformance({ mine, rangeLabel, sm, onRetry }: {
-  mine: MineBundle | null; rangeLabel: string; sm?: SummaryState; onRetry: () => void;
-}) {
+// The RM's own dashboard: personal funnel tiles + stage chips. RM-only — admins
+// have no equivalent on Summary; per-RM numbers are on /reports.
+function MyPerformance({ mine }: { mine: MineBundle | null }) {
   if (!mine || mine.total === 0) {
     return <div className="empty" style={{ padding: 24 }}>No leads assigned to you in this range.</div>;
   }
@@ -131,7 +129,7 @@ function MyPerformance({ mine, rangeLabel, sm, onRetry }: {
         {tiles.map((t) => (
           <div key={t.label} style={{ border: "1px solid var(--line)", borderRadius: 12, padding: "12px 14px" }}>
             <div style={{ fontSize: 11.5, color: "var(--muted)", fontWeight: 600 }}>{t.label}</div>
-            <div style={{ fontFamily: "'Bricolage Grotesque'", fontSize: 24, fontWeight: 700, lineHeight: 1.1, margin: "2px 0" }}>{t.value}</div>
+            <div style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 700, lineHeight: 1.1, margin: "2px 0" }}>{t.value}</div>
             <div style={{ fontSize: 11, color: "var(--muted)" }}>{t.sub}</div>
           </div>
         ))}
@@ -146,20 +144,6 @@ function MyPerformance({ mine, rangeLabel, sm, onRetry }: {
         ))}
       </div>
 
-      <div style={{ marginTop: 16, background: "var(--bg-soft, #f8fafc)", borderRadius: 12, padding: "14px 18px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-          <span style={{ fontWeight: 700, fontSize: 12.5 }}>✨ Your AI coaching summary</span>
-          <span style={{ color: "var(--muted)", fontSize: 11 }}>· {rangeLabel}</span>
-        </div>
-        {(!sm || sm.status === "loading") && <div style={{ color: "var(--muted)", fontSize: 12.5 }}>Generating summary…</div>}
-        {sm?.status === "error" && (
-          <div style={{ fontSize: 12.5 }}>
-            <span style={{ color: "var(--coral, #dc2626)" }}>Couldn't generate: {sm.error}</span>{" "}
-            <button className="btn ghost sm" style={{ marginLeft: 6 }} onClick={onRetry}>Retry</button>
-          </div>
-        )}
-        {sm?.status === "done" && <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>{sm.text}</div>}
-      </div>
     </div>
   );
 }
@@ -175,14 +159,8 @@ export default function Analytics() {
   const [repTo, setRepTo] = useState("");
   // which date the range buckets on: when the lead was received vs. when it was assigned
   const [repDateBy, setRepDateBy] = useState<"received" | "assigned">("received");
-  // AI summary: which RM row is expanded, and per (rm+range) summary state
-  const [expanded, setExpanded] = useState<string | null>(null);
-  type SumState = { status: "loading" | "done" | "error"; text?: string; error?: string; cached?: boolean };
-  const [summaries, setSummaries] = useState<Record<string, SumState>>({});
-  const sumKey = (rm: string) => `${rm}|${repDateBy}|${repPreset}|${repFrom}|${repTo}`;
-  // changing the range or date-basis invalidates an open summary — collapse so the next click refetches
-  const pickRange = (v: string) => { setRepPreset(v); setExpanded(null); };
-  const pickDateBy = (v: "received" | "assigned") => { setRepDateBy(v); setExpanded(null); };
+  const pickRange = (v: string) => setRepPreset(v);
+  const pickDateBy = (v: "received" | "assigned") => setRepDateBy(v);
 
   const rows: Row[] = useMemo(
     () => leads.filter((r) => !r.lead.is_test).map((r) => ({ lead: r.lead, seg: r.segment.seg })),
@@ -208,9 +186,11 @@ export default function Analytics() {
     const nQualified = count("qualified");
     const nPipeline = count("pipeline");
     const nConverted = count("converted");
-    // RNR has no segment of its own — those leads come back under "rejected"
+    // RNR and Future Prospect have no segment of their own — both come back under
+    // "rejected", so each is subtracted or a parked buyer reads as a rejected one
     const nRnr = rows.filter((r) => r.lead.stage === "rnr").length;
-    const nRejected = count("rejected") - nRnr;
+    const nFuture = rows.filter((r) => r.lead.stage === "future_prospect").length;
+    const nRejected = count("rejected") - nRnr - nFuture;
     const qualifiedPlus = nQualified + nPipeline + nConverted; // reached qualified or beyond
 
     // TAT — first-contact SLA on leads still awaiting the first call (New)
@@ -267,8 +247,8 @@ export default function Analytics() {
     };
   }, [rows]);
 
-  // RM performance: per-owner counts by stage, over the selected date range (received_at).
-  // Alongside the table rows we accumulate the extra signals the AI summary is grounded in.
+  // Per-owner counts by stage over the selected range — feeds the RM's My performance card.
+  // Alongside the table rows we accumulate the extra signals the stat tiles show.
   const { repRows, repExtras } = useMemo(() => {
     const map = new Map<string, Rep>();
     const ex = new Map<string, RepExtra>();
@@ -303,46 +283,11 @@ export default function Analytics() {
     return { repRows, repExtras: ex };
   }, [rows, repPreset, repFrom, repTo, repDateBy]);
 
-  const { sorted: repList, sortKey, dir, onSort } = useSort<Rep>(repRows, {
-    name: (r) => r.rm,
-    total: (r) => r.total as number,
-    new: (r) => r.new as number,
-    call_not_received: (r) => r.call_not_received as number,
-    followup: (r) => r.followup as number,
-    qualified: (r) => r.qualified as number,
-    pipeline: (r) => r.pipeline as number,
-    revisit: (r) => r.revisit as number,
-    converted: (r) => r.converted as number,
-    rejected: (r) => r.rejected as number,
-  });
 
   const rangeLabel = (): string => {
     if (repPreset === "custom") return repFrom || repTo ? `${repFrom || "start"} → ${repTo || "today"}` : "Custom (all dates)";
     return REP_RANGES.find((r) => r.v === repPreset)?.label ?? repPreset;
   };
-  // fetch (or refetch) a Claude summary for one RM; cached per rm+range on the client
-  const fetchSummary = (rm: string, total: number, stages: Record<string, number>, extras: Record<string, number>) => {
-    const ck = sumKey(rm);
-    setSummaries((s) => ({ ...s, [ck]: { status: "loading" } }));
-    api.rmSummary({ rm, range_label: rangeLabel(), total, stages, extras })
-      .then((res) => setSummaries((s) => ({ ...s, [ck]: { status: "done", text: res.summary, cached: res.cached } })))
-      .catch((e) => setSummaries((s) => ({ ...s, [ck]: { status: "error", error: e.message } })));
-  };
-  // build the {stages, extras} payload for a table row
-  const repPayload = (r: Rep) => {
-    const stages: Record<string, number> = {};
-    STAGE_COLS.forEach((c) => (stages[c.seg] = r[c.seg] as number));
-    const extras = { ...(repExtras.get(r.rm) as unknown as Record<string, number>) };
-    return { stages, extras };
-  };
-  // expand a row and lazily fetch its summary the first time it's opened for this range
-  const toggleRM = (r: Rep) => {
-    if (expanded === r.rm) { setExpanded(null); return; }
-    setExpanded(r.rm);
-    const st = summaries[sumKey(r.rm)]?.status;
-    if (st !== "done" && st !== "loading") { const { stages, extras } = repPayload(r); fetchSummary(r.rm, r.total as number, stages, extras); }
-  };
-
   // RM view: fold this RM's (already server-scoped) rows into one "me" bundle. Alias
   // variants of the same person collapse together since it's all her own data anyway.
   const mine = useMemo(() => {
@@ -367,14 +312,6 @@ export default function Analytics() {
     extras.leads_per_active_day = extras.active_days ? Math.round((total / extras.active_days) * 10) / 10 : 0;
     return { rm: user?.name || repRows[0].rm, total, stages, extras };
   }, [isAdmin, repRows, repExtras, user]);
-
-  // auto-generate the RM's own coaching summary on load and whenever the range changes
-  useEffect(() => {
-    if (!mine || mine.total === 0) return;
-    const st = summaries[sumKey(mine.rm)]?.status;
-    if (st !== "done" && st !== "loading") fetchSummary(mine.rm, mine.total, mine.stages, mine.extras);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mine, repPreset, repFrom, repTo]);
 
   // Inflow by received_at over the selected window (own memo so switching the range
   // doesn't recompute everything). "All" spans from the earliest lead to today.
@@ -410,121 +347,57 @@ export default function Analytics() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* RM performance (admin) / My performance (RM) — stage breakdown over a date range */}
+      <LeadFunnel />
+      {/* My performance — an RM's own stage breakdown over a date range. The admin
+          "RM performance" table that shared this card was removed 14 Sep; per-RM
+          numbers for managers live on /reports. */}
+      {!isAdmin && (
       <div style={card}>
         <div className="panel-pad" style={{ paddingBottom: 0 }}>
           <div className="panel-title" style={{ justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-            <span>{isAdmin ? "👥 RM performance" : "📊 My performance"}</span>
+            <span><IconChart /> My performance</span>
             <div style={{ display: "flex", gap: 4, alignItems: "center", flexWrap: "wrap" }}>
               {REP_RANGES.map((r) => (
                 <button key={r.v} className={"btn sm " + (repPreset === r.v ? "" : "ghost")}
-                  style={repPreset === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                  style={repPreset === r.v ? { background: "var(--brand)", color: "var(--on-brand)" } : undefined}
                   onClick={() => pickRange(r.v)}>{r.label}</button>
               ))}
               {repPreset === "custom" && (
                 <>
-                  <input type="date" value={repFrom} onChange={(e) => { setRepFrom(e.target.value); setExpanded(null); }} style={{ padding: "5px 8px", fontSize: 12 }} title="From" />
+                  <input type="date" value={repFrom} onChange={(e) => setRepFrom(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="From" />
                   <span style={{ color: "var(--muted)" }}>–</span>
-                  <input type="date" value={repTo} onChange={(e) => { setRepTo(e.target.value); setExpanded(null); }} style={{ padding: "5px 8px", fontSize: 12 }} title="To" />
+                  <input type="date" value={repTo} onChange={(e) => setRepTo(e.target.value)} style={{ padding: "5px 8px", fontSize: 12 }} title="To" />
                 </>
               )}
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, margin: "6px 0 0" }}>
             <p className="note" style={{ margin: 0, fontSize: 11.5 }}>
-              {isAdmin ? "✨ Click any RM row to generate an AI performance summary." : "Your funnel over the selected range, with an AI coaching summary."}
+              Your funnel over the selected range.
             </p>
             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>Bucket by</span>
               {([["received", "Received date"], ["assigned", "Assigned date"]] as const).map(([v, label]) => (
                 <button key={v} className={"btn sm " + (repDateBy === v ? "" : "ghost")}
-                  style={repDateBy === v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                  style={repDateBy === v ? { background: "var(--brand)", color: "var(--on-brand)" } : undefined}
                   title={v === "received" ? "Range filters on when the lead was received" : "Range filters on when the lead was assigned to its current owner"}
                   onClick={() => pickDateBy(v)}>{label}</button>
               ))}
             </div>
           </div>
         </div>
-        {!isAdmin ? (
-          <MyPerformance mine={mine} rangeLabel={rangeLabel()} sm={mine ? summaries[sumKey(mine.rm)] : undefined}
-            onRetry={() => mine && fetchSummary(mine.rm, mine.total, mine.stages, mine.extras)} />
-        ) : repList.length === 0 ? (
-          <div className="empty" style={{ padding: 24 }}>No assigned leads in this range.</div>
-        ) : (
-          <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <SortTh label="Assigned To" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} />
-                <SortTh label="Total Leads" sortKey="total" activeKey={sortKey} dir={dir} onSort={onSort} align="center" style={{ width: 96, whiteSpace: "normal", verticalAlign: "bottom" }} />
-                {STAGE_COLS.map((c) => (
-                  <SortTh key={c.seg} label={c.label} sortKey={c.seg} activeKey={sortKey} dir={dir} onSort={onSort} align="center" style={{ width: 96, whiteSpace: "normal", verticalAlign: "bottom" }} />
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {repList.map((r) => {
-                const open = expanded === r.rm;
-                const sm = summaries[sumKey(r.rm)];
-                return (
-                  <Fragment key={r.rm}>
-                    <tr className="lead-row" style={{ cursor: "pointer" }} onClick={() => toggleRM(r)}>
-                      <td style={{ fontWeight: 600, whiteSpace: "nowrap" }}>
-                        <span style={{ display: "inline-block", width: 12, color: "var(--muted)", fontSize: 10, transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>{" "}
-                        {r.rm}
-                      </td>
-                      <td style={{ textAlign: "center", fontFamily: "'Spline Sans Mono'", fontWeight: 700, whiteSpace: "nowrap" }}>{r.total as number}</td>
-                      {STAGE_COLS.map((c) => {
-                        const n = r[c.seg] as number;
-                        return (
-                          <td key={c.seg} style={{ textAlign: "center", fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
-                            {n}{" "}<span style={{ color: "var(--muted)" }}>({pct(n, r.total as number)}%)</span>
-                          </td>
-                        );
-                      })}
-                    </tr>
-                    {open && (
-                      <tr>
-                        <td colSpan={STAGE_COLS.length + 2} style={{ background: "var(--bg-soft, #f8fafc)", padding: "14px 18px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontWeight: 700, fontSize: 12.5 }}>✨ AI summary — {r.rm}</span>
-                            <span style={{ color: "var(--muted)", fontSize: 11 }}>· {rangeLabel()}</span>
-                          </div>
-                          {(!sm || sm.status === "loading") && (
-                            <div style={{ color: "var(--muted)", fontSize: 12.5 }}>Generating summary…</div>
-                          )}
-                          {sm?.status === "error" && (
-                            <div style={{ fontSize: 12.5 }}>
-                              <span style={{ color: "var(--coral, #dc2626)" }}>Couldn't generate: {sm.error}</span>{" "}
-                              <button className="btn ghost sm" style={{ marginLeft: 6 }}
-                                onClick={(e) => { e.stopPropagation(); const { stages, extras } = repPayload(r); fetchSummary(r.rm, r.total as number, stages, extras); }}>
-                                Retry
-                              </button>
-                            </div>
-                          )}
-                          {sm?.status === "done" && (
-                            <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--ink-2)", whiteSpace: "pre-wrap" }}>{sm.text}</div>
-                          )}
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        )}
+        <MyPerformance mine={mine} />
       </div>
+      )}
 
       {/* inflow trend */}
       <div style={card} className="panel-pad">
         <div className="panel-title" style={{ justifyContent: "space-between" }}>
-          <span>📈 Leads received · {trendDays === "all" ? "all time" : `last ${trendDays} days`}</span>
+          <span><IconTrend /> Leads received · {trendDays === "all" ? "all time" : `last ${trendDays} days`}</span>
           <div style={{ display: "flex", gap: 4 }}>
             {TREND_RANGES.map((r) => (
               <button key={String(r.v)} className={"btn sm " + (trendDays === r.v ? "" : "ghost")}
-                style={trendDays === r.v ? { background: "var(--blue)", color: "#fff" } : undefined}
+                style={trendDays === r.v ? { background: "var(--brand)", color: "var(--on-brand)" } : undefined}
                 onClick={() => setTrendDays(r.v)}>{r.label}</button>
             ))}
           </div>
@@ -533,15 +406,15 @@ export default function Analytics() {
           <AreaChart data={inflow} margin={{ left: -18, right: 8, top: 8 }}>
             <defs>
               <linearGradient id="ia" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2563eb" stopOpacity={0.32} />
-                <stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+                <stop offset="0%" stopColor="var(--blue)" stopOpacity={0.32} />
+                <stop offset="100%" stopColor="var(--blue)" stopOpacity={0} />
               </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
             <XAxis dataKey="label" tick={{ fontSize: 10, fill: "var(--muted)" }} interval={Math.max(0, Math.floor(inflow.length / 8))} tickLine={false} axisLine={false} />
             <YAxis tick={{ fontSize: 10, fill: "var(--muted)" }} tickLine={false} axisLine={false} allowDecimals={false} />
             <Tooltip content={<ChartTooltip />} />
-            <Area type="monotone" dataKey="c" name="Leads" stroke="#2563eb" strokeWidth={2.5} fill="url(#ia)" />
+            <Area type="monotone" dataKey="c" name="Leads" stroke="var(--blue)" strokeWidth={2.5} fill="url(#ia)" />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -549,7 +422,7 @@ export default function Analytics() {
       {/* source + city conversion */}
       <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
         <div style={card} className="panel-pad">
-          <div className="panel-title">📣 By source</div>
+          <div className="panel-title"><IconMegaphone /> By source</div>
           {srcData.length === 0 ? (
             <div className="empty" style={{ padding: 20 }}>No data.</div>
           ) : (
@@ -567,7 +440,7 @@ export default function Analytics() {
                   <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: sourceColor(s.k), flex: "none" }} />
                     <span style={{ fontWeight: 600 }}>{s.label}</span>
-                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
+                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
                       <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conversion
                     </span>
                   </div>
@@ -577,7 +450,7 @@ export default function Analytics() {
           )}
         </div>
         <div style={card} className="panel-pad">
-          <div className="panel-title">🏙 By city</div>
+          <div className="panel-title"><IconCity /> By city</div>
           {cityData.length === 0 ? (
             <div className="empty" style={{ padding: 20 }}>No data.</div>
           ) : (
@@ -595,7 +468,7 @@ export default function Analytics() {
                   <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 3, background: s.color, flex: "none" }} />
                     <span style={{ fontWeight: 600 }}>{s.label}</span>
-                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
+                    <span style={{ marginLeft: "auto", color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
                       <b style={{ color: "var(--ink)" }}>{s.leads}</b> · {pct(s.converted, s.leads)}% conversion
                     </span>
                   </div>

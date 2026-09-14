@@ -8,9 +8,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap"
       rel="stylesheet"
     />
+  <script>
+      // Before first paint: a dark-mode user reloading must not get a white flash.
+      // Mirrors ThemeContext's key and its light default.
+      try { document.documentElement.setAttribute('data-theme', localStorage.getItem('dd_theme') === 'dark' ? 'dark' : 'light'); } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

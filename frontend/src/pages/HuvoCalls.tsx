@@ -9,7 +9,6 @@
    numbers with no lead, and "Create lead" turns one into a real lead and back-links
    every call from that number in the same click. */
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { HuvoCall, DURATION_OPTIONS, NO_CAMPAIGN } from "../lib/api";
 import { CITIES } from "../lib/leads";
 import {
@@ -20,6 +19,9 @@ import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
 import { useDebounce } from "../lib/useDebounce";
 import RecordingPlayer, { RecordingLink } from "../components/RecordingPlayer";
+import { IconArrowUpRight, IconStar, IconX } from "../components/icons";
+import { FilterBar, useFilterValues } from "../components/FilterBar";
+import { LeadLink } from "../components/LeadModal";
 
 const PAGE = 50;
 const LINKED_OPTIONS = [
@@ -37,7 +39,7 @@ const DEAD = new Set(["not_interested", "unqualified", "already_booked_elsewhere
 
 function outcomeStyle(outcome: string | null) {
   if (!outcome) return { background: "var(--panel-2)", color: "var(--muted)" };
-  if (GOOD.has(outcome)) return { background: "var(--emerald-soft)", color: "#06694b" };
+  if (GOOD.has(outcome)) return { background: "var(--emerald-soft)", color: "var(--emerald-deep)" };
   if (DEAD.has(outcome)) return { background: "var(--coral-soft)", color: "var(--coral)" };
   return { background: "var(--amber-soft)", color: "var(--amber)" };  // retryable
 }
@@ -66,10 +68,10 @@ function CreateLeadModal(
         onSuccess: (d) => {
           toast(d.calls_linked > 1
             ? `Lead created · ${d.calls_linked} calls linked`
-            : "Lead created", "green", "✓");
+            : "Lead created", "green");
           onClose();
         },
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onError: (e: any) => toast(e.message, "gold"),
       },
     );
   };
@@ -79,7 +81,7 @@ function CreateLeadModal(
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <h3>Create lead from call</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="field">
@@ -167,7 +169,7 @@ function CallDetail({ id, onClose }: { id: string; onClose: () => void }) {
             {c?.from_number &&
               <span className="hv-detail-num">{c.from_number}</span>}
           </h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           {isLoading || !c ? (
@@ -240,7 +242,7 @@ function CallDetail({ id, onClose }: { id: string; onClose: () => void }) {
         </div>
         <div className="mf">
           {c?.lead_id
-            ? <Link className="btn ghost" to={`/leads/${c.lead_id}`}>Open lead ↗</Link>
+            ? <LeadLink className="btn ghost" id={c.lead_id}>Open lead <IconArrowUpRight /></LeadLink>
             : <span style={{ fontSize: 12, color: "var(--muted)" }}>No lead for this number yet</span>}
           <button className="btn" onClick={onClose}>Close</button>
         </div>
@@ -251,11 +253,10 @@ function CallDetail({ id, onClose }: { id: string; onClose: () => void }) {
 
 export default function HuvoCalls() {
   const [q, setQ] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [interested, setInterested] = useState("");
-  const [linked, setLinked] = useState("");
-  const [dur, setDur] = useState("");
-  const [campaign, setCampaign] = useState("");
+  const { values: f, set, clear } = useFilterValues({
+    campaign: "", outcome: "", interested: "", linked: "", dur: "",
+  });
+  const { campaign, outcome, interested, linked, dur } = f;
   const [page, setPage] = useState(0);
   const [creating, setCreating] = useState<HuvoCall | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -312,10 +313,10 @@ export default function HuvoCalls() {
       const skipped = d.requested - d.created;
       toast(`${d.created} lead${d.created === 1 ? "" : "s"} created`
             + (skipped ? ` · ${skipped} already existed` : "")
-            + ` · ${d.calls_linked} calls linked`, "green", "✓");
+            + ` · ${d.calls_linked} calls linked`, "green");
       exitBulk();
     },
-    onError: (e: any) => toast(e.message, "gold", "⚠"),
+    onError: (e: any) => toast(e.message, "gold"),
   });
   const start = total === 0 ? 0 : page * PAGE + 1;
   const end = Math.min(total, (page + 1) * PAGE);
@@ -343,26 +344,31 @@ export default function HuvoCalls() {
           {/* First, matching the table's column order. "No campaign" is an explicit
               option because 991 rows predate Huvo sending the field and would
               otherwise be unreachable except by clearing every filter. */}
-          <FilterSelect label="Campaign" value={campaign} width={190}
-            options={[...(filters?.campaigns ?? []).map((c: string) => ({ value: c, label: c })),
-                      { value: NO_CAMPAIGN, label: "No campaign" }]}
-            onChange={(v) => reset(() => setCampaign(v))} />
-          <FilterSelect label="Outcome" value={outcome} width={190}
-            options={(filters?.outcomes ?? []).map((o: string) => ({ value: o, label: pretty(o) }))}
-            onChange={(v) => reset(() => setOutcome(v))} />
-          <FilterSelect label="Interested" value={interested} width={140}
-            options={filters?.interest ?? []} onChange={(v) => reset(() => setInterested(v))} />
-          <FilterSelect label="Lead" value={linked} options={LINKED_OPTIONS} width={150}
-            onChange={(v) => reset(() => setLinked(v))} />
-          <FilterSelect label="Duration" value={dur} options={DURATION_OPTIONS} width={140}
-            onChange={(v) => reset(() => setDur(v))} />
+          <FilterBar
+            fields={[
+              /* "No campaign" is an explicit option because 991 rows predate Huvo
+                 sending the field and would otherwise be unreachable except by
+                 clearing every filter. */
+              { key: "campaign", label: "Campaign",
+                options: [...(filters?.campaigns ?? []).map((c: string) => ({ value: c, label: c })),
+                          { value: NO_CAMPAIGN, label: "No campaign" }] },
+              { key: "outcome", label: "Outcome",
+                options: (filters?.outcomes ?? []).map((o: string) => ({ value: o, label: pretty(o) })) },
+              { key: "interested", label: "Interested", options: filters?.interest ?? [] },
+              { key: "linked", label: "Lead", options: LINKED_OPTIONS },
+              { key: "dur", label: "Duration", options: DURATION_OPTIONS },
+            ]}
+            values={f}
+            onChange={(k, v) => reset(() => set(k, v))}
+            onClear={() => reset(clear)}
+          />
           <div className="field hv-search">
             <input value={q} placeholder="Search number / name / summary…"
               onChange={(e) => reset(() => setQ(e.target.value))} />
           </div>
           {anyFilter && (
             <button className="btn ghost sm" onClick={() => {
-              setQ(""); setOutcome(""); setInterested(""); setLinked(""); setDur(""); setCampaign(""); setPage(0);
+              setQ(""); clear(); setPage(0);
             }}>Clear</button>
           )}
           <span style={{ width: 1, height: 22, background: "var(--line)" }} />
@@ -436,12 +442,12 @@ export default function HuvoCalls() {
                         ? <span className="hv-campaign" title={c.campaign_name}>{c.campaign_name}</span>
                         : <span style={{ color: "var(--muted)" }}>—</span>}
                     </td>
-                    <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>
+                    <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
                       {formatDateTime(c.started_at) || formatDateTime(c.received_at) || "—"}
                     </td>
                     <td style={{ fontSize: 12.5 }}>
                       <div>{c.caller_name || <span style={{ color: "var(--muted)" }}>—</span>}</div>
-                      <div style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "'Spline Sans Mono'" }}>
+                      <div style={{ fontSize: 11.5, color: "var(--muted)", fontFamily: "var(--font-mono)" }}>
                         {c.from_number || ""}
                       </div>
                     </td>
@@ -450,9 +456,9 @@ export default function HuvoCalls() {
                         {c.call_outcome ? pretty(c.call_outcome) : "no call"}
                       </span>
                       {c.is_interested === "yes" &&
-                        <span style={{ color: "var(--emerald)", fontSize: 11.5, marginLeft: 5 }}>★</span>}
+                        <span style={{ color: "var(--emerald)", fontSize: 11.5, marginLeft: 5 }}><IconStar /></span>}
                     </td>
-                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>
+                    <td style={{ fontSize: 12, fontFamily: "var(--font-mono)" }}>
                       {c.lead_score ?? "—"}
                     </td>
                     <td style={{ fontSize: 12, color: "var(--ink-2)", maxWidth: 420 }}>
@@ -465,7 +471,7 @@ export default function HuvoCalls() {
                         {c.summary || "—"}
                       </div>
                     </td>
-                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>
+                    <td style={{ fontSize: 12, fontFamily: "var(--font-mono)" }}>
                       <RecordingLink url={c.recording_url}>{mmss(c.duration_sec)}</RecordingLink>
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
@@ -475,9 +481,9 @@ export default function HuvoCalls() {
                     </td>
                     <td style={{ fontSize: 12.5 }} onClick={(e) => e.stopPropagation()}>
                       {c.lead_id ? (
-                        <Link className="lead-link" to={`/leads/${c.lead_id}`}>
+                        <LeadLink className="lead-link" id={c.lead_id}>
                           {c.lead_name || "View lead"}
-                        </Link>
+                        </LeadLink>
                       ) : c.from_number ? (
                         <button className="btn ghost sm" onClick={() => setCreating(c)}>
                           + Create lead

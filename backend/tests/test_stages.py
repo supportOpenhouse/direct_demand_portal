@@ -38,9 +38,31 @@ def test_no_page_references_an_unknown_stage():
         assert not unknown, f"segment '{seg}' references unknown stage(s): {unknown}"
 
 
-def test_rejected_page_holds_rnr_too():
-    """RNR keeps its own stage but has no page — it shares Rejected, badged."""
-    assert _stages_named_in(SEGMENTS["rejected"]) == {"rejected", "rnr"}
+def test_rejected_page_holds_rnr_and_future_prospect_too():
+    """RNR and Future Prospect keep their own stage but have no page — both share
+    Rejected, badged."""
+    assert _stages_named_in(SEGMENTS["rejected"]) == {"rejected", "rnr", "future_prospect"}
+
+
+def test_future_prospect_is_parked_like_rnr():
+    """A re-submitted qualify form or a saved callback must not silently pull a parked
+    buyer back into the funnel. Bringing one back is the manual stage setter's job."""
+    assert "future_prospect" in _stages_named_in(_TERMINAL)
+
+
+def test_the_boot_migration_no_longer_folds_future_prospect():
+    """The regression that would have shipped silently. run_migrations runs on EVERY
+    boot, and it used to rewrite `future_prospect` → `rejected`. Left in, every future
+    prospect set today would vanish on the next deploy — after testing had passed.
+
+    Python comments are stripped first: the migration's own comment explains why
+    future_prospect is no longer in the list, and would otherwise match."""
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parents[1] / "app" / "migrations.py").read_text()
+    code = "\n".join(line.split("#", 1)[0] for line in src.splitlines())
+    for in_list in re.findall(r"stage IN \(([^)]*)\)", code):
+        assert "future_prospect" not in in_list, f"a migration still folds it: ({in_list})"
 
 
 def test_segments_are_pure_stage_predicates():
@@ -86,7 +108,8 @@ def test_every_stage_written_by_the_app_is_a_real_stage():
 
 def test_retired_stages_are_gone():
     """visit_planned and contacted were folded into qualified by the migration."""
-    for retired in ("visit_planned", "contacted", "lost", "future_prospect", "timepass"):
+    # future_prospect was retired here once and revived 14 Sep — see the test above
+    for retired in ("visit_planned", "contacted", "lost", "timepass"):
         assert retired not in STAGES
         for seg, pred in SEGMENTS.items():
             assert retired not in pred, f"segment '{seg}' still references '{retired}'"

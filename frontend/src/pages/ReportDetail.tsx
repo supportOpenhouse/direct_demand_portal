@@ -14,7 +14,9 @@ import { useRmDayLeads, useRmReportDays } from "../lib/queries";
 import { RmDayLeadRow, RmDayRow } from "../lib/api";
 import { asPreset, COLUMNS, dayLabel, hhmm, PRESETS, Preset, rangeFor, todayIST } from "../lib/report";
 import { downloadCsv } from "../lib/csv";
-import { stageClass, stageLabel } from "../lib/leads";
+import { stageLabel } from "../lib/leads";
+import { IconDownload } from "../components/icons";
+import { StageChip } from "../components/StageChip";
 
 /* A day's numbers as pills. Every metric is rendered even at zero — a day with four
    qualifieds and no calls is a different day from one with neither, and hiding the
@@ -33,7 +35,7 @@ function Pills({ row }: { row: RmDayRow }) {
 
 function Stage({ s }: { s: string | null }) {
   if (!s) return <span className="rp-sub">—</span>;
-  return <span className={`stage ${stageClass(s)}`}>{stageLabel(s)}</span>;
+  return <StageChip stage={s} />;
 }
 
 /* The leads behind one day's numbers.
@@ -68,7 +70,7 @@ function DayLeads({ email, day, onClose }: { email: string; day: string; onClose
           <h3>{dayLabel(day)}</h3>
           <div className="rd-modal-actions">
             <span className="rp-sub">{items.length} lead{items.length === 1 ? "" : "s"}</span>
-            <button className="btn ghost sm" onClick={exportCsv} disabled={!items.length}>⬇ Export CSV</button>
+            <button className="btn ghost sm" onClick={exportCsv} disabled={!items.length}><IconDownload /> Export CSV</button>
             <button className="btn ghost sm" onClick={onClose}>Close</button>
           </div>
         </div>
@@ -210,7 +212,7 @@ export default function ReportDetail() {
               </button>
             ))}
           </div>
-          <button className="btn ghost sm" onClick={exportCsv} disabled={!days.length}>⬇ Export CSV</button>
+          <button className="btn ghost sm" onClick={exportCsv} disabled={!days.length}><IconDownload /> Export CSV</button>
           {isFetching && <span className="rp-sub">updating…</span>}
           {/* Only Custom gets the inputs — for every other preset they'd be a
               read-only echo of the pill already highlighted. Rendered last and

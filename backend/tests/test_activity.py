@@ -121,3 +121,49 @@ def test_an_unknown_id_is_left_alone_rather_than_blanked():
                          field="assigned_to", before="id-9", after=None),
                  names={})
     assert r["before_value"] == "id-9"
+
+
+# ── backfill: "{Lead} created on {date} via {source}" ───────────────────────────
+import re  # noqa: E402
+
+from app.services.activity import (  # noqa: E402
+    BACKFILL_LEAD_CREATED,
+    COUNT_MISSING_LEAD_CREATED,
+)
+
+
+def _code(stmt) -> str:
+    """Collapsed SQL, comments stripped — the comments explain now() and text casts in
+    words, and a needle would otherwise match the prose instead of the statement."""
+    return re.sub(r"\s+", " ", re.sub(r"--[^\n]*", "", str(stmt))).strip()
+
+
+def test_backfilled_entries_carry_the_leads_own_date_not_today():
+    """The shared _INSERT stamps now(). Through it, thousands of historical leads would
+    all claim to have been created this morning."""
+    src = _code(BACKFILL_LEAD_CREATED)
+    assert "l.created_at" in src
+    assert "now()" not in src
+
+
+def test_the_backfill_is_safe_to_run_twice():
+    """A lead that already has an entry — every WhatsApp-created lead does — is skipped,
+    and the count the script reports uses the very same predicate."""
+    for stmt in (BACKFILL_LEAD_CREATED, COUNT_MISSING_LEAD_CREATED):
+        src = _code(stmt)
+        assert "NOT EXISTS" in src and "a.action = 'lead_created'" in src
+
+
+def test_the_backfill_joins_by_casting_the_uuid_to_text():
+    """entity_id is TEXT and holds non-uuid keys for other entity types; a text→uuid
+    cast raises on the first one."""
+    src = _code(BACKFILL_LEAD_CREATED)
+    assert "a.entity_id = l.id::text" in src
+    assert "entity_id::uuid" not in src
+
+
+def test_the_backfill_records_the_current_source_and_marks_itself():
+    src = _code(BACKFILL_LEAD_CREATED)
+    assert "'source', l.source" in src
+    assert "'backfilled', true" in src
+    assert "'lead_created'" in src

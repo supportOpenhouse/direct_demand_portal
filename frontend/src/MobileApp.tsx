@@ -4,18 +4,27 @@
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useLeads } from "./lib/queries";
-import { leadMatchesQuery, srcClass, srcLabel, stageClass, stageLabel } from "./lib/leads";
+import { leadMatchesQuery, srcClass, srcLabel } from "./lib/leads";
 import { useSearch } from "./components/SearchContext";
 import { useAuth } from "./components/AuthContext";
 import GlobalSearch from "./components/GlobalSearch";
 import { IconFollowup, IconRnr } from "./components/Sidebar";
 import {
-  IconSearch, OpenhouseLogo, IconDashboard, IconPlus, IconQualified,
-  IconFunnel, IconCheckCircle, IconReject, IconHome,
+  IconCheckCircle,
+  IconHomeNav,
+  IconFunnel,
+  IconHome,
+  IconPlus,
+  IconQualified,
+  IconReject,
+  IconSearch,
+  IconX,
+  OpenhouseLogo,
 } from "./components/icons";
+import { StageChip } from "./components/StageChip";
 
 export const MOBILE_NAV = [
-  { to: "/", label: "Dashboard", end: true, icon: IconDashboard },
+  { to: "/", label: "Home", end: true, icon: IconHomeNav },
   { to: "/leads/new", label: "New Leads", seg: "new", icon: IconPlus },
   { to: "/leads/call-not-received", label: "Call Not Received", seg: "call_not_received", icon: IconRnr },
   { to: "/leads/followup", label: "Follow Up", seg: "followup", icon: IconFollowup },
@@ -34,7 +43,7 @@ function LogoutConfirm({ onCancel, onYes }: { onCancel: () => void; onYes: () =>
         <div className="mb" style={{ fontSize: 15, fontWeight: 600 }}>Do you want to Log Out?</div>
         <div className="mf">
           <button className="btn ghost" onClick={onCancel}>Cancel</button>
-          <button className="btn" style={{ background: "var(--coral)", color: "#fff" }} onClick={onYes}>Yes</button>
+          <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }} onClick={onYes}>Yes</button>
         </div>
       </div>
     </div>
@@ -91,7 +100,7 @@ export default function MobileApp() {
         {/* always mounted so the width transition has something to animate */}
         <div className={"m-search" + (searching ? " open" : "")}><GlobalSearch openLead /></div>
         <button className="m-icon" onClick={toggleSearch} aria-label={searching ? "Close search" : "Search"}>
-          {searching ? "✕" : <IconSearch />}
+          {searching ? <IconX /> : <IconSearch />}
         </button>
       </header>
 
@@ -144,7 +153,7 @@ export function MobileLeads({ segment }: { segment: string }) {
           <div className="m-row-line">
             <span className="m-ph">{l.phone || "—"}</span>
             {l.society && <span className="m-soc">{l.society}</span>}
-            <span className={`stage ${stageClass(l.stage)}`} style={{ marginLeft: "auto" }}>{stageLabel(l.stage)}</span>
+            <StageChip stage={l.stage} style={{ marginLeft: "auto" }} />
           </div>
         </button>
       ))}

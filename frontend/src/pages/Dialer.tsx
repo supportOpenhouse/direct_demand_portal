@@ -14,6 +14,7 @@ import { useCreateCampaign, useDialerFields, useRulePreview } from "../lib/queri
 import { DialerField, RuleGroup, RuleNode, RuleValue } from "../lib/api";
 import { useDebounce } from "../lib/useDebounce";
 import { useToast } from "../components/Toast";
+import { IconClock } from "../components/icons";
 
 const nid = () => "n" + Math.random().toString(36).slice(2, 8);
 
@@ -231,14 +232,14 @@ export default function Dialer() {
   function launch() {
     // Named first: "Untitled campaign" ×6 in Previous Campaigns is unreadable, and
     // the name is the only thing distinguishing two runs of the same rules.
-    if (!name.trim()) return toast("Give this campaign a name", "gold", "⚠");
-    if (!rms.length) return toast("Pick at least one RM — they do the calling", "gold", "⚠");
-    if (!matched) return toast("No leads match these rules", "gold", "⚠");
+    if (!name.trim()) return toast("Give this campaign a name", "gold");
+    if (!rms.length) return toast("Pick at least one RM — they do the calling", "gold");
+    if (!matched) return toast("No leads match these rules", "gold");
     // The server refuses this too; catching it here saves a round trip and puts the
     // reason next to the field that caused it.
     if (windowHasPassed(win.start, win.end)) {
       return toast(`${win.start}–${win.end} IST already ended today — nothing would be dialled`,
-        "gold", "⏰");
+        "gold");
     }
     createCampaign.mutate({
       name: name.trim(), rules: tree, rms, strategy,
@@ -248,13 +249,13 @@ export default function Dialer() {
       onSuccess: (d) => {
         const dropped = d.unowned ? ` · ${d.unowned} not assigned to this pool` : "";
         toast(`Dialing ${d.queued} leads across ${rms.length} RM${rms.length > 1 ? "s" : ""}${dropped}`,
-          d.queued ? "blue" : "gold", "📞");
+          d.queued ? "blue" : "gold");
         // Monitoring lives on Previous Campaigns now — leaving them on a spent form
         // with no live panel would just look like nothing happened.
         resetForm();
         navigate("/dialer/previous");
       },
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onError: (e: any) => toast(e.message, "gold"),
     });
   }
 
@@ -285,7 +286,7 @@ export default function Dialer() {
 
       <div className="dl-layout">
         <main className="dl-main">
-          <section className="card">
+          <section className="dl-step">
             <div className="dl-cardhead">
               <div><div className="dl-eyebrow">Step 1</div><h2 className="dl-cardtitle">Who gets called</h2></div>
               <span className="dl-count">
@@ -300,7 +301,7 @@ export default function Dialer() {
             </p>
           </section>
 
-          <section className="card">
+          <section className="dl-step">
             <div className="dl-cardhead">
               <div><div className="dl-eyebrow">Step 2</div><h2 className="dl-cardtitle">Who calls them</h2></div>
             </div>
@@ -346,7 +347,7 @@ export default function Dialer() {
             </p>
           </section>
 
-          <section className="card">
+          <section className="dl-step">
             <div className="dl-cardhead">
               <div><div className="dl-eyebrow">Step 3</div><h2 className="dl-cardtitle">Pacing</h2></div>
             </div>
@@ -366,7 +367,7 @@ export default function Dialer() {
                 </div>
                 {windowHasPassed(win.start, win.end) && (
                   <em className="dl-hint" style={{ color: "var(--coral)" }}>
-                    ⏰ Already ended today — this campaign would dial nobody until tomorrow.
+                    <IconClock /> Already ended today — this campaign would dial nobody until tomorrow.
                   </em>
                 )}
               </label>

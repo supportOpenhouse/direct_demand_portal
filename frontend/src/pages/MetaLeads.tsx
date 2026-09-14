@@ -1,8 +1,9 @@
 /* Meta Leads — every lead-ads webhook delivery and the form behind it.
 
    Same shape as the WhatsApp page: a list on the left, the selected item's detail on
-   the right, both scrolling inside a fixed panel rather than running to the bottom of
-   the viewport.
+   the right, both scrolling inside their own panel rather than running to the bottom
+   of the viewport. The panel height is CSS (`.ml-panels`) — it fills the view with a
+   560px floor, which is the WhatsApp page's fixed height.
 
    Admin only. Unlike WhatsApp there is no per-lead RM view: a Meta delivery is a
    record of what arrived, not a conversation anyone owns, so there is nothing here to
@@ -12,13 +13,14 @@
    of showing it: those leads exist at Meta and are NOT in the CRM, and this is the
    only place that difference is visible. */
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
-import { useMetaLeads } from "../lib/queries";
+import { useAssignees, useMetaLeads } from "../lib/queries";
 import { MetaLeadEvent } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
-
-// fixed panel height — matches the WhatsApp page so the two read as siblings
-const PANEL_H = 560;
+import { SkeletonRows } from "../components/Skeleton";
+import { FilterBar, useFilterValues } from "../components/FilterBar";
+import { matchesOption, rmOptions, uniqueValues } from "../components/Filters";
+import { LeadLink } from "../components/LeadModal";
+import { metaQuestionLabel } from "../lib/leads";
 
 const STATUS_STYLE: Record<string, { bg: string; fg: string; label: string }> = {
   success:   { bg: "var(--emerald-soft)", fg: "var(--emerald)", label: "in CRM" },
@@ -32,13 +34,6 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span className="bucket-tag" style={{ background: s.bg, color: s.fg }}>{s.label}</span>
   );
-}
-
-/* Meta's field keys are machine names ("your_budget_range", "where_do_you_currently
-   live"). The form asked them in words, so show words. */
-function prettyQuestion(name: string): string {
-  const s = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
-  return s ? s[0].toUpperCase() + s.slice(1) : name;
 }
 
 function when(iso: string | null): string {
@@ -66,6 +61,10 @@ export default function MetaLeads() {
   // "everything" plus one entry per status that actually occurs — a filter for a
   // status with no rows is a control that can only disappoint
   const [filter, setFilter] = useState<string>("all");
+  /* Attribution filters. These live on meta_lead_events (campaign/adset/ad), which
+     is the only place the delivery log can be sliced by where the lead came from. */
+  const { values: f, set, clear } = useFilterValues({ campaign: "", adset: "", ad: "", form: "", owner: "" });
+  const assignees = useAssignees();
 
   const items = data?.items ?? [];
   const counts = useMemo(() => {
@@ -75,8 +74,16 @@ export default function MetaLeads() {
   }, [items]);
 
   const shown = useMemo(
-    () => (filter === "all" ? items : items.filter((e) => e.status === filter)),
-    [items, filter],
+    () => items.filter((e) =>
+      (filter === "all" || e.status === filter) &&
+      (!f.campaign || (e.campaign_name ?? "") === f.campaign) &&
+      (!f.adset || (e.adset_name ?? "") === f.adset) &&
+      (!f.ad || (e.ad_name ?? "") === f.ad) &&
+      (!f.form || (e.form_id ?? "") === f.form) &&
+      // the RM who owns the lead this delivery produced; a failed delivery has no
+      // lead at all, so it only matches the Unassigned bucket
+      matchesOption(e.lead?.assigned_to, f.owner)),
+    [items, filter, f],
   );
   const selected = shown.find((e) => e.meta_lead_id === active) ?? shown[0] ?? null;
 
@@ -93,7 +100,7 @@ export default function MetaLeads() {
     );
   }
 
-  if (isLoading) return <div className="card"><div className="empty" style={{ padding: 48 }}>Loading…</div></div>;
+  if (isLoading) return <div className="card"><SkeletonRows rows={7} /></div>;
   if (error) {
     return (
       <div className="card">
@@ -119,16 +126,28 @@ export default function MetaLeads() {
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
           {/* selected = solid, rest = ghost. There is no `.btn.active` in the
               stylesheet, so a class name would have been silently inert. */}
-          <button className={filter === "all" ? "btn sm" : "btn ghost sm"}
+          <button className={filter === "all" ? "btn primary sm" : "btn ghost sm"}
             onClick={() => setFilter("all")}>All</button>
           {Object.keys(STATUS_STYLE)
             .filter((s) => counts[s])
             .map((s) => (
-              <button key={s} className={filter === s ? "btn sm" : "btn ghost sm"}
+              <button key={s} className={filter === s ? "btn primary sm" : "btn ghost sm"}
                 onClick={() => setFilter(s)}>
                 {STATUS_STYLE[s].label} ({counts[s]})
               </button>
             ))}
+          <FilterBar
+            fields={[
+              { key: "campaign", label: "Campaign", options: uniqueValues(items, (e) => e.campaign_name) },
+              { key: "adset", label: "Ad set", options: uniqueValues(items, (e) => e.adset_name) },
+              { key: "ad", label: "Ad", options: uniqueValues(items, (e) => e.ad_name) },
+              { key: "form", label: "Form", options: uniqueValues(items, (e) => e.form_id) },
+              { key: "owner", label: "Assigned RM",
+                options: rmOptions(items, (e) => e.lead?.assigned_to,
+                                   (assignees.data?.items ?? []).map((a) => a.name), f.owner) },
+            ]}
+            values={f} onChange={set} onClear={clear}
+          />
         </div>
       </div>
 
@@ -145,73 +164,50 @@ export default function MetaLeads() {
           </div>
         </div>
       ) : (
-        <div style={{
-          display: "grid", gridTemplateColumns: "minmax(220px, 320px) 1fr", gap: 12,
-          height: PANEL_H,
-        }}>
+        <div className="ml-panels">
           {/* delivery list */}
-          <div className="card" style={{ padding: 0, overflowY: "auto" }}>
-            {shown.map((e, i) => {
-              const isSel = e.meta_lead_id === selected?.meta_lead_id;
-              return (
-                <button
-                  key={e.meta_lead_id}
-                  onClick={() => setActive(e.meta_lead_id)}
-                  style={{
-                    display: "block", width: "100%", textAlign: "left", padding: "11px 13px",
-                    border: 0, font: "inherit", cursor: "pointer",
-                    borderTop: i ? "1px solid var(--line)" : undefined,
-                    // failed rows carry their own background: they are the rows that
-                    // need acting on, and they must read as different from a glance
-                    background: isSel ? "var(--panel-2)"
-                      : e.status === "failed" ? "var(--coral-soft)" : "transparent",
-                    borderLeft: e.lead ? "3px solid var(--amber)" : "3px solid transparent",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                    <span style={{ fontWeight: 600, color: "var(--ink-2)", overflow: "hidden",
-                                   textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {labelOf(e)}
-                    </span>
-                    <StatusChip status={e.status} />
-                  </div>
-                  <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3,
-                                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {e.campaign_name || "no campaign"} · {when(e.received_at)}
-                  </div>
-                </button>
-              );
-            })}
+          <div className="card ml-list">
+            {shown.map((e) => (
+              <button
+                key={e.meta_lead_id}
+                onClick={() => setActive(e.meta_lead_id)}
+                className={"ml-item"
+                  + (e.meta_lead_id === selected?.meta_lead_id ? " on" : "")
+                  + (e.status === "failed" ? " bad" : "")}
+              >
+                <div className="ml-item-top">
+                  <span className="ml-item-name">{labelOf(e)}</span>
+                  <StatusChip status={e.status} />
+                </div>
+                <div className="ml-item-sub">
+                  {e.campaign_name || "no campaign"} · {when(e.received_at)}
+                </div>
+              </button>
+            ))}
           </div>
 
           {/* detail */}
-          <div className="card" style={{ overflowY: "auto" }}>
+          <div className="card ml-detail">
             {selected && (
               <>
-                <div style={{ display: "flex", justifyContent: "space-between",
-                              alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+                <div className="ml-head">
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 16, color: "var(--ink-2)" }}>
-                      {labelOf(selected)}
-                    </div>
-                    <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>
+                    <div className="ml-head-name">{labelOf(selected)}</div>
+                    <div className="ml-head-sub">
                       Received {when(selected.received_at)} · leadgen_id {selected.meta_lead_id}
                     </div>
                   </div>
                   {selected.lead ? (
-                    <Link className="btn sm" to={`/leads/${selected.lead.id}`}>
+                    <LeadLink className="btn sm" id={selected.lead.id}>
                       Open lead →
-                    </Link>
+                    </LeadLink>
                   ) : (
                     <StatusChip status={selected.status} />
                   )}
                 </div>
 
                 {selected.status === "failed" && (
-                  <div style={{
-                    background: "var(--coral-soft)", color: "var(--coral)", padding: "10px 12px",
-                    borderRadius: 8, fontSize: 12.5, marginBottom: 14, lineHeight: 1.55,
-                  }}>
+                  <div className="ml-fail">
                     <b>Not in the CRM.</b> {selected.error_message || "No error recorded."}
                     <div style={{ marginTop: 4, opacity: 0.85 }}>
                       Attempt {selected.attempts}. The lead still exists at Meta — it can be
@@ -222,18 +218,16 @@ export default function MetaLeads() {
 
                 <Section title="The form">
                   {selected.responses.length === 0 ? (
-                    <div style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                    <div className="ml-hint">
                       No answers recorded — the lead was never fetched from Meta.
                     </div>
                   ) : (
-                    <table className="table" style={{ width: "100%" }}>
+                    <table className="ml-fields">
                       <tbody>
                         {selected.responses.map((r) => (
                           <tr key={r.question}>
-                            <td style={{ width: "45%", color: "var(--muted)", fontSize: 12.5 }}>
-                              {prettyQuestion(r.question)}
-                            </td>
-                            <td style={{ fontWeight: 500 }}>{r.answer || "—"}</td>
+                            <td>{metaQuestionLabel(r.question)}</td>
+                            <td>{r.answer || "—"}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -242,7 +236,7 @@ export default function MetaLeads() {
                 </Section>
 
                 <Section title="Attribution">
-                  <table className="table" style={{ width: "100%" }}>
+                  <table className="ml-fields">
                     <tbody>
                       <Row label="Campaign" value={selected.campaign_name} id={selected.campaign_id} />
                       <Row label="Ad set" value={selected.adset_name} id={selected.adset_id} />
@@ -251,7 +245,7 @@ export default function MetaLeads() {
                     </tbody>
                   </table>
                   {!selected.campaign_id && (
-                    <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 6 }}>
+                    <div className="ml-hint">
                       Test leads from the Lead Ads Testing Tool carry no campaign — that’s normal.
                     </div>
                   )}
@@ -259,7 +253,7 @@ export default function MetaLeads() {
 
                 {selected.lead && (
                   <Section title="In the CRM">
-                    <table className="table" style={{ width: "100%" }}>
+                    <table className="ml-fields">
                       <tbody>
                         <Row label="Phone" value={selected.lead.phone} />
                         <Row label="City" value={selected.lead.city} />
@@ -280,11 +274,8 @@ export default function MetaLeads() {
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.6, textTransform: "uppercase",
-                    color: "var(--muted)", marginBottom: 6 }}>
-        {title}
-      </div>
+    <div className="ml-sec">
+      <div className="ml-sec-h">{title}</div>
       {children}
     </div>
   );
@@ -294,12 +285,10 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function Row({ label, value, id }: { label: string; value?: string | null; id?: string | null }) {
   return (
     <tr>
-      <td style={{ width: "45%", color: "var(--muted)", fontSize: 12.5 }}>{label}</td>
-      <td style={{ fontWeight: 500 }}>
-        {value || (id ? <span style={{ color: "var(--muted)" }}>{id}</span> : "—")}
-        {value && id && (
-          <span style={{ color: "var(--muted)", fontSize: 11, marginLeft: 6 }}>{id}</span>
-        )}
+      <td>{label}</td>
+      <td>
+        {value || (id ? <span className="ml-id bare">{id}</span> : "—")}
+        {value && id && <span className="ml-id">{id}</span>}
       </td>
     </tr>
   );

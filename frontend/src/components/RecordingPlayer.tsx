@@ -111,7 +111,7 @@ export default function RecordingPlayer({ src, size = 34 }: { src: string; size?
       {/* Both providers hand us a direct URL — Bonvoice's downloadvoice endpoint,
           Huvo's GCS object — neither of which needs an Authorization header from us,
           so a plain link works and no token goes anywhere near the URL. */}
-      <span style={{ fontFamily: "'Spline Sans Mono'", fontSize: 12, color: "var(--muted)" }}>
+      <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
         <RecordingLink url={src}>{fmt(t)}</RecordingLink>
       </span>
     </span>

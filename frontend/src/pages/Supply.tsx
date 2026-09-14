@@ -2,10 +2,11 @@
 import { useState } from "react";
 import { useSupply, formatPrice } from "../lib/queries";
 import { SupplyItem } from "../lib/api";
-import { useSearch, matches } from "../components/SearchContext";
-import { FilterSelect, uniqueValues, BudgetRange, inBudget } from "../components/Filters";
+import { matches } from "../components/SearchContext";
+import { uniqueValues, inBudget } from "../components/Filters";
 import { useSort, SortTh } from "../lib/useSort";
 import { useAuth } from "../components/AuthContext";
+import { FilterBar, useFilterValues } from "../components/FilterBar";
 
 /* active pipeline — live cp_inventory_status.supply_status (dead/rejected/cancelled
    hidden); closest-to-landing first. Future Prospect = Hold + Price High + Future Prospect */
@@ -28,7 +29,7 @@ function PriceCell({ s }: { s: SupplyItem }) {
     <div title={s.price_tooltip || ""} style={{ cursor: "help", lineHeight: 1.35 }}>
       <div style={{ fontWeight: 700, color: "var(--gold)" }}>Check Price</div>
       {s.price_reason && (
-        <span className="cfg-chip" style={{ background: "var(--slate-soft)", color: "var(--slate)", fontSize: 9.5, fontFamily: "'Spline Sans Mono'" }}>
+        <span className="cfg-chip" style={{ background: "var(--slate-soft)", color: "var(--slate)", fontSize: 9.5, fontFamily: "var(--font-mono)" }}>
           {s.price_reason}
         </span>
       )}
@@ -47,13 +48,15 @@ function unitText(s: SupplyItem, showUnit: boolean): string {
 
 export default function Supply() {
   const { data, isLoading } = useSupply();
-  const { query } = useSearch();
+  // Local, now that the topbar no longer carries a global box.
+  const [query, setQuery] = useState("");
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
-  const [city, setCity] = useState("");
-  const [config, setConfig] = useState("");
-  const [budMin, setBudMin] = useState("");
-  const [budMax, setBudMax] = useState("");
+  const { values: f, set, clear } = useFilterValues({
+    city: "", config: "", budget: { min: "", max: "" },
+  });
+  const { city, config } = f;
+  const budMin = f.budget.min, budMax = f.budget.max;
 
   const all = data?.items ?? [];
   const base = all
@@ -80,25 +83,18 @@ export default function Supply() {
   return (
     <>
       <div className="section-head">
-        <div />
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <FilterSelect label="City" value={city} options={uniqueValues(all, (s) => s.city)} onChange={setCity} width={130} />
-          <FilterSelect label="Config" value={config} options={uniqueValues(all, (s) => s.configuration)} onChange={setConfig} width={130} />
-          {isAdmin && <BudgetRange min={budMin} max={budMax} onMin={setBudMin} onMax={setBudMax} />}
-          {(city || config || budMin || budMax) && (
-            <button
-              className="btn ghost sm"
-              onClick={() => {
-                setCity("");
-                setConfig("");
-                setBudMin("");
-                setBudMax("");
-              }}
-            >
-              Clear
-            </button>
-          )}
+        <div className="field" style={{ marginBottom: 0, minWidth: 260, flex: 1, maxWidth: 420 }}>
+          <input value={query} onChange={(e) => setQuery(e.target.value)}
+                 placeholder="Search society, locality, city, config, stage" />
         </div>
+        <FilterBar
+          fields={[
+            { key: "city", label: "City", options: uniqueValues(all, (s) => s.city) },
+            { key: "config", label: "Config", options: uniqueValues(all, (s) => s.configuration) },
+            { key: "budget", label: "Budget (₹ L)", kind: "range", hidden: !isAdmin },
+          ]}
+          values={f} onChange={set} onClear={clear}
+        />
       </div>
 
       <div className="card">
@@ -137,7 +133,7 @@ export default function Supply() {
             <tbody>
               {items.map((s) => (
                 <tr key={s.id}>
-                  {isAdmin && <td style={{ fontFamily: "'Spline Sans Mono'", fontSize: 12 }}>{s.id}</td>}
+                  {isAdmin && <td style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{s.id}</td>}
                   <td style={{ fontWeight: 600 }}>{s.society || "—"}</td>
                   <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{s.locality || "—"}</td>
                   <td style={{ fontSize: 12.5 }}>{s.city || "—"}</td>

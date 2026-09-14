@@ -1,6 +1,7 @@
 /* Reusable click-to-sort for any table. Pages declare per-column accessors;
    <SortTh> renders a clickable header with a direction caret. Nulls sort last. */
 import { useMemo, useState } from "react";
+import { IconChevronDown, IconChevronUp } from "../components/icons";
 
 type Dir = "asc" | "desc";
 type Accessor<T> = (item: T) => string | number | null | undefined;
@@ -63,7 +64,7 @@ export function SortTh({
     >
       {label}
       <span style={{ marginLeft: 5, opacity: active ? 1 : 0.25, fontSize: 9 }}>
-        {active ? (dir === "asc" ? "▲" : "▼") : "▲▼"}
+        {active ? (dir === "asc" ? <IconChevronUp /> : <IconChevronDown />) : <IconChevronDown />}
       </span>
     </th>
   );

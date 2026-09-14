@@ -7,45 +7,223 @@
    TAT     : traffic-light (green / amber / red)
    Sources : kept on brand colours, harmonised soft backgrounds
    ============================================================ */
-:root{
+/* ── tokens ──────────────────────────────────────────────────────────────────
+   Every colour in this file resolves here. Light is the default; dark redefines
+   only what changes. scripts/check-theme.mjs fails the build if a raw colour
+   appears anywhere outside these three blocks. */
+:root,[data-theme='light']{
+  /* brand — swaps with the theme */
+  --brand:#2c66eb; --brand-strong:#1d4fd0; --brand-deep:#194a9e;
+  --brand-soft:#e8f0fe; --brand-softer:#f4f8ff; --brand-ring:rgba(44,102,235,.18);
+  /* text ON a filled surface. White on the light-mode blue; dark ink on the
+     dark-mode cyan, which is a LIGHT hue — white on #07b6d4 fails contrast. */
+  --on-brand:#ffffff;
+  --on-accent:#ffffff;
+  /* white washes that sit ON a saturated fill — correct in both themes, because
+     what they overlay is a coloured surface, not the page. */
+  --on-accent-1:rgba(255,255,255,.10); --on-accent-2:rgba(255,255,255,.18);
+  --on-accent-3:rgba(255,255,255,.28); --on-accent-4:rgba(255,255,255,.72);
+  --on-accent-5:rgba(255,255,255,.95);
+  /* translucent topbar/sheet fill behind a backdrop-filter — this one DOES flip */
+  --panel-blur:rgba(255,255,255,.72);
+  /* pulse rings: the animation fades each to transparent */
+  --emerald-ring:rgba(5,150,105,.55); --amber-ring:rgba(214,131,9,.5);
+  --coral-ring:rgba(225,74,90,.5);    --brand-glow:rgba(37,99,235,.35);
+
   /* neutrals (cool) */
   --bg:#f5f7fa;
   --panel:#ffffff;
   --panel-2:#f2f5f9;
+  --panel-3:#e9eef5;
   --ink:#0f172a;
   --ink-2:#46536b;
+  --ink-3:#637381;
   --muted:#8a94a6;
+  --muted-2:#919eab;
   --line:#e6eaf1;
   --line-2:#eef1f6;
-  --ink-sidebar:#0e1420;
-  --ink-sidebar-2:#1a2434;
+  --line-3:#d7dce5;
+  --scrim:rgba(15,23,42,.50);
+  --scrim-2:rgba(15,23,42,.16);
 
-  /* semantic accents — each with a soft tint */
-  --emerald:#059669;  --emerald-soft:#d6f3e5;   /* won / success      */
-  --blue:#2563eb;     --blue-soft:#dde8fe;       /* new                    */
-  --blue-deep:#1e40af;                           /* lead links in call logs */
-  --cyan:#0e8fa8;     --cyan-soft:#cdeef4;       /* call not received      */
-  --amber:#d68309;    --amber-soft:#fdeccb;      /* visit scheduled        */
-  --violet:#7c3aed;   --violet-soft:#ebe5fd;     /* AI summary, supply AMA */
-  --indigo:#4f46e5;   --indigo-soft:#e2e2fc;     /* qualified              */
-  --gold:#b8860b;     --gold-soft:#fbf0cc;       /* gold mine, supply hold */
-  --coral:#e11d48;    --coral-soft:#ffe1e6;      /* rejected + RNR, breach */
-  --slate:#64748b;    --slate-soft:#eceff4;      /* follow up              */
+  /* sidebar — a light stone rail. The accent appears here ONLY as the active
+     item's tint and its 3px edge indicator. */
+  --sidebar-bg:#ffffff;
+  --sidebar-bg-2:#f7f9fc;
+  --sidebar-fg:#5a6478;
+  --sidebar-fg-dim:#96a0b2;
+  --sidebar-fg-strong:#0f172a;
+  --sidebar-hover:#f2f5f9;
+  --sidebar-active-bg:var(--brand-soft);
+  --sidebar-active-fg:var(--brand);
+  --sidebar-border:var(--line);
+  --sidebar-rail:var(--brand);
+
+  /* semantic accents — each with a soft tint. Stage meanings are UNCHANGED;
+     dark mode redefines the values, never the mapping. */
+  --emerald:#00a85a;  --emerald-soft:#e0fff1;  --emerald-deep:#009952;   /* won / success     */
+  --emerald-soft-2:#b8ffde;
+  --blue:#4791ff;     --blue-soft:#e0edff;     --blue-deep:#003d99;      /* new               */
+  --blue-soft-2:#b8d4ff;
+  --cyan:#00a1c2;     --cyan-soft:#e0faff;                               /* call not received */
+  --amber:#eb6d00;    --amber-soft:#ffefe0;    --amber-deep:#994700;     /* visit scheduled   */
+  --amber-soft-2:#ffd9b8;
+  --violet:#7c3aed;   --violet-soft:#ebe5fd;                             /* supply AMA        */
+  --prospect:#43a800; --prospect-soft:#e8f5e0;                           /* future prospect   */
+  --indigo:#9466ff;   --indigo-soft:#eae0ff;                             /* qualified         */
+  --gold:#b88d00;     --gold-soft:#fff8e0;     --gold-deep:#997500;      /* gold mine         */
+  --gold-soft-2:#ffeeb8;
+  --coral:#ff527d;    --coral-soft:#ffe0e8;    --coral-deep:#990026;     /* rejected / RNR    */
+  --coral-soft-2:#ffb8c9;
+  --slate:#e747ff;    --slate-soft:#fbe0ff;                              /* follow up         */
+
+  /* third-party marks. These identify someone else's product, so they are
+     theme-INVARIANT — a WhatsApp green that shifts in dark mode is just wrong. */
+  --oh-mark:#ff6b2b;
+  /* The click-to-call action. Its own hue so it is never confused with the
+     emerald "connected / success" state it used to borrow. */
+  --call:#ff329a; --call-soft:#ffe3f1; --call-soft-2:#ffc9e4; --call-deep:#d4137a;
+  --wa-green:#25d366; --wa-green-2:#25b15a; --wa-green-3:#1d964c; --wa-green-soft:#d6f5e0;
+  --fb-blue:#1877f2;  --google-green:#34a853;
+  /* Openhouse supply orange — the Direct Inventory brand, used by the Live
+     Inventory page and the Book Visits flow. */
+  --supply-orange:#fa541c; --supply-orange-2:#d4380d; --supply-orange-3:#c2410c;
+  --supply-orange-soft:#fff2e8; --supply-orange-soft-2:#ffe4d2;
+
+  /* type */
+  --font-display:"Fraunces",Georgia,serif;
+  --font-body:"Inter",system-ui,-apple-system,sans-serif;
+  --font-mono:"Spline Sans Mono",ui-monospace,monospace;
+
+  /* shape + depth */
+  /* 45° hazard-tape stripes for flagged table rows. Pale on purpose: the text
+     sits on top of these, so the band is a tint, never a solid. */
 
   --radius:14px;
+  /* One height for every control on a toolbar row, so a .btn, a .btn.sm, an
+     input and a segmented pill line up instead of stair-stepping. */
+  /* One height for every control. 38px on the page; the TOPBAR redefines it to
+     Direct Inventory's 34px for its own strip, which is a denser row sitting in a
+     60px bar — shrinking the page toolbar to match cramped it. */
+  --control-h:38px;
+  /* Button/input corner, matching Direct Inventory's --r-input. */
+  --r-input:11px;
   --shadow:0 1px 2px rgba(15,23,42,.04), 0 10px 30px -14px rgba(15,23,42,.16);
   --shadow-lg:0 28px 64px -22px rgba(15,23,42,.40);
+
+  /* motion — named for the JOB, not the number, so a retune is one edit */
+  --t-press:.1s; --t:.14s; --t-move:.18s; --t-enter:.24s; --t-sheet:.28s;
+  --ease:cubic-bezier(.4,0,.2,1);
+  --ease-out:cubic-bezier(.22,.61,.36,1);
+  --ease-inout:cubic-bezier(.76,0,.24,1);
+
+  accent-color:var(--brand);
+  color-scheme:light;
 }
+
+[data-theme='dark']{
+  --brand:#07b6d4; --brand-strong:#22d3ee; --brand-deep:#38dcf0;
+  --brand-soft:rgba(7,182,212,.18); --brand-softer:rgba(7,182,212,.10);
+  --brand-ring:rgba(7,182,212,.32);
+  --on-brand:#062028;
+  --on-accent:#0f1115;
+  --panel-blur:rgba(22,26,32,.78);
+  --emerald-ring:rgba(52,211,153,.55); --amber-ring:rgba(251,191,36,.5);
+  --coral-ring:rgba(251,113,133,.5);   --brand-glow:rgba(7,182,212,.40);
+
+  --bg:#0f1115;
+  --panel:#161a20;
+  --panel-2:#1d222a;
+  --panel-3:#242b35;
+  --ink:#f1f4f9;
+  --ink-2:#c2cad8;
+  --ink-3:#9aa6bc;
+  --muted:#8892a3;
+  --muted-2:#78828f;
+  --line:#262d38;
+  --line-2:#1f252e;
+  --line-3:#323b48;
+  --scrim:rgba(0,0,0,.65);
+  --scrim-2:rgba(0,0,0,.35);
+
+  --sidebar-bg:#0b0d11;
+  --sidebar-bg-2:#12161c;
+  --sidebar-fg:#9aa4b4;
+  --sidebar-fg-dim:#6b7585;
+  --sidebar-fg-strong:#ffffff;
+  --sidebar-hover:rgba(255,255,255,.06);
+  --sidebar-border:rgba(255,255,255,.07);
+
+  /* Same eight hues, same stages — lifted for a dark ground, and every -soft
+     becomes a low-alpha wash rather than a light slab that would glow.
+     --cyan is pulled toward teal on purpose: in dark mode the BRAND is cyan, so
+     "call not received" would otherwise read as the accent colour. */
+  --emerald:#68f3b2;  --emerald-soft:rgba(104,243,178,.16);  --emerald-deep:#9efacf;
+  --emerald-soft-2:rgba(104,243,178,.28);
+  --blue:#68a0f3;     --blue-soft:rgba(104,160,243,.16);     --blue-deep:#9ec3fa;
+  --blue-soft-2:rgba(104,160,243,.28);
+  --cyan:#68dcf3;     --cyan-soft:rgba(104,220,243,.16);
+  --amber:#f3a968;    --amber-soft:rgba(243,169,104,.16);    --amber-deep:#fac99e;
+  --amber-soft-2:rgba(243,169,104,.28);
+  --violet:#a78bfa;   --violet-soft:rgba(167,139,250,.16);
+  --prospect:#94f155; --prospect-soft:rgba(148,241,85,.16);
+  --indigo:#9268f3;   --indigo-soft:rgba(146,104,243,.16);
+  --gold:#f3d268;     --gold-soft:rgba(243,210,104,.16);      --gold-deep:#fae49e;
+  --gold-soft-2:rgba(243,210,104,.28);
+  --coral:#f3688b;    --coral-soft:rgba(243,104,139,.16);   --coral-deep:#fa9eb5;
+  --coral-soft-2:rgba(243,104,139,.28);
+  --slate:#e068f3;    --slate-soft:rgba(224,104,243,.16);
+
+  --call-soft:rgba(255,50,154,.18); --call-soft-2:rgba(255,50,154,.30); --call-deep:#ff77bd;
+  /* On a dark row the band is a low-alpha wash of the hue, not a pale tint. */
+  --wa-green-soft:rgba(37,211,102,.18);
+  --supply-orange-soft:rgba(250,84,28,.16); --supply-orange-soft-2:rgba(250,84,28,.26);
+
+  --shadow:0 1px 2px rgba(0,0,0,.40), 0 10px 30px -14px rgba(0,0,0,.60);
+  --shadow-lg:0 28px 64px -22px rgba(0,0,0,.70);
+
+  color-scheme:dark;
+}
+
+/* -- per-page accent ---------------------------------------------------------
+   Live Inventory and Supply Pipeline are the SUPPLY side — the domain Direct
+   Inventory owns, whose brand is this orange. Swapping the accent there makes the
+   colour mean "you are on the supply side" rather than being decoration.
+
+   Only the five --brand-* tokens move. Everything that paints with them follows,
+   which is why this is five lines and not a second theme.
+
+   Placed AFTER the dark block so it wins in both, and the dark pairing is its own
+   rule because #fa541c needs lifting on a dark ground. */
+[data-accent='orange']{
+  --brand:#fa541c; --brand-strong:#d4380d; --brand-deep:#c2410c;
+  --brand-soft:#fff2e8; --brand-softer:#fff7f4; --brand-ring:rgba(250,84,28,.18);
+  --on-brand:#ffffff;
+}
+[data-theme='dark'][data-accent='orange']{
+  --brand:#ff7a45; --brand-strong:#fa541c; --brand-deep:#ffa07a;
+  --brand-soft:rgba(250,84,28,.20); --brand-softer:rgba(250,84,28,.12);
+  --brand-ring:rgba(250,84,28,.34); --on-brand:#2b0f06;
+}
+
+/* The accent changes on navigation, so anything painting with --brand should ease
+   into it. Most controls already transition background/colour; these three paint
+   with it and had no transition of their own, so they would have snapped. */
+.nav-item.active::before,.fn-fill,.count-pill{
+  transition:background var(--t-move) var(--ease),border-color var(--t-move) var(--ease),
+             box-shadow var(--t-move) var(--ease),color var(--t-move) var(--ease);
+}
+
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
 body{
-  font-family:"Hanken Grotesk",system-ui,sans-serif;
+  font-family:var(--font-body);
   background:var(--bg);
   color:var(--ink);
   -webkit-font-smoothing:antialiased;
   font-size:14px;
 }
-.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden;transition:grid-template-columns .18s ease}
+.app{display:grid;grid-template-columns:248px 1fr;height:100vh;overflow:hidden;transition:grid-template-columns var(--t-move) var(--ease)}
 /* Collapsed: an icon-only rail. Labels are hidden rather than unmounted, so the
    nav keeps its DOM and the transition has something to animate. */
 .app.collapsed{grid-template-columns:72px 1fr}
@@ -63,20 +241,20 @@ body{
 .app.collapsed .nav-collapse{width:100%}
 
 .nav-collapse{
-  display:grid;place-items:center;width:100%;height:34px;margin-bottom:6px;
-  background:transparent;border:1px solid #26314a;border-radius:9px;color:#8f9ab0;
-  cursor:pointer;transition:.14s;
+  display:grid;place-items:center;width:100%;height:var(--control-h);margin-bottom:6px;
+  background:transparent;border:1px solid var(--sidebar-border);border-radius:9px;color:var(--sidebar-fg-dim);
+  cursor:pointer;transition:var(--t);
 }
-.nav-collapse:hover{border-color:#3a4a6b;color:#e8ebf1;background:var(--ink-sidebar-2)}
+.nav-collapse:hover{border-color:var(--sidebar-fg-dim);color:var(--sidebar-fg-strong);background:var(--sidebar-hover)}
 .nav-collapse svg{width:16px;height:16px}
 
 /* ---------------- Sidebar ---------------- */
 .sidebar{
-  background:linear-gradient(180deg,#111a2b,var(--ink-sidebar));
-  color:#c2cad8;
-  display:flex;flex-direction:column;
+  background:linear-gradient(180deg,var(--sidebar-bg-2),var(--sidebar-bg));
+  color:var(--sidebar-fg);
+  display:flex;flex-direction:column;gap:4px;
   padding:18px 14px;
-  border-right:1px solid #080b12;
+  border-right:1px solid var(--sidebar-border);
   /* min-height:0 lets the nav below actually shrink and scroll — without it a
      flex item refuses to go under its content height and the whole column
      overflows, carrying the user chip off the bottom of the screen. */
@@ -85,16 +263,21 @@ body{
 /* Brand and the collapse toggle stay put; only the link list scrolls. */
 .brand,.nav-collapse,.sidebar .user{flex:none}
 #nav{
-  flex:1 1 auto;min-height:0;overflow-y:auto;
+  flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;
+  display:flex;flex-direction:column;gap:4px;
+  /* The -14px horizontal bleed cancels the sidebar's own padding, so the active
+     item's edge indicator (.nav-item.active::before at left:-14px) is not clipped
+     by this scroll container. Without it the indicator simply never renders. */
+  margin:4px -14px 0;padding:2px 14px;
   overscroll-behavior:contain;   /* don't chain the scroll to the page behind it */
-  scrollbar-width:thin;scrollbar-color:#2a3445 transparent;
+  scrollbar-width:thin;scrollbar-color:var(--sidebar-border) transparent;
 }
-/* A default scrollbar is a bright slab on this dark panel — thin it down. */
+/* Thin the scrollbar so it doesn't read as a slab down the edge of the rail. */
 #nav::-webkit-scrollbar{width:6px}
 #nav::-webkit-scrollbar-track{background:transparent}
-#nav::-webkit-scrollbar-thumb{background:#2a3445;border-radius:3px}
-#nav::-webkit-scrollbar-thumb:hover{background:#3a4a6b}
-.brand{display:flex;align-items:center;gap:10px;padding:6px 8px 16px}
+#nav::-webkit-scrollbar-thumb{background:var(--sidebar-border);border-radius:3px}
+#nav::-webkit-scrollbar-thumb:hover{background:var(--sidebar-fg-dim)}
+.brand{display:flex;align-items:center;gap:11px;padding:6px 8px;min-height:40px}
 /* The lockup already carries the (h) mark, so the standalone SVG would double it —
    it exists only for the collapsed rail. */
 .app:not(.collapsed) .brand .logo{display:none}
@@ -103,64 +286,82 @@ body{
   display:grid;place-items:center;
 }
 .brand .logo svg{width:38px;height:38px;display:block}
-/* The lockup is #000000 + #2563EA ink on transparent, and the rail is #111a2b, so
-   the black has to be lifted to white. Same pair the other repos use, not a second
-   image file:
+/* The lockup ships as TWO files rather than one filtered file.
 
-     invert(1)            black -> white, but takes the blue with it (-> #DA9C15)
-     hue-rotate(180deg)   every row of the 180° matrix sums to 1.0, so white maps to
-                          white and survives untouched, while the flipped ink is
-                          carried back toward blue
+   It is #000000 ink + #2563EA "DIRECT DEMAND" on a transparent RGBA plate. The old
+   dark-mode trick was invert(1) hue-rotate(180deg): the 180° matrix rows each sum
+   to 1.0, so white survives, but the flipped blue only lands near #65A3FF — nowhere
+   near the dark-mode brand, and no filter chain gets there without dragging the
+   wordmark off white with it.
 
-   Plain invert() alone is what we must NOT do — it leaves DIRECT DEMAND amber. The
-   PNG is RGBA (colour type 6), so only the ink is filtered; there's no plate behind
-   it to drop, and no black box appears.
-
-   ponytail: our accent is #2563EA, not the orange the other repos round-trip. Its
-   blue channel clamps, so it lands near #65A3FF — a lighter blue, not the original.
-   Derived, not eyeballed. Hand-cut a white-text variant of the PNG only if that
-   lightening actually bothers you on a real screen. */
-.brand-logo{width:100%;max-width:174px;display:block;filter:invert(1) hue-rotate(180deg)}
+   direct_demand_logo_dark.png is the same artwork with the ink remapped to #ffffff
+   and the blue to #07b6d4. Regenerate it if --brand changes in the dark block. */
+.brand-logo{width:100%;height:auto;object-fit:contain;display:block;padding:4px 2px}
+.dark-only{display:none}
+[data-theme='dark'] .light-only{display:none}
+[data-theme='dark'] .dark-only{display:block}
+.login-logo{width:100%;max-width:232px;height:auto;object-fit:contain;display:block;margin:4px auto 22px}
 .proto-pill{
   margin:2px 8px 14px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
-  color:#f0c34a;background:rgba(184,134,11,.16);border:1px solid rgba(184,134,11,.34);
+  color:var(--gold);background:var(--gold-soft);border:1px solid var(--gold-soft-2);
   padding:4px 8px;border-radius:6px;display:inline-block;font-weight:600;width:fit-content;
 }
-.nav-label{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#5a6577;padding:14px 10px 6px;font-weight:600}
+.nav-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--sidebar-fg-dim);padding:14px 10px 6px;font-weight:700;white-space:nowrap}
 .nav-item{
-  display:flex;align-items:center;gap:11px;padding:9px 10px;border-radius:9px;
-  cursor:pointer;color:#a4adbe;font-weight:500;font-size:13.5px;transition:.14s;position:relative;
+  display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;
+  cursor:pointer;color:var(--sidebar-fg);font-weight:600;font-size:13.5px;transition:var(--t);position:relative;
 }
 .nav-item svg{width:17px;height:17px;flex:none;stroke-width:1.8}
-.nav-item:hover{background:var(--ink-sidebar-2);color:#e8ebf1}
-.nav-item.active{background:var(--ink-sidebar-2);color:#fff}
-.nav-item.active::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;background:#10b981;border-radius:0 3px 3px 0}
-.nav-item .badge{margin-left:auto;background:var(--coral);color:#fff;font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;font-family:"Spline Sans Mono"}
+.nav-item:hover{background:var(--sidebar-hover);color:var(--sidebar-fg-strong)}
+.nav-item.active{background:var(--sidebar-active-bg);color:var(--sidebar-active-fg);font-weight:600}
+.nav-item.active::before{content:"";position:absolute;left:-14px;top:8px;bottom:8px;width:3px;background:var(--sidebar-rail);border-radius:0 3px 3px 0}
+.nav-item .badge{margin-left:auto;background:var(--coral);color:var(--on-accent);font-size:10.5px;font-weight:700;padding:1px 7px;border-radius:20px;font-family:var(--font-mono)}
 .nav-item .badge.gold{background:var(--gold)}
-.nav-item .badge.soft{background:#2a3445;color:#aeb7c5}
+/* An unseen-incoming count on a nav item — the same red the bell used. */
+.nav-item .badge{white-space:nowrap}
+.nav-item .badge.soft{background:var(--sidebar-border);color:var(--sidebar-fg)}
 /* sub-pages under a nav item (Auto Dialer → Schedule / Previous). The rail sits
    where the parent's icon does, so the children read as hanging off it. */
-.nav-sub{margin:1px 0 3px 20px;padding-left:11px;border-left:1px solid #2a3445;display:flex;flex-direction:column;gap:1px}
+.nav-sub{margin:1px 0 3px 20px;padding-left:11px;border-left:1px solid var(--sidebar-border);display:flex;flex-direction:column;gap:1px}
 .nav-sub .nav-item{padding:6px 10px;font-size:12.5px}
 .nav-sub .nav-item.active::before{left:-12px;top:6px;bottom:6px}
 .app.collapsed .nav-sub{display:none}  /* nothing but text in here — hide it with the labels */
 
+/* Identity, not a control panel. Flat — no card, no border, no role pill — so the
+   rail ends quietly instead of competing with the nav above it. Signing out lives
+   on the profile page this links to. */
 .user{
-  display:flex;align-items:center;gap:10px;padding:10px;border-radius:11px;
-  background:var(--ink-sidebar-2);margin-top:10px;cursor:pointer;
+  display:flex;align-items:center;gap:11px;padding:8px 6px;border-radius:11px;
+  cursor:pointer;min-width:0;text-decoration:none;transition:background var(--t);
 }
-.user .av{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#37425a,#222b3c);display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px}
-.user .un{color:#fff;font-weight:600;font-size:13px;line-height:1.1}
-.user .ur{color:#7c879c;font-size:11px}
-.role-chip{font-size:9.5px;background:rgba(37,99,235,.22);color:#9bbafb;padding:2px 7px;border-radius:5px;font-weight:600;margin-left:auto}
+.user:hover{background:var(--sidebar-hover)}
+.user.active{background:var(--sidebar-active-bg)}
+.user .av{
+  width:36px;height:36px;border-radius:50%;flex:none;display:grid;place-items:center;
+  background:var(--brand);color:var(--on-brand);font-weight:700;font-size:13px;
+}
+.user .un{
+  color:var(--sidebar-fg-strong);font-weight:600;font-size:13.5px;line-height:1.2;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.user .ur{font-size:12px;color:var(--sidebar-fg-dim);text-transform:capitalize}
+.role-chip{font-size:9.5px;background:var(--brand-soft);color:var(--brand);padding:2px 7px;border-radius:5px;font-weight:600;margin-left:auto}
 
 /* ---------------- Main ---------------- */
 .main{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
 .topbar{
+  /* The strip's own, denser control height — everything inside inherits it:
+     .btn, .icon-btn and anything a page portals into #topbar-slot. */
+  --control-h:34px;
   height:60px;flex:none;display:flex;align-items:center;gap:14px;padding:0 26px;
-  border-bottom:1px solid var(--line);background:rgba(255,255,255,.72);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--line);background:var(--panel-blur);backdrop-filter:blur(10px);
+  /* backdrop-filter CREATES A STACKING CONTEXT. Without a z-index of its own the
+     whole topbar sits below .view in paint order, and the bell dropdown's
+     z-index:100 is trapped inside it — it rendered behind the page's own toggle.
+     Raising the topbar lifts its children with it. */
+  position:relative;z-index:50;
 }
-.topbar h1{font-family:"Bricolage Grotesque";font-weight:700;font-size:20px;margin:0;letter-spacing:-.02em}
+.topbar h1{font-family:var(--font-display);font-weight:600;font-size:21px;margin:0;letter-spacing:-.01em}
 .topbar .crumb{color:var(--muted);font-size:13px}
 .search{
   margin-left:auto;display:flex;align-items:center;gap:8px;background:var(--panel);
@@ -178,18 +379,22 @@ body{
 .gsearch-item.active{background:var(--panel-2)}
 .gs-main{display:flex;flex-direction:column;gap:2px;min-width:0}
 .gs-name{font-weight:600;font-size:13px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gs-sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:"Spline Sans Mono"}
+.gs-sub{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--font-mono)}
 .gs-seg{flex:none;font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--cyan);
   background:var(--panel-2);border:1px solid var(--line);padding:3px 9px;border-radius:20px}
 .icon-btn{
-  width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
-  display:grid;place-items:center;cursor:pointer;color:var(--ink-2);position:relative;transition:.14s;
+  width:var(--control-h);height:var(--control-h);border-radius:var(--r-input);border:1px solid var(--line);background:var(--panel);
+  display:grid;place-items:center;cursor:pointer;color:var(--ink-2);position:relative;transition:var(--t);
 }
-.icon-btn:hover{border-color:#cdd5e2;background:var(--panel-2)}
+.icon-btn:hover{border-color:var(--line-3);background:var(--panel-2)}
 .icon-btn .dot{position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:var(--coral);border:2px solid var(--panel)}
 .btn{
-  display:inline-flex;align-items:center;gap:7px;border:0;border-radius:9px;padding:9px 15px;
-  font:inherit;font-weight:600;font-size:13px;cursor:pointer;transition:.14s;white-space:nowrap;
+  /* ONE height for every button in the app. Padding sets the width only — a .btn
+     was 36px and a .btn.sm 29px, so any row mixing them stair-stepped, and the
+     stray inline <select>s beside them were a third height again. */
+  display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;
+  height:var(--control-h);padding:0 15px;border-radius:var(--r-input);
+  font:inherit;font-weight:600;font-size:13px;cursor:pointer;transition:var(--t);white-space:nowrap;
 }
 .btn svg{width:15px;height:15px}
 a.btn{text-decoration:none} /* .btn on a react-router <Link> */
@@ -203,27 +408,27 @@ a.btn{text-decoration:none} /* .btn on a react-router <Link> */
   font-weight:600;text-decoration:none;
 }
 .lead-link:hover{text-decoration:underline}
-.btn.primary{background:var(--ink);color:#fff}
-.btn.primary:hover{background:#000;transform:translateY(-1px)}
-.btn.green{background:var(--emerald);color:#fff}
-.btn.green:hover{background:#047a55;transform:translateY(-1px)}
-.btn.wa{background:#25b15a;color:#fff}
-.btn.wa:hover{background:#1d964c}
+.btn.primary{background:var(--brand);color:var(--on-brand)}
+.btn.primary:hover{background:var(--brand-strong);transform:translateY(-1px)}
+.btn.green{background:var(--emerald);color:var(--on-accent)}
+.btn.green:hover{background:var(--emerald-deep);transform:translateY(-1px)}
+.btn.wa{background:var(--wa-green-2);color:var(--on-accent)}
+.btn.wa:hover{background:var(--wa-green-3)}
 .btn.ghost{background:var(--panel);border:1px solid var(--line);color:var(--ink-2)}
-.btn.ghost:hover{border-color:#cdd5e2;background:var(--panel-2)}
-.btn.gold{background:var(--gold);color:#fff}
-.btn.gold:hover{background:#9c7109}
-.btn.orange{background:#f97316;color:#fff}
-.btn.orange:hover{background:#ea580c;transform:translateY(-1px)}
-.btn-badge{background:rgba(255,255,255,.28);color:#fff;font-weight:700;font-size:11px;padding:1px 7px;border-radius:20px;font-family:"Spline Sans Mono";line-height:1.4}
-.wa-ico{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#25b15a;color:#fff;border:0;cursor:pointer;transition:.14s}
-.wa-ico:hover{background:#1d964c;transform:translateY(-1px)}
+.btn.ghost:hover{border-color:var(--line-3);background:var(--panel-2)}
+.btn.gold{background:var(--gold);color:var(--on-accent)}
+.btn.gold:hover{background:var(--gold-deep)}
+.btn.orange{background:var(--supply-orange);color:var(--on-accent)}
+.btn.orange:hover{background:var(--supply-orange);transform:translateY(-1px)}
+.btn-badge{background:var(--on-accent-3);color:var(--on-accent);font-weight:700;font-size:11px;padding:1px 7px;border-radius:20px;font-family:var(--font-mono);line-height:1.4}
+.wa-ico{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:10px;background:var(--wa-green-2);color:var(--on-accent);border:0;cursor:pointer;transition:var(--t)}
+.wa-ico:hover{background:var(--wa-green-3);transform:translateY(-1px)}
 .wa-ico svg{width:19px;height:19px}
-.btn.sm{padding:6px 11px;font-size:12px}
+.btn.sm{padding:0 12px;font-size:12.5px}
 
 .view{flex:1;overflow-y:auto;padding:26px}
 .view::-webkit-scrollbar{width:10px}
-.view::-webkit-scrollbar-thumb{background:#d3dae5;border-radius:10px;border:3px solid var(--bg)}
+.view::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:10px;border:3px solid var(--bg)}
 
 /* cards */
 .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
@@ -232,7 +437,7 @@ a.btn{text-decoration:none} /* .btn on a react-router <Link> */
 .stat{padding:18px;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden}
 .stat::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent,var(--line))}
 .stat .k{font-size:12px;color:var(--muted);font-weight:500;display:flex;align-items:center;gap:7px}
-.stat .v{font-family:"Bricolage Grotesque";font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1}
+.stat .v{font-family:var(--font-display);font-size:30px;font-weight:700;letter-spacing:-.02em;line-height:1}
 .stat .d{font-size:12px;font-weight:600}
 .stat .ico{position:absolute;right:14px;top:14px;width:30px;height:30px;border-radius:8px;display:grid;place-items:center}
 .up{color:var(--emerald)}.down{color:var(--coral)}
@@ -240,9 +445,9 @@ a.btn{text-decoration:none} /* .btn on a react-router <Link> */
 .stat.clickable{cursor:pointer}
 .stat.clickable:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
 /* moving-light highlight (sweeping sheen + glow) — used on the urgent New Leads card */
-.live-glow{position:relative;overflow:hidden;box-shadow:0 0 0 1px rgba(37,99,235,.35),0 16px 42px -18px rgba(37,99,235,.5)}
+.live-glow{position:relative;overflow:hidden;box-shadow:0 0 0 1px var(--brand-glow),0 16px 42px -18px var(--brand-glow)}
 .live-glow::before{content:"";position:absolute;top:0;left:0;height:100%;width:42%;pointer-events:none;z-index:3;
-  background:linear-gradient(100deg,transparent 0%,rgba(37,99,235,.04) 35%,rgba(96,165,250,.30) 50%,rgba(37,99,235,.04) 65%,transparent 100%);
+  background:linear-gradient(100deg,transparent 0%,var(--brand-softer) 35%,var(--brand-ring) 50%,var(--brand-softer) 65%,transparent 100%);
   transform:translateX(-200%);animation:sheen 2.8s cubic-bezier(.4,0,.2,1) infinite}
 @keyframes sheen{0%{transform:translateX(-200%)}55%{transform:translateX(320%)}100%{transform:translateX(320%)}}
 .stat .ico svg{width:17px;height:17px;stroke-width:1.9}
@@ -250,12 +455,12 @@ a.btn{text-decoration:none} /* .btn on a react-router <Link> */
 @property --rl{syntax:'<angle>';inherits:false;initial-value:0deg}
 .runlight{position:relative}
 .runlight::after{content:"";position:absolute;inset:-3px;border-radius:17px;z-index:6;pointer-events:none;padding:3px;
-  background:conic-gradient(from var(--rl),rgba(37,99,235,0) 0deg,rgba(37,99,235,0) 230deg,#2563eb 295deg,#7db0ff 325deg,rgba(37,99,235,0) 360deg);
-  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;
-  mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;
+  background:conic-gradient(from var(--rl),transparent 0deg,transparent 230deg,var(--blue) 295deg,var(--blue-deep) 325deg,transparent 360deg);
+  -webkit-mask:linear-gradient(black 0 0) content-box,linear-gradient(black 0 0);-webkit-mask-composite:xor;
+  mask:linear-gradient(black 0 0) content-box,linear-gradient(black 0 0);mask-composite:exclude;
   animation:runborder 1.05s linear infinite}
 @keyframes runborder{to{--rl:360deg}}
-.sec-title{font-family:"Bricolage Grotesque";font-weight:700;font-size:16px;margin:0 0 2px;letter-spacing:-.01em}
+.sec-title{font-family:var(--font-display);font-weight:700;font-size:16px;margin:0 0 2px;letter-spacing:-.01em}
 .sec-sub{color:var(--muted);font-size:12.5px;margin:0 0 14px}
 
 .section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
@@ -277,33 +482,36 @@ th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;
 td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:0}
 tr.lead-row{cursor:pointer;transition:.1s}
-tr.lead-row:hover{background:var(--panel-2)}
+tr.lead-row:hover{background-color:var(--panel-2)}
 /* Follow-up highlights — green (arrived in this stage today) wins over blue (due today).
    The :hover pairs keep the tint from being overridden by the row hover rule above. */
+/* Follow-up highlights — green (arrived in this stage today) wins over blue (due
+   today). The :hover pairs keep the tint from being overridden by the row hover
+   rule above. */
 tr.lead-row.fu-arrived,tr.lead-row.fu-arrived:hover{background:var(--emerald-soft)}
 tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .who{display:flex;align-items:center;gap:10px}
-.who .av{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#e4e9f1,#d3dbe8);display:grid;place-items:center;font-weight:700;color:var(--ink-2);font-size:12px;flex:none}
+.who .av{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,var(--line),var(--line-3));display:grid;place-items:center;font-weight:700;color:var(--ink-2);font-size:12px;flex:none}
 .call-btn{width:32px;height:32px;border-radius:8px;border:0;flex:none;display:grid;place-items:center;
-  background:var(--emerald-soft);color:#047857;cursor:pointer;transition:.14s}
-.call-btn:hover:not(:disabled){background:#bdecd7;transform:translateY(-1px)}
+  background:var(--call-soft);color:var(--call-deep);cursor:pointer;transition:var(--t)}
+.call-btn:hover:not(:disabled){background:var(--call-soft-2);transform:translateY(-1px)}
 .call-btn:disabled{opacity:.5;cursor:not-allowed}
 .call-btn svg{width:16px;height:16px}
-.call-spin{width:13px;height:13px;border:2px solid #9ad3ba;border-top-color:#047857;border-radius:50%;
+.call-spin{width:13px;height:13px;border:2px solid var(--call-soft-2);border-top-color:var(--call-deep);border-radius:50%;
   animation:call-spin .7s linear infinite}
 @keyframes call-spin{to{transform:rotate(360deg)}}
 .who .nm{font-weight:600}
-.who .ph{font-size:11.5px;color:var(--muted);font-family:"Spline Sans Mono";white-space:nowrap}
+.who .ph,.phone-cell .ph{font-size:12px;color:var(--ink-2);font-family:var(--font-mono);white-space:nowrap}
 
 /* source badges — kept on recognisable brand colours */
 .src{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 8px;border-radius:6px}
 .src::before{content:"";width:7px;height:7px;border-radius:2px}
-.src.meta{background:#e3edfe;color:#1856c9}.src.meta::before{background:#1877f2}
-.src.gads{background:#dcf3e4;color:#157a38}.src.gads::before{background:#34a853}
-.src.acres{background:#fde7da;color:#bf4d08}.src.acres::before{background:#ed5a0a}
-.src.bricks{background:#fde0ea;color:#bd1c53}.src.bricks::before{background:#e63a73}
-.src.yt{background:#fde1e1;color:#c01c1c}.src.yt::before{background:#ff0000}
-.src.wa{background:#daf3e3;color:#12823f}.src.wa::before{background:#25d366}
+.src.meta{background:var(--blue-soft);color:var(--brand-strong)}.src.meta::before{background:var(--fb-blue)}
+.src.gads{background:var(--emerald-soft);color:var(--emerald-deep)}.src.gads::before{background:var(--google-green)}
+.src.acres{background:var(--supply-orange-soft);color:var(--supply-orange-3)}.src.acres::before{background:var(--supply-orange-2)}
+.src.bricks{background:var(--coral-soft);color:var(--coral-deep)}.src.bricks::before{background:var(--coral)}
+.src.yt{background:var(--coral-soft);color:var(--coral-deep)}.src.yt::before{background:var(--coral)}
+.src.wa{background:var(--emerald-soft);color:var(--emerald-deep)}.src.wa::before{background:var(--wa-green)}
 
 /* stage chips — a logical colour ramp across the pipeline */
 .stage{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid transparent}
@@ -314,38 +522,45 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .stage.nego{background:var(--indigo-soft);color:var(--indigo)}.stage.nego::before{background:var(--indigo)}
 .stage.won{background:var(--emerald-soft);color:var(--emerald)}.stage.won::before{background:var(--emerald)}
 .stage.lost{background:var(--coral-soft);color:var(--coral)}.stage.lost::before{background:var(--coral)}
+/* Future Prospect: its own hue, `--prospect`. Not coral — it sits in the Rejected list
+   beside dead leads, and the point of the stage is that these are NOT dead. Not gold
+   either, which it first shipped as: once it gained a funnel bar it sat two rows under
+   Revisit, which IS gold. Hue 96° was chosen by sweeping the wheel for the colour
+   furthest from all eleven existing hues in both themes (Δ≥102 RGB), at full saturation
+   and the brightest lightness still clearing 3.05:1 on white — the ramp's own rule. */
+.stage.prospect{background:var(--prospect-soft);color:var(--prospect)}.stage.prospect::before{background:var(--prospect)}
 
 /* TAT — traffic light */
-.tat{display:inline-flex;align-items:center;gap:6px;font-family:"Spline Sans Mono";font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:7px}
-.tat.ok{background:var(--emerald-soft);color:#06694b}
-.tat.warn{background:var(--amber-soft);color:#9a5e07}
+.tat{display:inline-flex;align-items:center;gap:6px;font-family:var(--font-mono);font-size:12.5px;font-weight:600;padding:3px 9px;border-radius:7px}
+.tat.ok{background:var(--emerald-soft);color:var(--emerald-deep)}
+.tat.warn{background:var(--amber-soft);color:var(--amber-deep)}
 .tat.breach{background:var(--coral-soft);color:var(--coral);animation:pulse 1.6s infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
 
 /* follow-up (callback) chips */
-.fu{display:inline-flex;align-items:center;gap:4px;font-family:"Spline Sans Mono";font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
+.fu{display:inline-flex;align-items:center;gap:4px;font-family:var(--font-mono);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;white-space:nowrap}
 .fu.over{background:var(--coral-soft);color:var(--coral)}
-.fu.today{background:var(--amber-soft);color:#9a5e07}
+.fu.today{background:var(--amber-soft);color:var(--amber-deep)}
 .fu.up{background:var(--blue-soft);color:var(--blue)}
 /* last-contact outcome chips */
 .oc{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;white-space:nowrap}
-.oc.ok{background:var(--emerald-soft);color:#06694b}
-.oc.bad{background:#fbe6cf;color:#9a5e07}
-.oc .att{font-family:"Spline Sans Mono";opacity:.75}
+.oc.ok{background:var(--emerald-soft);color:var(--emerald-deep)}
+.oc.bad{background:var(--amber-soft-2);color:var(--amber-deep)}
+.oc .att{font-family:var(--font-mono);opacity:.75}
 /* hot / immediate-buyer */
 .flame{font-size:13px;margin-left:6px;vertical-align:middle}
-.hot-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:20px;background:#ffe7d6;color:#c2410c;border:1px solid #f9c9a4}
+.hot-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:20px;background:var(--supply-orange-soft-2);color:var(--supply-orange-3);border:1px solid var(--supply-orange-soft-2)}
 /* follow-up radar rows */
-.fr-row{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px;cursor:pointer;transition:.12s}
-.fr-row:hover{background:var(--panel-2);border-color:#cdd5e2}
-.fr-row .av{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#e4e9f1,#d3dbe8);display:grid;place-items:center;font-weight:700;color:var(--ink-2);font-size:12px;flex:none}
+.fr-row{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:11px;margin-bottom:9px;cursor:pointer;transition:var(--t)}
+.fr-row:hover{background:var(--panel-2);border-color:var(--line-3)}
+.fr-row .av{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--line),var(--line-3));display:grid;place-items:center;font-weight:700;color:var(--ink-2);font-size:12px;flex:none}
 .fr-row .nt{font-size:11.5px;color:var(--muted);margin-top:1px}
 /* loss-reason analytics */
 .loss-split{display:flex;gap:10px;margin-bottom:14px}
 .loss-split .box{flex:1;border:1px solid var(--line);border-radius:11px;padding:12px}
-.loss-split .box.op{background:var(--coral-soft);border-color:#f3c6cd}
-.loss-split .box.gen{background:var(--slate-soft);border-color:#dde2ea}
-.loss-split .box .n{font-family:"Bricolage Grotesque";font-size:24px;font-weight:800;line-height:1}
+.loss-split .box.op{background:var(--coral-soft);border-color:var(--coral-soft-2)}
+.loss-split .box.gen{background:var(--slate-soft);border-color:var(--line-3)}
+.loss-split .box .n{font-family:var(--font-display);font-size:24px;font-weight:800;line-height:1}
 .loss-split .box.op .n{color:var(--coral)}.loss-split .box.gen .n{color:var(--slate)}
 .loss-split .box .lab{font-size:11px;font-weight:600;margin-top:3px}
 .loss-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:12.5px}
@@ -353,10 +568,10 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .loss-row .lbar{width:90px;height:9px;border-radius:6px;background:var(--line);overflow:hidden;flex:none}
 .loss-row .lbar i{display:block;height:100%;border-radius:6px}
 .loss-row.op .lbar i{background:var(--coral)}.loss-row.gen .lbar i{background:var(--slate)}
-.loss-row .lc{font-family:"Spline Sans Mono";color:var(--muted);width:18px;text-align:right;flex:none}
+.loss-row .lc{font-family:var(--font-mono);color:var(--muted);width:18px;text-align:right;flex:none}
 .loss-tag{font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:4px;flex:none}
-.loss-tag.op{background:#fff;color:var(--coral);border:1px solid #f3c6cd}
-.loss-tag.gen{background:#fff;color:var(--slate);border:1px solid #dde2ea}
+.loss-tag.op{background:var(--panel);color:var(--coral);border:1px solid var(--coral-soft-2)}
+.loss-tag.gen{background:var(--panel);color:var(--slate);border:1px solid var(--line-3)}
 .signal-row{grid-template-columns:repeat(3,1fr)}
 .kpi-row{grid-template-columns:repeat(3,1fr)}
 
@@ -370,7 +585,7 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .plan-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:10px;display:flex;justify-content:space-between}
 /* sticky city + society filters atop the inventory picker */
 .pick-head{position:sticky;top:-12px;background:var(--panel-2);margin:-12px -12px 8px;padding:12px 12px 8px;z-index:2}
-.pick-ctrl{padding:7px 9px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink);outline:none;min-width:0}
+.pick-ctrl{padding:7px 9px;font:inherit;font-size:12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);outline:none;min-width:0}
 .pick-ctrl:focus{border-color:var(--emerald);box-shadow:0 0 0 3px var(--emerald-soft)}
 .pick-ctrl:disabled{background:var(--panel-2);color:var(--muted);cursor:not-allowed}
 .pick-row{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;background:var(--panel)}
@@ -380,21 +595,21 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .pick-row.added{opacity:.55}
 .itin-empty{font-size:12px;color:var(--muted);text-align:center;padding:24px 8px}
 .itin-stop{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
-.itin-stop .num{width:24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700;font-size:12px;flex:none;font-family:"Spline Sans Mono"}
+.itin-stop .num{width:24px;height:24px;border-radius:50%;background:var(--blue);color:var(--on-accent);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none;font-family:var(--font-mono)}
 .itin-stop .sn{font-weight:600;font-size:12.5px;line-height:1.2}
 .itin-stop .sl{font-size:11px;color:var(--muted)}
 .itin-stop .ops{margin-left:auto;display:flex;gap:4px}
 .itin-stop .ops button{border:1px solid var(--line);background:var(--panel-2);border-radius:6px;width:24px;height:24px;cursor:pointer;font-size:12px;color:var(--ink-2);display:grid;place-items:center}
-.itin-stop .ops button:hover{border-color:#cdd5e2}
-.leg{display:flex;align-items:center;gap:7px;font-family:"Spline Sans Mono";font-size:11px;color:var(--ink-2);padding:5px 0 5px 11px;border-left:2px dashed var(--line);margin-left:11px}
+.itin-stop .ops button:hover{border-color:var(--line-3)}
+.leg{display:flex;align-items:center;gap:7px;font-family:var(--font-mono);font-size:11px;color:var(--ink-2);padding:5px 0 5px 11px;border-left:2px dashed var(--line);margin-left:11px}
 .leg .lp{width:6px;height:6px;border-radius:50%;background:var(--amber)}
 .totals{display:flex;gap:10px;margin-top:12px}
-.totals .tbox{flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:linear-gradient(180deg,#f1f6ff,#fff)}
-.totals .tbox .tv{font-family:"Bricolage Grotesque";font-weight:800;font-size:20px;line-height:1}
+.totals .tbox{flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:linear-gradient(180deg,var(--brand-softer),var(--panel))}
+.totals .tbox .tv{font-family:var(--font-display);font-weight:800;font-size:20px;line-height:1}
 .totals .tbox .tl{font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
 .plan-map{height:300px;border-radius:12px;border:1px solid var(--line);overflow:hidden;background:var(--panel-2)}
 .map-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:12.5px;padding:24px;gap:8px}
-.map-empty code{font-family:"Spline Sans Mono";font-size:11px;background:var(--panel);border:1px solid var(--line);padding:2px 6px;border-radius:5px;color:var(--ink-2)}
+.map-empty code{font-family:var(--font-mono);font-size:11px;background:var(--panel);border:1px solid var(--line);padding:2px 6px;border-radius:5px;color:var(--ink-2)}
 .route-est{font-size:10.5px;font-weight:600;color:var(--amber);margin-top:6px}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .itin-stop .ops button:disabled{opacity:.3;cursor:not-allowed}
@@ -402,18 +617,18 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 
 /* toast */
 #toasts{position:fixed;right:24px;bottom:24px;display:flex;flex-direction:column;gap:10px;z-index:80}
-.toast{background:var(--ink);color:#fff;padding:13px 16px;border-radius:11px;box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;display:flex;align-items:center;gap:10px;min-width:260px;animation:slidein .3s cubic-bezier(.2,.8,.2,1)}
+.toast{background:var(--ink);color:var(--on-accent);padding:13px 16px;border-radius:11px;box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;display:flex;align-items:center;gap:10px;min-width:260px;animation:slidein var(--t-enter) var(--ease-out)}
 .toast .ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;flex:none}
-.toast.wa .ic{background:#25d366}.toast.green .ic{background:var(--emerald)}.toast.gold .ic{background:var(--gold)}.toast.blue .ic{background:var(--blue)}
+.toast.wa .ic{background:var(--wa-green)}.toast.green .ic{background:var(--emerald)}.toast.gold .ic{background:var(--gold)}.toast.blue .ic{background:var(--blue)}
 @keyframes slidein{from{transform:translateX(40px);opacity:0}to{transform:none;opacity:1}}
 
 /* modal */
-.overlay{position:fixed;inset:0;background:rgba(10,15,25,.46);backdrop-filter:blur(3px);display:none;align-items:center;justify-content:center;z-index:90;padding:24px}
+.overlay{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);display:none;animation:scrim-in var(--t-enter) var(--ease-out);align-items:center;justify-content:center;z-index:90;padding:24px}
 .overlay.show{display:flex}
-.modal{background:var(--panel);border-radius:18px;box-shadow:var(--shadow-lg);width:min(540px,100%);max-height:90vh;overflow:auto;animation:slideup .3s cubic-bezier(.2,.8,.2,1)}
+.modal{background:var(--panel);border-radius:18px;box-shadow:var(--shadow-lg);width:min(540px,100%);max-height:90vh;overflow:auto;animation:modal-in var(--t-enter) var(--ease-out)}
 @keyframes slideup{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
 .modal .mh{padding:20px 22px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
-.modal .mh h3{font-family:"Bricolage Grotesque";margin:0;font-size:18px}
+.modal .mh h3{font-family:var(--font-display);margin:0;font-size:18px}
 .modal .mb{padding:22px}
 .modal .mf{padding:16px 22px;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:flex-end;background:var(--panel-2)}
 
@@ -422,12 +637,14 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:6px}
 .field label .req{color:var(--coral)}
 .field input,.field select,.field textarea{
-  width:100%;border:1px solid var(--line);border-radius:9px;padding:10px 12px;font:inherit;
-  background:var(--panel-2);color:var(--ink);outline:0;transition:.14s;
+  width:100%;border:1px solid var(--line);border-radius:var(--r-input);padding:10px 12px;font:inherit;
+  background:var(--panel-2);color:var(--ink);outline:0;transition:var(--t);
 }
-.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--emerald);background:#fff;box-shadow:0 0 0 3px var(--emerald-soft)}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--emerald);background:var(--panel);box-shadow:0 0 0 3px var(--emerald-soft)}
 .field.invalid input,.field.invalid select{border-color:var(--coral);background:var(--coral-soft)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+.three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
+@media (max-width:620px){.three{grid-template-columns:1fr 1fr}}
 
 /* lead detail */
 .detail-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
@@ -436,57 +653,50 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);cursor:pointer;font-weight:600;font-size:13px;margin-bottom:14px}
 .back:hover{color:var(--ink)}
 .lead-head{display:flex;align-items:center;gap:14px;margin-bottom:6px}
-.lead-head .av{width:54px;height:54px;border-radius:13px;background:linear-gradient(135deg,#10b981,#047857);display:grid;place-items:center;color:#fff;font-weight:700;font-size:22px;font-family:"Bricolage Grotesque"}
-.lead-head h2{font-family:"Bricolage Grotesque";margin:0;font-size:23px;letter-spacing:-.02em}
-.lead-head .meta{color:var(--muted);font-size:13px;font-family:"Spline Sans Mono";margin-top:2px}
+.lead-head .av{width:54px;height:54px;border-radius:13px;background:linear-gradient(135deg,var(--sidebar-rail),var(--emerald-deep));display:grid;place-items:center;color:var(--on-accent);font-weight:700;font-size:22px;font-family:var(--font-display)}
+.lead-head h2{font-family:var(--font-display);margin:0;font-size:23px;letter-spacing:-.02em}
+.lead-head .meta{color:var(--muted);font-size:13px;font-family:var(--font-mono);margin-top:2px}
 .lead-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .stage-control{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:5px 10px}
 .stage-control label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
 .stage-control select{border:0;background:0;outline:0;font:inherit;font-weight:600;font-size:13px;color:var(--ink);cursor:pointer}
-.meta-card{border-color:#c9ddfb;background:linear-gradient(180deg,#f1f6ff,#ffffff 60%)}
-.meta-card .field input,.meta-card .field select{background:#fff}
-.meta-card .field select:disabled{background:#edf2fa;color:var(--ink-2);cursor:not-allowed;opacity:1;-webkit-text-fill-color:var(--ink-2)}
-.lock-badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:3px 9px;border-radius:20px;background:#edf1f8;color:#586378;border:1px solid #d6deeb}
-.lock-badge.editable{background:var(--emerald-soft);color:#06694b;border-color:#aedcc4}
+.meta-card{border-color:var(--blue-soft-2);background:linear-gradient(180deg,var(--brand-softer),var(--panel) 60%)}
+.meta-card .field input,.meta-card .field select{background:var(--panel)}
+.meta-card .field select:disabled{background:var(--panel-2);color:var(--ink-2);cursor:not-allowed;opacity:1;-webkit-text-fill-color:var(--ink-2)}
+.lock-badge{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.02em;padding:3px 9px;border-radius:20px;background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line-3)}
+.lock-badge.editable{background:var(--emerald-soft);color:var(--emerald-deep);border-color:var(--emerald-soft-2)}
 .src-banner{font-size:12px;font-weight:500;padding:9px 12px;border-radius:9px;margin-bottom:14px;line-height:1.5}
-.src-banner.meta{background:#e3edfe;color:#194a9e;border:1px solid #c9ddfb}
-.src-banner.confirmed{background:var(--emerald-soft);color:#06694b;border:1px solid #aedcc4}
+.src-banner.meta{background:var(--blue-soft);color:var(--brand-deep);border:1px solid var(--blue-soft-2)}
+.src-banner.confirmed{background:var(--emerald-soft);color:var(--emerald-deep);border:1px solid var(--emerald-soft-2)}
 .cfg-chip{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:var(--amber-soft);color:var(--amber)}
 .plan-chip{display:inline-block;font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;white-space:nowrap}
-.plan-chip.plan-hot{background:var(--emerald-soft);color:#06694b}
-.plan-chip.plan-warm{background:var(--amber-soft);color:#9a5e07}
+.plan-chip.plan-hot{background:var(--emerald-soft);color:var(--emerald-deep)}
+.plan-chip.plan-warm{background:var(--amber-soft);color:var(--amber-deep)}
 .plan-chip.plan-cool{background:var(--blue-soft);color:var(--blue)}
 .plan-chip.plan-cold{background:var(--slate-soft);color:var(--slate)}
-/* Q6 office-visit pitch box */
-.office-pitch{margin-top:8px;border:1px solid #ead9a0;background:linear-gradient(135deg,#fdf7e6,#fffdf7);border-radius:12px;padding:13px 15px}
-.office-pitch .op-head{font-weight:700;font-size:12.5px;color:#8a6408;margin-bottom:8px}
-.office-pitch .op-sub{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:11px 0 6px;border-top:1px dashed #ead9a0;padding-top:9px}
-.office-pitch .op-list{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:5px}
-.office-pitch .op-list li{font-size:12.5px;line-height:1.5;color:var(--ink-2)}
-.office-pitch .op-list.hi li{color:#7a6a4a;font-style:italic}
 /* multi-select checkbox dropdown */
 .ms{position:relative}
 .ms-toggle{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:9px;padding:10px 12px;background:var(--panel-2);cursor:pointer}
-.ms.open .ms-toggle{border-color:var(--emerald);background:#fff;box-shadow:0 0 0 3px var(--emerald-soft)}
+.ms.open .ms-toggle{border-color:var(--emerald);background:var(--panel);box-shadow:0 0 0 3px var(--emerald-soft)}
 .ms-summary{font-size:14px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ms-summary.empty{color:var(--muted)}
-.ms-toggle svg{width:14px;height:14px;color:var(--muted);flex:none;transition:.15s}
+.ms-toggle svg{width:14px;height:14px;color:var(--muted);flex:none;transition:var(--t)}
 .ms.open .ms-toggle svg{transform:rotate(180deg)}
-.ms-panel{display:none;position:absolute;z-index:30;left:0;right:0;top:calc(100% + 5px);background:#fff;border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-height:230px;overflow:auto;padding:6px}
+.ms-panel{display:none;position:absolute;z-index:30;left:0;right:0;top:calc(100% + 5px);background:var(--panel);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow);max-height:230px;overflow:auto;padding:6px}
 .ms.open .ms-panel{display:block}
 .ms-opt{display:flex;align-items:center;gap:9px;padding:8px 9px;border-radius:7px;cursor:pointer;font-size:13px}
 .ms-opt:hover{background:var(--panel-2)}
 .ms-opt input{width:16px;height:16px;flex:none;accent-color:var(--emerald);cursor:pointer}
 /* matched-option rows (inventory / supply) on the lead detail — expandable */
-.opt{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;transition:.12s}
-.opt:hover{border-color:#cdd5e2}
-.opt.open{border-color:#cdd5e2;background:var(--panel-2)}
+.opt{border:1px solid var(--line);border-radius:11px;margin-bottom:8px;overflow:hidden;transition:var(--t)}
+.opt:hover{border-color:var(--line-3)}
+.opt.open{border-color:var(--line-3);background:var(--panel-2)}
 .opt-row{display:flex;align-items:center;gap:11px;padding:9px;cursor:pointer}
 .opt-thumb{width:50px;height:46px;border-radius:8px;background-size:cover;background-position:center;flex:none}
 .opt-info{flex:1;min-width:0}
 .opt-name{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .opt-meta{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
-.opt-chev{width:15px;height:15px;color:var(--muted);flex:none;transition:.15s}
+.opt-chev{width:15px;height:15px;color:var(--muted);flex:none;transition:var(--t)}
 .opt.open .opt-chev{transform:rotate(180deg)}
 .opt-detail{display:none;padding:2px 12px 12px 70px}
 .opt.open .opt-detail{display:block}
@@ -495,7 +705,7 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .opt-dd{color:var(--ink-2)}
 .field select[multiple]{height:auto;padding:6px}
 .field select[multiple] option{padding:4px 7px;border-radius:5px}
-.bucket-tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--gold-soft);color:#8a6408;border:1px solid #ead9a0}
+.bucket-tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--gold-soft);color:var(--gold-deep);border:1px solid var(--gold-soft-2)}
 /* "call didn't connect" modal — preview of what saving will do */
 .cc-outcome{margin-top:16px;padding:10px 12px;border-radius:10px;background:var(--panel-2);border:1px solid var(--line);font-size:11.5px;line-height:1.6;color:var(--muted)}
 .cc-outcome .cco-lbl{color:var(--muted)}
@@ -504,20 +714,20 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 /* cascaded suggestions — offered, not selected: dashed + muted until clicked */
 .sugg-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px}
 .sugg-lbl{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-right:2px}
-.sugg-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:6px;background:transparent;color:var(--ink-2);border:1px dashed var(--line-2,#d7dce5);cursor:pointer;transition:all .15s}
-.sugg-chip:hover{background:var(--gold-soft);color:#8a6408;border-color:#ead9a0;border-style:solid}
+.sugg-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:6px;background:transparent;color:var(--ink-2);border:1px dashed var(--line-2,var(--line-3));cursor:pointer;transition:all .15s}
+.sugg-chip:hover{background:var(--gold-soft);color:var(--gold-deep);border-color:var(--gold-soft-2);border-style:solid}
 .sugg-chip .sc-plus{font-weight:800;color:var(--muted)}
-.sugg-chip:hover .sc-plus{color:#8a6408}
+.sugg-chip:hover .sc-plus{color:var(--gold-deep)}
 .bucket-card{overflow:hidden}
-.bucket-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background-size:cover;background-position:center;color:#fff}
-.bucket-head .bn{font-family:"Bricolage Grotesque";font-weight:700;font-size:16px;letter-spacing:-.01em}
+.bucket-head{display:flex;align-items:center;justify-content:space-between;padding:16px 18px;background-size:cover;background-position:center;color:var(--on-accent)}
+.bucket-head .bn{font-family:var(--font-display);font-weight:700;font-size:16px;letter-spacing:-.01em}
 .bucket-head .bmeta{font-size:12px;opacity:.92;margin-top:3px}
-.bucket-head .bcount{font-family:"Bricolage Grotesque";font-weight:800;font-size:28px;line-height:1;display:flex;flex-direction:column;align-items:center}
-.bucket-head .bcount span{font-family:"Hanken Grotesk";font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;opacity:.9;margin-top:3px}
+.bucket-head .bcount{font-family:var(--font-display);font-weight:800;font-size:28px;line-height:1;display:flex;flex-direction:column;align-items:center}
+.bucket-head .bcount span{font-family:var(--font-body);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;opacity:.9;margin-top:3px}
 .bl-row{display:flex;align-items:flex-start;gap:10px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel-2)}
-.bl-row .av{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--gold),#dcab39);display:grid;place-items:center;color:#fff;font-weight:700;font-size:11px;flex:none}
-.match-mini{font-family:"Spline Sans Mono";font-size:10.5px;font-weight:600;color:var(--emerald);background:var(--emerald-soft);padding:1px 6px;border-radius:5px;margin-left:4px}
-.bl-row .why{font-size:10.5px;color:#8a6408;font-weight:600;margin-top:3px}
+.bl-row .av{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--gold),var(--gold));display:grid;place-items:center;color:var(--on-accent);font-weight:700;font-size:11px;flex:none}
+.match-mini{font-family:var(--font-mono);font-size:10.5px;font-weight:600;color:var(--emerald);background:var(--emerald-soft);padding:1px 6px;border-radius:5px;margin-left:4px}
+.bl-row .why{font-size:10.5px;color:var(--gold-deep);font-weight:600;margin-top:3px}
 .panel-pad{padding:18px}
 .panel-title{font-weight:700;font-size:13.5px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
 .panel-title svg{width:16px;height:16px;color:var(--muted)}
@@ -530,19 +740,19 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .tl-item::before{content:"";position:absolute;left:-19px;top:3px;width:11px;height:11px;border-radius:50%;background:var(--panel);border:2.5px solid var(--emerald)}
 .tl-item.dim::before{border-color:var(--line)}
 .tl-item .tt{font-weight:600;font-size:13px}
-.tl-item .tm{font-size:11.5px;color:var(--muted);font-family:"Spline Sans Mono"}
+.tl-item .tm{font-size:11.5px;color:var(--muted);font-family:var(--font-mono)}
 .tl-item .tl-remark{font-size:12.5px;color:var(--ink-2);background:var(--panel-2);border-left:2px solid var(--emerald);border-radius:0 7px 7px 0;padding:6px 10px;margin:5px 0 4px;line-height:1.45;font-style:italic}
 
 /* suggestion / inventory cards */
 .inv-card{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--panel);transition:.16s}
-.inv-card:hover{box-shadow:var(--shadow);transform:translateY(-2px);border-color:#cdd5e2}
+.inv-card:hover{box-shadow:var(--shadow);transform:translateY(-2px);border-color:var(--line-3)}
 .inv-img{height:118px;background-size:cover;background-position:center;position:relative}
-.inv-img .tag{position:absolute;top:9px;left:9px;font-size:10.5px;font-weight:700;background:rgba(255,255,255,.95);padding:3px 8px;border-radius:6px;color:var(--ink)}
-.inv-img .match{position:absolute;top:9px;right:9px;font-size:10.5px;font-weight:700;background:var(--emerald);color:#fff;padding:3px 8px;border-radius:6px}
+.inv-img .tag{position:absolute;top:9px;left:9px;font-size:10.5px;font-weight:700;background:var(--on-accent-5);padding:3px 8px;border-radius:6px;color:var(--ink)}
+.inv-img .match{position:absolute;top:9px;right:9px;font-size:10.5px;font-weight:700;background:var(--emerald);color:var(--on-accent);padding:3px 8px;border-radius:6px}
 .inv-body{padding:13px}
 .inv-body .nm{font-weight:700;font-size:14px}
 .inv-body .loc{font-size:12px;color:var(--muted);margin:2px 0 8px;display:flex;align-items:center;gap:4px}
-.inv-body .pr{font-family:"Bricolage Grotesque";font-weight:700;font-size:17px}
+.inv-body .pr{font-family:var(--font-display);font-weight:700;font-size:17px}
 .inv-meta{display:flex;gap:10px;font-size:11.5px;color:var(--ink-2);margin:8px 0 12px;flex-wrap:wrap}
 .inv-meta span{background:var(--panel-2);border:1px solid var(--line);padding:3px 8px;border-radius:6px}
 .inv-actions{display:flex;gap:8px}
@@ -552,12 +762,8 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 .empty svg{width:34px;height:34px;margin-bottom:8px;opacity:.5}
 
-/* like btn */
-.like{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:6px 11px;cursor:pointer;font:inherit;font-weight:600;font-size:12.5px;color:var(--ink-2);transition:.14s}
-.like:hover{border-color:var(--gold);color:var(--gold)}
-.like.on{background:var(--gold-soft);border-color:var(--gold);color:#8a6408}
 .interest-bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden;margin:9px 0}
-.interest-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),#dcab39);border-radius:6px}
+.interest-bar i{display:block;height:100%;background:linear-gradient(90deg,var(--gold),var(--gold));border-radius:6px}
 
 /* supply stage */
 .sup-stage{font-size:11px;font-weight:700;padding:3px 9px;border-radius:6px}
@@ -568,29 +774,29 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 /* settings */
 .set-grid{grid-template-columns:1fr 1fr}
 .integ{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid var(--line);border-radius:12px;background:var(--panel)}
-.integ .ico{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none;font-weight:800;color:#fff;font-family:"Bricolage Grotesque"}
+.integ .ico{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;flex:none;font-weight:800;color:var(--on-accent);font-family:var(--font-display)}
 .integ .nm{font-weight:700;font-size:14px}
 .integ .ds{font-size:12px;color:var(--muted)}
-.switch{margin-left:auto;width:42px;height:24px;border-radius:20px;background:#cdd5e2;position:relative;cursor:pointer;transition:.18s;flex:none}
-.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:.18s}
+.switch{margin-left:auto;width:42px;height:24px;border-radius:20px;background:var(--line-3);position:relative;cursor:pointer;transition:var(--t-move);flex:none}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--panel);box-shadow:0 1px 3px var(--scrim-2);transition:var(--t-move)}
 .switch.on{background:var(--emerald)}.switch.on::after{left:21px}
-.code{font-family:"Spline Sans Mono";font-size:12px;background:var(--ink-sidebar);color:#7ee0aa;padding:11px 13px;border-radius:9px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
-.code button{background:rgba(255,255,255,.1);color:#fff;border:0;border-radius:6px;padding:4px 9px;cursor:pointer;font:inherit;font-size:11px}
+.code{font-family:var(--font-mono);font-size:12px;background:var(--sidebar-bg);color:var(--emerald-soft-2);padding:11px 13px;border-radius:9px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
+.code button{background:var(--on-accent-1);color:var(--on-accent);border:0;border-radius:6px;padding:4px 9px;cursor:pointer;font:inherit;font-size:11px}
 
 .role-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line-2)}
 .role-row:last-child{border-bottom:0}
 .perm{font-size:11px;font-weight:600;padding:3px 9px;border-radius:6px;background:var(--panel-2);border:1px solid var(--line);color:var(--ink-2)}
-.perm.full{background:var(--emerald-soft);color:#06694b;border-color:#aedcc4}
-.perm.view{background:var(--blue-soft);color:var(--blue);border-color:#bcd2fc}
+.perm.full{background:var(--emerald-soft);color:var(--emerald-deep);border-color:var(--emerald-soft-2)}
+.perm.view{background:var(--blue-soft);color:var(--blue);border-color:var(--blue-soft-2)}
 
 .note{font-size:12px;color:var(--muted);background:var(--panel-2);border:1px dashed var(--line);border-radius:9px;padding:11px 13px;margin-top:6px;line-height:1.5}
-.kbd{font-family:"Spline Sans Mono";font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+.kbd{font-family:var(--font-mono);font-size:11px;background:var(--panel-2);border:1px solid var(--line);border-radius:5px;padding:1px 6px}
 .tabs{display:flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:4px;width:fit-content;margin-bottom:16px}
 .tab{padding:7px 14px;border-radius:7px;font-weight:600;font-size:13px;cursor:pointer;color:var(--muted)}
 .tab.active{background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
 .mand-flag{font-size:11px;color:var(--coral);font-weight:600;margin-top:8px;display:none}
 .mand-flag.show{display:block}
-.summary-box{background:linear-gradient(135deg,var(--violet-soft),#f5f1fe);border:1px solid #ddd2f8;border-radius:12px;padding:15px}
+.summary-box{background:linear-gradient(135deg,var(--violet-soft),var(--violet-soft));border:1px solid var(--violet-soft);border-radius:12px;padding:15px}
 .summary-box .ai{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--violet);margin-bottom:8px}
 
 /* ============================================================
@@ -622,25 +828,25 @@ a.nav-item{text-decoration:none}
 .compact-form .two{gap:11px}
 /* phase-1: inventory photo carousel arrows */
 .carousel-btn{position:absolute;top:50%;transform:translateY(-50%);width:26px;height:26px;border-radius:50%;border:0;
-  background:rgba(15,23,42,.55);color:#fff;font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;
-  opacity:0;transition:.15s;z-index:2}
+  background:var(--scrim);color:var(--on-accent);font-size:18px;line-height:1;cursor:pointer;display:grid;place-items:center;
+  opacity:0;transition:var(--t);z-index:2}
 .inv-img:hover .carousel-btn{opacity:1}
-.carousel-btn:hover{background:rgba(15,23,42,.8)}
+.carousel-btn:hover{background:var(--scrim)}
 
 /* ============================================================================
    BOOK VISITS — design-only feature theme (warm orange on soft off-white).
    "bv-" scoped so it never touches the cool CRM palette.
    ========================================================================== */
 :root{
-  --bv-orange:#F4541C; --bv-orange-2:#d8410d;
-  --bv-orange-soft:#fdeae2; --bv-surface:#fbf8f6; --bv-line:#efe6e1;
+  --bv-orange:var(--supply-orange); --bv-orange-2:var(--supply-orange-2);
+  --bv-orange-soft:var(--supply-orange-soft); --bv-surface:var(--panel); --bv-line:var(--line);
 }
 
 /* --- the "woosh" reveal inside the Visit Planner ------------------------- */
 .bv-unlock{
   margin-top:16px;border:1px solid var(--bv-line);border-radius:16px;
-  background:linear-gradient(180deg,var(--bv-surface),#fff);
-  box-shadow:0 1px 2px rgba(244,84,28,.05),0 18px 44px -28px rgba(244,84,28,.45);
+  background:linear-gradient(180deg,var(--bv-surface),var(--panel));
+  box-shadow:0 1px 2px var(--supply-orange-soft),0 18px 44px -28px var(--supply-orange-soft-2);
   padding:16px;overflow:hidden;
   animation:bvUnlock .55s cubic-bezier(.16,.84,.34,1) both;
 }
@@ -650,50 +856,49 @@ a.nav-item{text-decoration:none}
   100%{opacity:1;transform:none;max-height:1200px}
 }
 .bv-unlock-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px}
-.bv-unlock-tick{width:30px;height:30px;border-radius:50%;background:var(--emerald);color:#fff;
+.bv-unlock-tick{width:30px;height:30px;border-radius:50%;background:var(--emerald);color:var(--on-accent);
   display:grid;place-items:center;font-weight:800;flex:none;box-shadow:0 6px 16px -6px var(--emerald)}
-.bv-unlock-title{font-family:"Bricolage Grotesque";font-weight:700;font-size:15px;color:var(--ink)}
+.bv-unlock-title{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--ink)}
 .bv-unlock-sub{font-size:12.5px;color:var(--ink-2);margin-top:2px}
 .bv-unlock-beta{margin-left:auto;background:var(--bv-orange-soft);color:var(--bv-orange-2);
   font-size:10px;font-weight:800;letter-spacing:.05em;padding:3px 9px;border-radius:20px;flex:none}
 
-.bv-unlock-grid{border:1px solid var(--bv-line);border-radius:12px;overflow:hidden;background:#fff;margin-bottom:14px}
+.bv-unlock-grid{border:1px solid var(--bv-line);border-radius:12px;overflow:hidden;background:var(--panel);margin-bottom:14px}
 .bv-ug-head,.bv-ug-row{display:grid;grid-template-columns:1.6fr .7fr 1.3fr .8fr .9fr .9fr;gap:8px;align-items:center;padding:9px 12px}
 .bv-ug-head{background:var(--bv-surface);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
 .bv-ug-row{border-top:1px solid var(--line-2);font-size:12.5px;color:var(--ink-2)}
 .bv-ug-row:hover{background:var(--bv-surface)}
 .bv-ug-name{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
-.bv-ug-home{font-family:"Spline Sans Mono";color:var(--muted);font-size:11.5px}
-.bv-newtag{background:var(--bv-orange);color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.04em;padding:1px 5px;border-radius:20px}
+.bv-ug-home{font-family:var(--font-mono);color:var(--muted);font-size:11.5px}
 .bv-pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
-.bv-pill.ready{background:var(--emerald-soft);color:#06694b}
+.bv-pill.ready{background:var(--emerald-soft);color:var(--emerald-deep)}
 .bv-pill.soon{background:var(--amber-soft);color:var(--amber)}
 .bv-unlock-cta{width:100%;justify-content:center;font-size:14px;padding:11px}
 
 /* --- the booking drawer (right-side, guided checkout) -------------------- */
-.bv-overlay{position:fixed;inset:0;background:rgba(10,15,25,.5);backdrop-filter:blur(3px);
+.bv-overlay{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
   display:flex;justify-content:flex-end;z-index:120;animation:bvFade .2s ease}
 @keyframes bvFade{from{opacity:0}to{opacity:1}}
 .bv-drawer{width:min(480px,100%);max-width:100%;height:100%;background:var(--bv-surface);
-  display:flex;flex-direction:column;box-shadow:-30px 0 70px -30px rgba(15,23,42,.5);
+  display:flex;flex-direction:column;box-shadow:-30px 0 70px -30px var(--scrim);
   animation:bvSlideIn .34s cubic-bezier(.16,.84,.34,1) both}
 @keyframes bvSlideIn{from{transform:translateX(100%)}to{transform:translateX(0)}}
 
 .bv-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;
-  padding:18px 20px 14px;background:#fff;border-bottom:1px solid var(--bv-line)}
-.bv-title{font-family:"Bricolage Grotesque";font-weight:700;font-size:18px;color:var(--ink)}
+  padding:18px 20px 14px;background:var(--panel);border-bottom:1px solid var(--bv-line)}
+.bv-title{font-family:var(--font-display);font-weight:700;font-size:18px;color:var(--ink)}
 .bv-beta{font-size:11px;color:var(--bv-orange-2);margin-top:3px}
-.bv-x{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:#fff;
+.bv-x{width:32px;height:32px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
   cursor:pointer;color:var(--ink-2);font-size:14px;flex:none}
 .bv-x:hover{background:var(--bv-orange-soft);border-color:var(--bv-orange);color:var(--bv-orange-2)}
 
-.bv-steps{display:flex;align-items:center;gap:0;padding:14px 20px;background:#fff;border-bottom:1px solid var(--bv-line)}
+.bv-steps{display:flex;align-items:center;gap:0;padding:14px 20px;background:var(--panel);border-bottom:1px solid var(--bv-line)}
 .bv-step{display:flex;align-items:center;gap:7px;flex:1;color:var(--muted);font-size:12px;font-weight:600}
 .bv-step-dot{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:12px;
-  background:var(--panel-2);color:var(--muted);border:1.5px solid var(--line);flex:none;transition:.2s}
-.bv-step.active .bv-step-dot{background:var(--bv-orange);color:#fff;border-color:var(--bv-orange);box-shadow:0 4px 12px -4px var(--bv-orange)}
+  background:var(--panel-2);color:var(--muted);border:1.5px solid var(--line);flex:none;transition:var(--t-move)}
+.bv-step.active .bv-step-dot{background:var(--bv-orange);color:var(--on-accent);border-color:var(--bv-orange);box-shadow:0 4px 12px -4px var(--bv-orange)}
 .bv-step.active{color:var(--ink)}
-.bv-step.done .bv-step-dot{background:var(--emerald);color:#fff;border-color:var(--emerald)}
+.bv-step.done .bv-step-dot{background:var(--emerald);color:var(--on-accent);border-color:var(--emerald)}
 .bv-step-line{flex:1;height:2px;background:var(--line);margin:0 4px;border-radius:2px}
 .bv-step.done .bv-step-line{background:var(--emerald)}
 
@@ -703,15 +908,15 @@ a.nav-item{text-decoration:none}
 .bv-field{margin-bottom:16px}
 .bv-field>label{display:block;font-size:12px;font-weight:600;color:var(--ink-2);margin-bottom:7px}
 .bv-req{color:var(--bv-orange)}
-.bv-input{width:100%;border:1px solid var(--bv-line);background:#fff;border-radius:10px;
-  padding:10px 12px;font:inherit;font-size:13px;color:var(--ink);outline:0;transition:.14s}
+.bv-input{width:100%;border:1px solid var(--bv-line);background:var(--panel);border-radius:10px;
+  padding:10px 12px;font:inherit;font-size:13px;color:var(--ink);outline:0;transition:var(--t)}
 .bv-input:focus{border-color:var(--bv-orange);box-shadow:0 0 0 3px var(--bv-orange-soft)}
 .bv-two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
 
 /* CP — fixed to Direct Leads (broker #708), shown read-only */
 .bv-cp-fixed{display:flex;align-items:center;justify-content:space-between;gap:10px;
-  padding:11px 13px;border:1px solid var(--bv-line);background:#fff;border-radius:10px}
-.bv-cp-code{font-family:"Spline Sans Mono";font-size:11px;color:var(--muted);margin-left:4px}
+  padding:11px 13px;border:1px solid var(--bv-line);background:var(--panel);border-radius:10px}
+.bv-cp-code{font-family:var(--font-mono);font-size:11px;color:var(--muted);margin-left:4px}
 .bv-fixed-tag{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
   background:var(--panel-2);color:var(--muted);padding:2px 9px;border-radius:20px}
 .bv-link{border:0;background:0;color:var(--bv-orange-2);font-weight:700;font-size:12px;cursor:pointer;font:inherit;text-decoration:underline}
@@ -719,35 +924,35 @@ a.nav-item{text-decoration:none}
 /* date chips */
 .bv-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px}
 .bv-chip{flex:none;display:flex;flex-direction:column;align-items:center;gap:1px;min-width:54px;
-  padding:8px 10px;border:1px solid var(--bv-line);background:#fff;border-radius:11px;cursor:pointer;transition:.14s}
+  padding:8px 10px;border:1px solid var(--bv-line);background:var(--panel);border-radius:11px;cursor:pointer;transition:var(--t)}
 .bv-chip:hover{border-color:var(--bv-orange)}
-.bv-chip.sel{border-color:var(--bv-orange);background:var(--bv-orange);color:#fff;box-shadow:0 6px 16px -8px var(--bv-orange)}
+.bv-chip.sel{border-color:var(--bv-orange);background:var(--bv-orange);color:var(--on-accent);box-shadow:0 6px 16px -8px var(--bv-orange)}
 .bv-chip-dow{font-size:10.5px;font-weight:700;text-transform:uppercase;opacity:.8}
-.bv-chip-num{font-size:17px;font-weight:800;font-family:"Bricolage Grotesque";line-height:1}
+.bv-chip-num{font-size:17px;font-weight:800;font-family:var(--font-display);line-height:1}
 .bv-chip-mon{font-size:10px;opacity:.8}
 
 /* slot grid */
 .bv-slot-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
-.bv-slot{padding:10px 6px;border:1px solid var(--bv-line);background:#fff;border-radius:10px;
-  font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:.14s}
+.bv-slot{padding:10px 6px;border:1px solid var(--bv-line);background:var(--panel);border-radius:10px;
+  font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-2);cursor:pointer;transition:var(--t)}
 .bv-slot:hover:not(.disabled){border-color:var(--bv-orange);color:var(--bv-orange-2)}
-.bv-slot.sel{border-color:var(--bv-orange);background:var(--bv-orange);color:#fff;box-shadow:0 6px 16px -8px var(--bv-orange)}
+.bv-slot.sel{border-color:var(--bv-orange);background:var(--bv-orange);color:var(--on-accent);box-shadow:0 6px 16px -8px var(--bv-orange)}
 .bv-slot.disabled{opacity:.45;text-decoration:line-through;cursor:not-allowed;background:var(--panel-2)}
 .bv-hint{font-size:11px;color:var(--muted);margin-top:7px}
 
 .bv-toggle{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--ink-2);margin-bottom:14px;cursor:pointer}
 .bv-toggle input{width:16px;height:16px;accent-color:var(--bv-orange)}
-.bv-perunit{border:1px solid var(--bv-line);border-radius:10px;padding:10px;margin-bottom:9px;background:#fff}
+.bv-perunit{border:1px solid var(--bv-line);border-radius:10px;padding:10px;margin-bottom:9px;background:var(--panel)}
 .bv-perunit-name{font-size:12px;font-weight:600;color:var(--ink);margin-bottom:7px}
 .bv-warn-text{color:var(--bv-orange-2);font-size:11.5px;font-weight:600;margin-top:6px}
 
 /* review */
-.bv-danger{background:#fff4f0;border:1px solid #f6c4b2;border-left:4px solid var(--bv-orange);
-  border-radius:10px;padding:12px 14px;font-size:12.5px;color:#7a2c11;line-height:1.5;margin-bottom:14px}
-.bv-visit-card{border:1px solid var(--bv-line);border-radius:12px;background:#fff;padding:13px;margin-bottom:10px}
+.bv-danger{background:var(--supply-orange-soft);border:1px solid var(--supply-orange-soft-2);border-left:4px solid var(--bv-orange);
+  border-radius:10px;padding:12px 14px;font-size:12.5px;color:var(--supply-orange-3);line-height:1.5;margin-bottom:14px}
+.bv-visit-card{border:1px solid var(--bv-line);border-radius:12px;background:var(--panel);padding:13px;margin-bottom:10px}
 .bv-vc-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px;padding-bottom:9px;border-bottom:1px solid var(--line-2)}
 .bv-vc-name{font-weight:700;color:var(--ink);font-size:13.5px}
-.bv-vc-home{font-family:"Spline Sans Mono";font-size:11px;color:var(--muted)}
+.bv-vc-home{font-family:var(--font-mono);font-size:11px;color:var(--muted)}
 .bv-vc-grid{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;font-size:12.5px}
 .bv-vc-grid span{color:var(--muted)}
 .bv-vc-grid b{color:var(--ink-2);font-weight:600;text-align:right}
@@ -758,10 +963,10 @@ a.nav-item{text-decoration:none}
 .bv-result-head.mixed{color:var(--bv-orange-2)}
 .bv-demo{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
   background:var(--panel-2);color:var(--muted);padding:2px 9px;border-radius:20px}
-.bv-result{display:flex;align-items:center;gap:11px;border:1px solid var(--bv-line);border-radius:11px;padding:11px 13px;margin-bottom:9px;background:#fff}
+.bv-result{display:flex;align-items:center;gap:11px;border:1px solid var(--bv-line);border-radius:11px;padding:11px 13px;margin-bottom:9px;background:var(--panel)}
 .bv-result.ok{border-left:4px solid var(--emerald)}
-.bv-result.fail{border-left:4px solid var(--coral);background:#fff6f7}
-.bv-result-ico{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#fff;flex:none}
+.bv-result.fail{border-left:4px solid var(--coral);background:var(--coral-soft)}
+.bv-result-ico{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:var(--on-accent);flex:none}
 .bv-result.ok .bv-result-ico{background:var(--emerald)}
 .bv-result.fail .bv-result-ico{background:var(--coral)}
 .bv-result-name{font-weight:600;color:var(--ink);font-size:13px}
@@ -769,13 +974,13 @@ a.nav-item{text-decoration:none}
 
 /* footer */
 .bv-foot{display:flex;gap:10px;justify-content:space-between;align-items:center;padding:14px 20px;
-  background:#fff;border-top:1px solid var(--bv-line)}
+  background:var(--panel);border-top:1px solid var(--bv-line)}
 .bv-foot .btn.ghost{flex:none}
 .bv-cta{margin-left:auto;border:0;border-radius:10px;padding:11px 20px;font:inherit;font-size:13.5px;
-  font-weight:700;color:#fff;background:var(--bv-orange);cursor:pointer;transition:.14s;box-shadow:0 8px 20px -8px var(--bv-orange)}
+  font-weight:700;color:var(--on-accent);background:var(--bv-orange);cursor:pointer;transition:var(--t);box-shadow:0 8px 20px -8px var(--bv-orange)}
 .bv-cta:hover:not(:disabled){background:var(--bv-orange-2);transform:translateY(-1px)}
 .bv-cta.danger{background:var(--coral);box-shadow:0 8px 20px -8px var(--coral)}
-.bv-cta.danger:hover:not(:disabled){background:#be1539}
+.bv-cta.danger:hover:not(:disabled){background:var(--coral-deep)}
 .bv-cta:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
 
 /* responsive: drawer full-width, grids collapse */
@@ -796,36 +1001,51 @@ a.nav-item{text-decoration:none}
 .note-line{border-left:2px solid var(--line);padding-left:10px}
 .note-line.first{border-left-color:var(--emerald)}
 .note-line .nl-body{font-size:12px;line-height:1.45;color:var(--ink)}
-.note-line .nl-meta{font-size:10px;color:var(--muted);margin-top:3px;font-family:"Spline Sans Mono"}
+.note-line .nl-meta{font-size:10px;color:var(--muted);margin-top:3px;font-family:var(--font-mono)}
 /* keep list rows top-aligned so multi-line notes line up with the lead name */
 .lead-row td{vertical-align:top}
 
 /* "Call connected?" worklist gate (New Leads / Follow-up) */
 .cc{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .cc-q{font-size:10.5px;color:var(--muted);font-weight:600;margin-right:1px}
-.cc-btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:.14s}
+.cc-btn{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:5px 12px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;transition:var(--t)}
 .cc-btn:disabled{opacity:.5;cursor:default}
 .cc-btn.yes{color:var(--emerald);border-color:var(--emerald-soft)}
-.cc-btn.yes:hover:not(:disabled){background:var(--emerald);color:#fff;border-color:var(--emerald)}
+.cc-btn.yes:hover:not(:disabled){background:var(--emerald);color:var(--on-accent);border-color:var(--emerald)}
 .cc-btn.no{color:var(--coral);border-color:var(--coral-soft)}
-.cc-btn.no:hover:not(:disabled){background:var(--coral);color:#fff;border-color:var(--coral)}
+.cc-btn.no:hover:not(:disabled){background:var(--coral);color:var(--on-accent);border-color:var(--coral)}
 /* follow-up due chip */
-.fu-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;font-family:"Spline Sans Mono";padding:3px 9px;border-radius:7px;background:var(--blue-soft);color:var(--blue);white-space:nowrap}
+.fu-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;font-family:var(--font-mono);padding:3px 9px;border-radius:7px;background:var(--blue-soft);color:var(--blue);white-space:nowrap}
 .fu-chip.overdue{background:var(--coral-soft);color:var(--coral)}
 .fu-chip.soon{background:var(--amber-soft);color:var(--amber)}
-.miss-chip{font-size:10px;font-weight:700;font-family:"Spline Sans Mono";padding:2px 7px;border-radius:20px;background:var(--slate-soft);color:var(--slate)}
+.miss-chip{font-size:10px;font-weight:700;font-family:var(--font-mono);padding:2px 7px;border-radius:20px;background:var(--slate-soft);color:var(--slate)}
 .miss-chip.hot{background:var(--coral-soft);color:var(--coral)}
 
 /* follow-up scheduler row (lead detail) */
-.fu-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.fu-row input[type="datetime-local"]{flex:1;min-width:180px}
+/* The datetime input sits OUTSIDE .field, so it inherits none of the form styling
+   and falls back to the browser's own box. Style it here rather than wrapping it —
+   the row needs the input and the button on one line. */
+/* nowrap + min-width:0 on the input: in a half-popup column a 200px minimum plus
+   the button exceeds the card, and the pair wrapped onto two lines. The input
+   shrinks instead; the button keeps its natural width. */
+.fu-row{display:flex;gap:8px;align-items:center;flex-wrap:nowrap}
+.fu-row > .btn{flex:none}
+.fu-row input[type="datetime-local"]{
+  flex:1;min-width:0;height:var(--control-h);padding:0 12px;
+  border:1px solid var(--line);border-radius:var(--r-input);
+  background:var(--panel);color:var(--ink);font:inherit;font-size:13px;outline:none;
+  transition:border-color var(--t),box-shadow var(--t);
+}
+.fu-row input[type="datetime-local"]:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-ring)}
+/* The "Currently set:" line and its chip, above the row. */
+.fu-current{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-2);margin-bottom:10px}
 
 /* hot-lead star + booked-visit status chip (Pipeline) */
-.hot-star{border:0;background:0;cursor:pointer;font-size:17px;line-height:1;padding:2px 4px;color:var(--muted);transition:.14s}
+.hot-star{border:0;background:0;cursor:pointer;font-size:17px;line-height:1;padding:2px 4px;color:var(--muted);transition:var(--t)}
 .hot-star:hover{color:var(--coral);transform:scale(1.15)}
 .hot-star.on{color:var(--coral)}
 .hot-star:disabled{opacity:.5;cursor:default}
-.visit-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;font-family:"Spline Sans Mono"}
+.visit-chip{display:inline-block;font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:7px;white-space:nowrap;font-family:var(--font-mono)}
 .visit-chip.upcoming{background:var(--blue-soft);color:var(--blue)}
 .visit-chip.completed{background:var(--emerald-soft);color:var(--emerald)}
 .visit-chip.cancelled{background:var(--coral-soft);color:var(--coral)}
@@ -839,166 +1059,142 @@ a.nav-item{text-decoration:none}
 .visit-line{display:flex;align-items:flex-start;gap:8px}
 .visit-line .vl-meta{min-width:0;display:flex;flex-direction:column}
 .visit-line .vl-society{font-size:12px;color:var(--ink);font-weight:600;line-height:1.3}
-.visit-line .vl-sub{font-size:10px;color:var(--muted);font-family:"Spline Sans Mono";margin-top:1px}
+.visit-line .vl-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
 
 /* inventory unit with no lat/lng yet — visitable, just not routable */
 .no-geo{color:var(--gold);font-weight:600}
-.visits-cell .vc-date{font-size:10.5px;color:var(--muted);font-family:"Spline Sans Mono";margin-top:3px}
+.visits-cell .vc-date{font-size:10.5px;color:var(--muted);font-family:var(--font-mono);margin-top:3px}
 
-/* ── Auto Dialer ─────────────────────────────────────────────────────────── */
+/* ── Auto Dialer (Schedule + Previous Campaigns) ───────────────────────────
+   Ported from Direct Inventory verbatim, with its tokens mapped onto ours
+   (--border→--line, --surface→--panel, --text-muted→--muted, and so on). The
+   four rules below the port are ours: classes this app's markup uses that
+   Direct Inventory's page has no equivalent for. */
+.dl-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.dl-nameinput { flex: 0 1 340px; padding: 9px 12px; font-size: 15px; font-weight: 600;
+  border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); color: var(--ink); }
+.dl-matchchip { font-size: 12.5px; font-weight: 600; color: var(--brand); background: var(--brand-softer);
+  padding: 5px 11px; border-radius: 999px; white-space: nowrap; }
+.dl-spacer { flex: 1; }
+.dl-main { display: flex; flex-direction: column; gap: 14px; }
+.dl-card { padding: 16px 18px; }
+/* The three wizard steps are SECTIONS, not cards. They used the global .card, which
+   put a panel + border + shadow around content that is itself made of boxes — the
+   rule group, the strategy cards, the RM chips — so every control sat three frames
+   deep. A rule between steps carries the separation instead. */
+.dl-step { padding: 0 0 18px; border-bottom: 1px solid var(--line-2); }
+.dl-step:last-child { border-bottom: 0; padding-bottom: 0; }
+.dl-cardhead { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.dl-eyebrow { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.dl-cardtitle { font-size: 16px; margin: 2px 0 0; }
+.dl-count { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
+.dl-count b { color: var(--ink); }
+.dl-note { font-size: 12px; color: var(--muted); line-height: 1.5; margin: 10px 2px 0; }
+.dl-bad { color: var(--coral); }
+.dl-empty { font-size: 13px; color: var(--muted); padding: 10px 4px; }
+
+/* rule builder */
+.dl-group { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel-2); padding: 10px; }
+.dl-group.nested { background: var(--panel); margin-top: 8px; }
+.dl-grouphead { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.dl-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.dl-segbtn { padding: 4px 12px; font-size: 12px; font-weight: 700; background: var(--panel); color: var(--muted); border: none; cursor: pointer; }
+.dl-segbtn.on { background: var(--brand); color: var(--on-brand); }
+.dl-matchtxt { font-size: 12px; color: var(--muted); }
+.dl-addbtn { padding: 4px 10px; font-size: 12px; font-weight: 600; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+.dl-addbtn.ghost { color: var(--muted); }
+.dl-children { display: flex; flex-direction: column; gap: 8px; }
+.dl-cond { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; padding: 8px; border: 1px solid var(--line);
+  border-radius: 8px; background: var(--panel); }
+.dl-select, .dl-input { padding: 6px 9px; font-size: 12.5px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink); }
+.dl-op-static { font-size: 12px; color: var(--muted); align-self: center; }
+.dl-val { flex: 1 1 220px; min-width: 200px; }
+.dl-pillrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.dl-pill { padding: 4px 10px; font-size: 12px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--ink); cursor: pointer; }
+.dl-pill.on { background: var(--brand); color: var(--on-brand); border-color: var(--brand); }
+.dl-daterow { display: flex; align-items: center; gap: 8px; }
+.dl-dash { color: var(--muted); }
+.dl-x { width: 24px; height: 24px; border: none; background: none; color: var(--muted); font-size: 18px; cursor: pointer; line-height: 1; }
+.dl-x:hover { color: var(--coral); }
+
+/* strategy + RM pool */
+.dl-strat { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.dl-stratcard { text-align: left; padding: 11px 13px; border: 1.5px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); cursor: pointer; display: flex; flex-direction: column; gap: 3px; }
+.dl-stratcard.on { border-color: var(--brand); background: var(--brand-softer); }
+.dl-stratlabel { font-size: 13.5px; font-weight: 700; color: var(--ink); }
+.dl-strathint { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+/* 5 equal-width cards per row, same look as the strategy cards; collapses on narrow. */
+.dl-rmpool { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 1100px) { .dl-rmpool { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 720px)  { .dl-rmpool { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dl-rmchip { display: flex; align-items: center; gap: 9px; padding: 11px 13px; border: 1.5px solid var(--line);
+  border-radius: var(--radius); background: var(--panel); cursor: pointer; text-align: left; min-width: 0; }
+.dl-rmchip.on { border-color: var(--brand); background: var(--brand-softer); }
+.dl-rmchip:disabled { opacity: .5; cursor: not-allowed; }
+.dl-avatar { width: 28px; height: 28px; flex: none; border-radius: 50%; background: var(--brand); color: var(--on-brand); font-size: 12px;
+  font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.dl-rmmeta { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
+.dl-rmmeta b { font-size: 12.5px; }
+.dl-rmmeta span { font-size: 11px; color: var(--muted); }
+/* keep long names/emails inside the equal-width box */
+.dl-rmpool .dl-rmmeta b, .dl-rmpool .dl-rmmeta span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* pacing */
+.dl-settings { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .dl-settings { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px)  { .dl-settings { grid-template-columns: 1fr; } }
+.dl-field { display: flex; flex-direction: column; gap: 5px; }
+.dl-field > span { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.dl-hint { font-size: 11px; color: var(--muted); font-style: normal; }
+
+/* previous campaigns */
+.dl-prev { display: grid; grid-template-columns: 280px 1fr; gap: 14px; align-items: start; }
+.dl-side { display: flex; flex-direction: column; gap: 12px; }
+.dl-livecard { padding: 14px; }
+.dl-livehead { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+.dl-livedot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.dl-livedot.on { background: var(--emerald); box-shadow: 0 0 0 3px color-mix(in srgb, var(--emerald) 25%, transparent); }
+.dl-stats { display: flex; gap: 10px; }
+.dl-stat { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 8px; border-radius: 8px; background: var(--panel-2); }
+.dl-stat b { font-size: 18px; }
+.dl-stat span { font-size: 10.5px; color: var(--muted); text-align: center; }
+.dl-rmlist { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.dl-rmrow, .dl-camprow { display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 8px;
+  background: var(--panel); border: 1px solid transparent; width: 100%; text-align: left; cursor: default; }
+.dl-camprow { cursor: pointer; }
+.dl-camprow.on { border-color: var(--brand); background: var(--brand-softer); }
+.dl-statdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dl-statdot.pulse { animation: dl-pulse 1.2s ease-in-out infinite; }
+@keyframes dl-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.dl-donebadge { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--muted); }
+.dl-feed { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; max-height: 260px; overflow-y: auto; }
+.dl-feedrow { display: flex; align-items: center; gap: 9px; }
+.dl-feeddot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.dl-feedtime { margin-left: auto; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.dl-substep { font-size: 12.5px; font-weight: 700; color: var(--ink-2); margin: 4px 0 8px; }
+.dl-substep.divider { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 14px; }
+
+/* rule view (prose) */
+.rv-cond { font-size: 13px; padding: 4px 0; }
+.rv-op { color: var(--muted); }
+.rv-chip { display: inline-block; font-size: 11.5px; padding: 2px 8px; margin: 0 0 0 5px; border-radius: 999px;
+  background: var(--panel-2); border: 1px solid var(--line); }
+.rv-group { border-left: 2px solid var(--line); padding-left: 12px; margin: 4px 0; }
+.rv-comb { font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+.rv-kids { display: flex; flex-direction: column; gap: 2px; }
+
+@media (max-width: 900px) { .dl-prev { grid-template-columns: 1fr; } }
+
+
+/* --- ours: classes Direct Inventory's dialer has no equivalent for -------- */
 .dl-page{display:flex;flex-direction:column;gap:16px}
-.dl-spacer{flex:1}
-.dl-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
-.dl-nameinput{font-family:inherit;font-size:15px;font-weight:700;color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:260px}
-.dl-nameinput:disabled{background:var(--panel-2);color:var(--ink-2)}
-/* the name is required, so an empty box has to read as "fill me in", not as a title */
-.dl-nameinput::placeholder{color:var(--muted);font-weight:500}
-.dl-matchchip{font-size:12px;font-weight:600;color:var(--ink-2);background:var(--panel-2);
-  border:1px solid var(--line);padding:7px 12px;border-radius:20px;font-family:"Spline Sans Mono"}
-
-/* One column by default — Schedule Campaign is the form on its own now that the
-   live panel moved to Previous Campaigns, and a hardcoded 320px sidebar column
-   would leave a hole. Previous Campaigns sets its own two-column template. */
 .dl-layout{display:grid;grid-template-columns:1fr;gap:16px;align-items:start}
 @media(max-width:1100px){.dl-layout{grid-template-columns:1fr!important}}
-.dl-main{display:flex;flex-direction:column;gap:16px}
-.dl-side{display:flex;flex-direction:column;gap:14px;position:sticky;top:0}
-.dl-main .card,.dl-side .card{padding:18px}
-
-.dl-cardhead{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
-.dl-eyebrow{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:7px}
-.dl-cardtitle{font-size:16px;font-weight:700;margin:0}
-.dl-count{font-size:12.5px;color:var(--ink-2);font-family:"Spline Sans Mono"}
-.dl-count b{color:var(--blue);font-size:15px}
-.dl-note{font-size:11.5px;color:var(--muted);margin:12px 0 0;line-height:1.55}
-.dl-note b{color:var(--ink-2)}
-.dl-bad{color:var(--coral);font-weight:600}
-.dl-hint{font-size:10.5px;color:var(--muted);font-style:normal}
-.dl-empty{font-size:12px;color:var(--muted);padding:10px;text-align:center}
-
-.dl-group{border:1px solid var(--line);border-radius:12px;padding:12px;background:var(--panel-2)}
-.dl-group.nested{background:var(--panel);border-left:3px solid var(--blue-soft);margin-top:4px}
-.dl-grouphead{display:flex;align-items:center;gap:9px;margin-bottom:11px;flex-wrap:wrap}
-.dl-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.dl-segbtn{font-family:inherit;font-weight:700;font-size:11.5px;border:0;background:var(--panel);
-  color:var(--muted);padding:5px 11px;cursor:pointer}
-.dl-segbtn.on{background:var(--ink);color:#fff}
-.dl-matchtxt{font-size:11.5px;color:var(--muted)}
-.dl-addbtn{font-family:inherit;font-size:11.5px;font-weight:600;color:var(--ink);background:var(--blue-soft);
-  border:0;border-radius:7px;padding:6px 10px;cursor:pointer}
-.dl-addbtn.ghost{background:transparent;color:var(--muted)}
-.dl-children{display:flex;flex-direction:column;gap:9px}
-
-.dl-cond{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line);
-  border-radius:11px;padding:9px 11px;flex-wrap:wrap}
-.dl-select,.dl-input{font-family:inherit;font-size:12.5px;color:var(--ink);background:var(--panel);
-  border:1px solid var(--line);border-radius:8px;padding:7px 9px}
-.dl-select{cursor:pointer}
-.dl-select:focus,.dl-input:focus{outline:none;border-color:var(--blue)}
-.dl-input:disabled{background:var(--panel-2);color:var(--muted)}
 .dl-op{color:var(--ink-2);min-width:74px}
-.dl-op-static{font-size:11.5px;color:var(--muted)}
-.dl-val{flex:1;min-width:170px}
-.dl-daterow{display:flex;align-items:center;gap:7px}
-.dl-dash{color:var(--muted)}
-.dl-pillrow{display:flex;flex-wrap:wrap;gap:6px}
-.dl-pill{font-family:inherit;font-size:11.5px;padding:5px 10px;border-radius:20px;border:1px solid var(--line);
-  background:var(--panel);color:var(--ink-2);cursor:pointer}
-.dl-pill:hover{border-color:var(--blue)}
-.dl-pill.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.dl-x{margin-left:auto;width:24px;height:24px;border-radius:7px;border:0;background:var(--panel-2);
-  color:var(--muted);font-size:16px;cursor:pointer;line-height:1}
-.dl-x:hover{background:var(--coral-soft);color:var(--coral)}
-
-/* one row whatever the strategy count is; wraps only when a card would get too narrow */
-.dl-strat{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:9px;margin-bottom:14px}
-.dl-stratcard{font-family:inherit;text-align:left;border:1px solid var(--line);border-radius:11px;
-  padding:11px 12px;background:var(--panel);cursor:pointer;display:flex;flex-direction:column;gap:3px}
-.dl-stratcard.on{border-color:var(--blue);background:var(--blue-soft)}
-.dl-stratcard:disabled{cursor:default;opacity:.75}
-.dl-stratlabel{font-weight:700;font-size:13px}
-.dl-strathint{font-size:11px;color:var(--muted);line-height:1.4}
-
-.dl-rmpool{display:flex;gap:9px;flex-wrap:wrap}
-.dl-rmchip{font-family:inherit;display:flex;align-items:center;gap:9px;border:1px solid var(--line);
-  border-radius:11px;padding:8px 12px 8px 8px;background:var(--panel);cursor:pointer;text-align:left}
-.dl-rmchip.on{border-color:var(--blue);background:var(--blue-soft)}
-.dl-rmchip:disabled{opacity:.5;cursor:not-allowed}
-.dl-avatar{width:30px;height:30px;border-radius:9px;background:var(--ink);color:#fff;font-weight:700;
-  display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
-.dl-rmmeta{display:flex;flex-direction:column;line-height:1.3;min-width:0}
-.dl-rmmeta b{font-size:12.5px;color:var(--ink)}
-.dl-rmmeta span{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-
-.dl-settings{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
-@media(max-width:620px){.dl-settings{grid-template-columns:1fr}}
-.dl-field{display:flex;flex-direction:column;gap:6px}
-.dl-field>span{font-size:11.5px;color:var(--ink-2);font-weight:600}
-
-.dl-livecard{background:var(--ink-sidebar);border:0;color:#fff}
-.dl-livehead{display:flex;align-items:center;gap:9px;font-weight:700;font-size:14px;margin-bottom:14px}
-.dl-livedot{width:9px;height:9px;border-radius:50%;background:#5a6577;flex:none}
-.dl-livedot.on{background:var(--amber);animation:dlp 1.4s infinite}
-.dl-stats{display:flex;justify-content:space-between;gap:8px}
-.dl-stat{display:flex;flex-direction:column;gap:2px}
-/* Default to ink: these tiles are reused on the white Previous Campaigns summary,
-   where the old hardcoded #fff rendered the numbers invisible. */
-/* Section headings inside the merged "Campaign instructions" card — enough to
-   separate the three builder steps without splitting them back into three cards. */
-.dl-substep{
-  font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
-  color:var(--muted);font-weight:700;margin-bottom:9px;
-}
-.dl-substep.divider{border-top:1px solid var(--line);margin-top:16px;padding-top:16px}
-
-/* Read-only rule tree on Previous Campaigns. The scheduler renders this same tree
-   as editable controls; here it's history, so it reads as an indented sentence. */
-.rv-group{font-size:12.5px}
-.rv-comb{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:6px}
-.rv-kids{display:flex;flex-direction:column;gap:7px;padding-left:12px;border-left:2px solid var(--line)}
-.rv-kids .rv-group{padding:8px 0 2px}
-.rv-cond{font-size:12.5px;color:var(--ink-2);line-height:1.9}
-.rv-cond b{color:var(--ink);font-weight:600}
-.rv-op{color:var(--muted)}
-.rv-chip{
-  display:inline-block;margin-left:5px;padding:2px 8px;border-radius:6px;
-  background:var(--panel-2);border:1px solid var(--line);
-  font-family:"Spline Sans Mono";font-size:11.5px;color:var(--ink-2);
-}
-
-.dl-stat b{font-size:24px;font-weight:700;color:var(--ink);font-family:"Spline Sans Mono"}
-.dl-stat span{font-size:10.5px;color:var(--muted)}
-.dl-livecard .dl-stat b{color:#fff}
-.dl-livecard .dl-stat span{color:#9aa6bc}
-
-.dl-rmlist,.dl-feed{display:flex;flex-direction:column;gap:2px}
-.dl-rmrow,.dl-feedrow{display:flex;align-items:center;gap:11px;padding:9px 2px;border-bottom:1px solid var(--line-2)}
-.dl-rmrow:last-child,.dl-feedrow:last-child{border-bottom:none}
-.dl-statdot,.dl-feeddot{width:9px;height:9px;border-radius:50%;flex:none}
-.pulse{animation:dlp 1.4s infinite}
-.dl-donebadge{margin-left:auto;font-size:12px;font-weight:700;color:var(--ink);background:var(--panel-2);
-  border-radius:14px;padding:2px 9px;font-family:"Spline Sans Mono"}
-.dl-feedtime{margin-left:auto;font-size:11px;color:var(--muted);font-family:"Spline Sans Mono"}
-.dl-camprow{font-family:inherit;display:flex;align-items:center;gap:10px;padding:9px 8px;border:0;
-  border-radius:9px;background:transparent;cursor:pointer;text-align:left;width:100%}
-.dl-camprow:hover{background:var(--panel-2)}
-.dl-camprow.on{background:var(--blue-soft)}
-
-@keyframes dlp{
-  0%{box-shadow:0 0 0 0 rgba(214,131,9,.5)}
-  70%{box-shadow:0 0 0 7px rgba(214,131,9,0)}
-  100%{box-shadow:0 0 0 0 rgba(214,131,9,0)}
-}
-
-/* Local-only "view as" switcher under the user chip. Deliberately plain — it must
-   never be mistaken for a product control, and it doesn't exist in prod builds. */
-.dev-viewas{
-  width:100%;margin-top:6px;padding:6px 8px;border-radius:8px;
-  background:var(--ink-sidebar-2);border:1px dashed #3a4a6b;color:#aeb7c5;
-  font:inherit;font-size:11.5px;cursor:pointer;
-}
-.app.collapsed .dev-viewas{display:none}
 
 /* ── Live Calls ───────────────────────────────────────────────────────────────
    The RM's view of the campaign dialling them. The Now-Calling card is the only
@@ -1012,7 +1208,7 @@ a.nav-item{text-decoration:none}
 /* Which mechanism is actually running. Without it a quiet page looks identical
    whether the stream is live or silently dead. */
 .lc-conn{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
-  font-family:"Spline Sans Mono";padding:3px 9px;border-radius:20px;white-space:nowrap}
+  font-family:var(--font-mono);padding:3px 9px;border-radius:20px;white-space:nowrap}
 .lc-conn.live{background:var(--emerald-soft);color:var(--emerald)}
 .lc-conn.poll{background:var(--slate-soft,var(--panel-2));color:var(--muted)}
 
@@ -1027,7 +1223,7 @@ a.nav-item{text-decoration:none}
 @media (prefers-reduced-motion:reduce){.lc-eyebrow.lc-pulse{animation:none}}
 
 .lc-name{font-size:26px;margin:0 0 4px;line-height:1.2}
-.lc-phone{font-family:"Spline Sans Mono";font-size:14px;color:var(--ink-2);margin-bottom:6px}
+.lc-phone{font-family:var(--font-mono);font-size:14px;color:var(--ink-2);margin-bottom:6px}
 .lc-details{font-size:13px;color:var(--ink-2);margin-bottom:10px}
 .lc-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-size:12px}
 
@@ -1044,8 +1240,8 @@ a.nav-item{text-decoration:none}
 .lc-ok{margin-left:auto;color:var(--emerald);font-weight:600;font-size:12px}
 .lc-miss{margin-left:auto;color:var(--coral);font-weight:600;font-size:12px}
 .lc-pending{background:var(--gold-soft)!important}
-.lc-badge{font-size:10px;font-weight:700;font-family:"Spline Sans Mono";padding:2px 8px;
-  border-radius:20px;background:var(--gold);color:#fff;white-space:nowrap}
+.lc-badge{font-size:10px;font-weight:700;font-family:var(--font-mono);padding:2px 8px;
+  border-radius:20px;background:var(--gold);color:var(--on-accent);white-space:nowrap}
 
 /* Live Calls — Topbar button. Sits left of WhatsApp; RMs only.
    Three states, loudest last: idle (plain), queued (calls waiting), live (on a call
@@ -1054,12 +1250,12 @@ a.nav-item{text-decoration:none}
 .btn.lc-btn{position:relative;display:inline-flex;align-items:center;gap:6px;transition:box-shadow .25s,border-color .25s,background .25s}
 .btn.lc-btn.queued{border-color:var(--amber);color:var(--amber);background:var(--amber-soft)}
 .btn.lc-btn.live{
-  border-color:var(--emerald);color:#fff;background:var(--emerald);
+  border-color:var(--emerald);color:var(--on-accent);background:var(--emerald);
   animation:lc-glow 1.5s ease-in-out infinite;
 }
 @keyframes lc-glow{
-  0%,100%{box-shadow:0 0 0 0 rgba(5,150,105,.55)}
-  50%    {box-shadow:0 0 0 7px rgba(5,150,105,0)}
+  0%,100%{box-shadow:0 0 0 0 var(--emerald-ring)}
+  50%    {box-shadow:0 0 0 7px transparent}
 }
 /* The colour and the count already carry the state; the pulse is decoration. */
 @media (prefers-reduced-motion:reduce){.btn.lc-btn.live{animation:none;box-shadow:0 0 0 3px var(--emerald-soft)}}
@@ -1067,8 +1263,8 @@ a.nav-item{text-decoration:none}
 /* Unmarked results. Nothing else nags — the page never interrupts a live call. */
 .lc-btn-count{
   position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;
-  border-radius:20px;background:var(--gold);color:#fff;border:2px solid var(--panel);
-  font-size:10px;font-weight:700;font-family:"Spline Sans Mono";
+  border-radius:20px;background:var(--gold);color:var(--on-accent);border:2px solid var(--panel);
+  font-size:10px;font-weight:700;font-family:var(--font-mono);
   display:grid;place-items:center;line-height:1;
 }
 
@@ -1078,7 +1274,7 @@ a.nav-item{text-decoration:none}
   font-size:15px;color:var(--ink-2);margin-bottom:14px;padding:10px 14px;
   border-radius:12px;background:var(--panel-2);border:1px solid var(--line);
 }
-.lc-incoming strong{font-size:24px;color:var(--ink);font-family:"Spline Sans Mono";line-height:1}
+.lc-incoming strong{font-size:24px;color:var(--ink);font-family:var(--font-mono);line-height:1}
 .lc-incoming.live{background:var(--emerald-soft);border-color:var(--emerald)}
 .lc-incoming.live strong{color:var(--emerald)}
 
@@ -1088,7 +1284,7 @@ a.nav-item{text-decoration:none}
   margin-left:6px;padding:1px 6px;border-radius:5px;
   background:var(--amber-soft);color:var(--amber);
   font-size:9.5px;font-weight:800;letter-spacing:.06em;
-  font-family:"Spline Sans Mono";vertical-align:middle;
+  font-family:var(--font-mono);vertical-align:middle;
 }
 
 /* ---------------- Mobile app shell ----------------
@@ -1097,9 +1293,9 @@ a.nav-item{text-decoration:none}
 .m-app{display:flex;flex-direction:column;height:100vh;overflow:hidden;background:var(--bg)}
 .m-top{flex:none;display:flex;align-items:center;gap:10px;height:56px;padding:0 12px;
   border-bottom:1px solid var(--line);background:var(--panel)}
-.m-title{flex:1;min-width:0;margin:0;font-family:"Bricolage Grotesque";font-weight:700;font-size:17px;
+.m-title{flex:1;min-width:0;margin:0;font-family:var(--font-display);font-weight:700;font-size:17px;
   letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.m-icon{flex:none;width:38px;height:38px;border-radius:9px;border:1px solid var(--line);background:var(--panel);
+.m-icon{flex:none;width:var(--control-h);height:var(--control-h);border-radius:var(--r-input);border:1px solid var(--line);background:var(--panel);
   display:grid;place-items:center;color:var(--ink-2);cursor:pointer;font:inherit;font-size:15px}
 .m-icon svg{width:18px;height:18px}
 /* the box grows leftwards out of the search button */
@@ -1114,11 +1310,11 @@ a.nav-item{text-decoration:none}
 
 /* the drawer reuses the desktop sidebar's dark .brand / .nav-item / .user chrome */
 .m-drawer{position:fixed;top:0;bottom:0;left:0;width:75%;z-index:70;display:flex;flex-direction:column;
-  background:linear-gradient(180deg,#111a2b,var(--ink-sidebar));padding:18px 12px;
+  background:linear-gradient(180deg,var(--sidebar-bg-2),var(--sidebar-bg));padding:18px 12px;
   transform:translateX(-100%);transition:transform .2s ease}
 .m-drawer.open{transform:none}
 .m-drawer .nav-item{padding:11px 12px;font-size:14px}
-.m-scrim{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:65}
+.m-scrim{position:fixed;inset:0;background:var(--scrim);z-index:65}
 
 .m-list{display:flex;flex-direction:column;background:var(--panel);border:1px solid var(--line);
   border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden}
@@ -1127,7 +1323,7 @@ a.nav-item{text-decoration:none}
 .m-row:last-child{border-bottom:0}
 .m-row-line{display:flex;align-items:center;gap:8px;width:100%;min-width:0}
 .m-nm{font-weight:600;font-size:14.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.m-ph{flex:none;font-size:12.5px;color:var(--muted);font-family:"Spline Sans Mono"}
+.m-ph{flex:none;font-size:12.5px;color:var(--muted);font-family:var(--font-mono)}
 .m-soc{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .m-soc::before{content:"· "}
 
@@ -1163,12 +1359,29 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 
    The SVG icons brighten on hover/active via currentColor, which a PNG can't do; the
    brightness filter keeps these tracking the text instead of staying flat grey. */
+/* The Bonvoice and Huvo marks are PNGs with a grey (164,173,191) baked in, so they
+   ignored the rail's colour and the theme entirely — a brightness() filter can only
+   lighten grey, never make it match the text beside it.
+
+   Masking paints the PNG's ALPHA with currentColor instead, so they inherit exactly
+   what the label does: muted at rest, strong on hover, brand when active, and
+   correct in dark mode. The <img> keeps its src for alt text and as the fallback
+   if mask-image is ever unsupported. */
 .nav-item .nav-img{
   width:17px;height:17px;flex:none;object-fit:contain;
-  opacity:.82;transition:opacity .15s,filter .15s;
+  transition:background-color var(--t),opacity var(--t);
 }
-.nav-item:hover .nav-img{opacity:1;filter:brightness(1.15)}
-.nav-item.active .nav-img{opacity:1;filter:brightness(1.35)}
+@supports (mask-image: url(#x)) or (-webkit-mask-image: url(#x)){
+  .nav-item .nav-img{
+    background-color:currentColor;
+    -webkit-mask-position:center;mask-position:center;
+    -webkit-mask-size:contain;mask-size:contain;
+    -webkit-mask-repeat:no-repeat;mask-repeat:no-repeat;
+  }
+  .nav-item .nav-img[src$="bonvoice_icon.png"]{
+    -webkit-mask-image:url(/bonvoice_icon.png);mask-image:url(/bonvoice_icon.png);
+  }
+}
 
 /* Huvo Call Log header.
 
@@ -1210,7 +1423,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .modal.hv-detail .mb{max-height:70vh;overflow:auto}
 
 .hv-detail-num{
-  margin-left:10px;font-family:"Spline Sans Mono";font-size:12.5px;
+  margin-left:10px;font-family:var(--font-mono);font-size:12.5px;
   font-weight:500;color:var(--muted);
 }
 
@@ -1231,11 +1444,11 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .hv-summary{font-size:13px;line-height:1.55;color:var(--ink-2);margin:0;white-space:pre-wrap}
 
 .hv-raw{
-  font-family:"Spline Sans Mono";font-size:11px;line-height:1.5;
+  font-family:var(--font-mono);font-size:11px;line-height:1.5;
   background:var(--panel-2);border:1px solid var(--line);border-radius:8px;
   padding:10px;max-height:280px;overflow:auto;white-space:pre-wrap;word-break:break-all;
 }
-.hv-key{margin-top:12px;font-family:"Spline Sans Mono";font-size:10.5px;color:var(--muted)}
+.hv-key{margin-top:12px;font-family:var(--font-mono);font-size:10.5px;color:var(--muted)}
 
 /* The row opens the detail; the checkbox, recording and lead controls inside it stop
    propagation so they still do their own job. */
@@ -1250,27 +1463,6 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
   white-space:nowrap;vertical-align:bottom;
   font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:6px;
   background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line);
-}
-
-/* Incoming-call bell. Ringing only for calls the LEAD placed — an RM's own outgoing
-   calls are not news to them. */
-.btn.ic-bell{position:relative;padding-left:10px;padding-right:10px}
-.btn.ic-bell.ringing{
-  border-color:var(--coral);color:var(--coral);background:var(--coral-soft);
-  animation:ic-ring 1.6s ease-in-out infinite;
-}
-@keyframes ic-ring{
-  0%,100%{box-shadow:0 0 0 0 rgba(225,74,90,.5)}
-  50%    {box-shadow:0 0 0 6px rgba(225,74,90,0)}
-}
-/* The count already carries the state; the pulse is decoration. */
-@media (prefers-reduced-motion:reduce){.btn.ic-bell.ringing{animation:none}}
-
-.ic-count{
-  position:absolute;top:-6px;right:-6px;min-width:17px;height:17px;padding:0 4px;
-  border-radius:20px;background:var(--coral);color:#fff;border:2px solid var(--panel);
-  font-size:10px;font-weight:700;font-family:"Spline Sans Mono";
-  display:grid;place-items:center;line-height:1;
 }
 
 /* Activity log page. */
@@ -1318,7 +1510,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 /* Also used on its own in the drill-down modal, whose other headers stay left. */
 .rp-th{text-align:right;white-space:nowrap}
 .rp-tbl th:first-child,.rp-tbl tfoot td:first-child{text-align:left}
-.rp-num{text-align:right;font-family:"Spline Sans Mono";font-variant-numeric:tabular-nums;font-size:13px}
+.rp-num{text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:13px}
 .rp-num.strong{font-weight:700;color:var(--ink)}
 /* A zero is information, not an absence — dimmed, never hidden. */
 .rp-num.zero{color:var(--muted)}
@@ -1337,7 +1529,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
   transition:background .15s,color .15s,border-color .15s;
 }
 .rp-pill:hover{background:var(--panel-2)}
-.rp-pill.on{background:var(--blue);border-color:var(--blue);color:#fff}
+.rp-pill.on{background:var(--brand);border-color:var(--brand);color:var(--on-brand)}
 .rp-pill.on:hover{background:var(--blue)}
 
 /* per-RM report detail (/reports/detail) */
@@ -1353,7 +1545,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
   background:var(--panel);cursor:pointer;font:inherit;color:inherit;transition:border-color .12s,box-shadow .12s}
 .rd-day:hover{border-color:var(--blue);box-shadow:var(--shadow)}
 .rd-day-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:10px}
-.rd-day-date{font-family:"Bricolage Grotesque";font-size:15px;font-weight:700}
+.rd-day-date{font-family:var(--font-display);font-size:15px;font-weight:700}
 .rd-day-meta{display:flex;gap:14px;font-size:11.5px;color:var(--muted);white-space:nowrap;flex-wrap:wrap}
 .rd-day-meta b{color:var(--ink-2);font-variant-numeric:tabular-nums;font-size:12.5px}
 .rd-pills{display:flex;gap:6px;flex-wrap:wrap}
@@ -1381,27 +1573,32 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
    .modal-* rules below beat the global ones by exactly one class.
    ============================================================ */
 .snap-page{
-  --acc:#FA541C;--accDark:#D4380D;--accBg:#FFF2E8;--accBg2:#FFE4D2;
-  --txt:#1C252E;--mut:#637381;--mut2:#919EAB;
-  --panel:#fff;--panel2:#F4F6F8;--line:#E5E1DA;--line2:#DFE3E8;
-  --goodBg:#E8F8EE;--goodDk:#15803D;--warnBg:#FEF3C7;--warnDk:#9A6700;
-  --badBg:#FEE2E2;--badDk:#B91C1C;--blueBg:#DBEAFE;--blueDk:#1E40AF;
-  font:13px/1.45 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;
+  --acc:var(--supply-orange);--accDark:var(--supply-orange-2);--accBg:var(--supply-orange-soft);--accBg2:var(--supply-orange-soft-2);
+  --txt:var(--ink);--mut:var(--ink-3);--mut2:var(--muted-2);
+  /* --panel and --line are NOT redeclared: they already hold exactly these values,
+     and `--panel:var(--panel)` is a self-reference — invalid at computed-value time,
+     which silently unsets the property for this subtree. */
+  --panel2:var(--panel-2);--line2:var(--line-2);
+  --goodBg:var(--emerald-soft);--goodDk:var(--emerald-deep);--warnBg:var(--amber-soft);--warnDk:var(--amber-deep);
+  --badBg:var(--coral-soft);--badDk:var(--coral-deep);--blueBg:var(--blue-soft);--blueDk:var(--blue-deep);
+  font:13px/1.45 var(--font-body);
   color:var(--txt);
-  animation:snap-fade-in .26s cubic-bezier(.23,1,.32,1);
+  animation:snap-fade-in var(--t-enter) var(--ease-out);
 }
 @keyframes snap-fade-in{from{opacity:0}to{opacity:1}}
 
 /* ---- buttons: restore the CRM's orange primary inside this page only ---- */
 .snap-page .btn{
-  padding:7px 13px;border:1px solid var(--line);background:var(--panel);border-radius:8px;
+  /* The Live Inventory page is a 1:1 port with its own control scale — it opts out
+     of --control-h rather than being half-converted. */
+  height:auto;padding:7px 13px;border:1px solid var(--line);background:var(--panel);border-radius:8px;
   font-size:12.5px;font-weight:600;color:var(--txt);display:inline-flex;align-items:center;
-  gap:5px;white-space:nowrap;transition:all .12s;
+  gap:5px;white-space:nowrap;transition:all var(--t);
 }
 .snap-page .btn:hover:not(:disabled){background:var(--panel2);transform:none}
-.snap-page .btn.primary{background:var(--acc);color:#fff;border-color:var(--acc)}
+.snap-page .btn.primary{background:var(--acc);color:var(--on-accent);border-color:var(--acc)}
 .snap-page .btn.primary:hover:not(:disabled){background:var(--accDark);border-color:var(--accDark);transform:none}
-.snap-page .btn.sm{padding:4px 9px;font-size:11.5px;border-radius:6px}
+.snap-page .btn.sm{height:auto;padding:4px 9px;font-size:11.5px;border-radius:6px}
 .snap-page .btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
 
 /* ---- multi-select dropdown ---- */
@@ -1410,9 +1607,9 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .an-ms-btn.has{border-color:var(--acc);background:var(--accBg);color:var(--accDark)}
 .snap-page .an-ms-btn:hover{background:var(--panel2)}
 .snap-page .an-ms-btn.has:hover{background:var(--accBg2)}
-.snap-page .an-ms-count{background:var(--acc);color:#fff;font-size:10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
+.snap-page .an-ms-count{background:var(--acc);color:var(--on-accent);font-size:10px;min-width:16px;height:16px;padding:0 4px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}
 .snap-page .an-ms-caret{color:var(--mut2);font-size:10px}
-.snap-page .an-ms-pop{position:absolute;z-index:40;top:calc(100% + 5px);left:0;width:260px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:0 12px 32px rgba(22,28,36,.16);padding:8px}
+.snap-page .an-ms-pop{position:absolute;z-index:40;top:calc(100% + 5px);left:0;width:260px;background:var(--panel);border:1px solid var(--line2);border-radius:10px;box-shadow:0 12px 32px var(--scrim-2);padding:8px}
 .snap-page .an-ms-search{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;margin-bottom:6px;outline:none}
 .snap-page .an-ms-search:focus{border-color:var(--acc)}
 .snap-page .an-ms-actions{display:flex;align-items:center;gap:8px;padding:0 2px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
@@ -1428,7 +1625,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 /* ---- filter bar ---- */
 .snap-page .snap-filters{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:14px;display:flex;flex-direction:column;gap:10px}
 .snap-page .snap-filters-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.snap-page .snap-filters-lbl{font-size:12px;font-weight:700;color:#161C24;margin-right:2px}
+.snap-page .snap-filters-lbl{font-size:12px;font-weight:700;color:var(--ink);margin-right:2px}
 .snap-page .snap-price{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:4px 8px;background:var(--panel)}
 .snap-page .snap-price-lbl{font-size:11px;font-weight:600;color:var(--mut)}
 .snap-page .snap-price-in{width:92px;border:1px solid var(--line);border-radius:7px;padding:5px 8px;font:inherit;font-size:12px;color:var(--txt);background:var(--panel);outline:none}
@@ -1446,15 +1643,15 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .snap-share-lbl{font-size:11px;color:var(--mut);align-self:center;margin:0 4px}
 
 /* ---- city block ---- */
-.snap-page .snap-city{margin-bottom:20px;border-radius:14px;overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 4px rgba(0,0,0,.03)}
-.snap-page .snap-city-head{background:linear-gradient(135deg,var(--acc),var(--accDark));color:#fff;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.snap-page .snap-city{margin-bottom:20px;border-radius:14px;overflow:hidden;background:var(--panel);border:1px solid var(--line);box-shadow:0 2px 4px var(--scrim-2)}
+.snap-page .snap-city-head{background:linear-gradient(135deg,var(--acc),var(--accDark));color:var(--on-accent);padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:10px}
 .snap-page .snap-city-head h2{font-size:16px;font-weight:700;letter-spacing:-.2px;margin:0}
 .snap-page .snap-city-head .sub{font-size:11.5px;opacity:.9;margin-top:2px;font-weight:500}
 .snap-page .snap-city-head .count-pills{display:flex;gap:6px;flex-wrap:wrap}
-.snap-page .snap-city-head .cp{background:rgba(255,255,255,.18);padding:3px 9px;border-radius:7px;font-size:11px;font-weight:700}
+.snap-page .snap-city-head .cp{background:var(--on-accent-2);padding:3px 9px;border-radius:7px;font-size:11px;font-weight:700}
 .snap-page .snap-cluster{border-bottom:1px solid var(--line)}
 .snap-page .snap-cluster:last-child{border-bottom:0}
-.snap-page .snap-cluster-head{background:#FFF6EC;padding:9px 18px;font-size:11.5px;font-weight:700;color:var(--accDark);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #FCE3CB}
+.snap-page .snap-cluster-head{background:var(--supply-orange-soft);padding:9px 18px;font-size:11.5px;font-weight:700;color:var(--accDark);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--amber-soft-2)}
 
 /* ---- unit table ---- */
 .snap-page .snap-tbl{width:100%;border-collapse:collapse;font-size:12.5px;table-layout:fixed}
@@ -1467,18 +1664,18 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .snap-tbl col.col-loc{width:16%}
 .snap-page .snap-tbl col.col-status{width:13%}
 .snap-page .snap-tbl col.col-price{width:11%}
-.snap-page .snap-tbl thead th{background:#FFFAF3;color:var(--mut);font-weight:600;padding:9px 14px;text-align:left;font-size:10.5px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
+.snap-page .snap-tbl thead th{background:var(--supply-orange-soft);color:var(--mut);font-weight:600;padding:9px 14px;text-align:left;font-size:10.5px;border-bottom:1px solid var(--line);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap}
 .snap-page .snap-tbl thead th.right{text-align:right}
 .snap-page .snap-tbl tbody td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:12.5px;vertical-align:middle;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .snap-page .snap-tbl tbody td.right{text-align:right}
 .snap-page .snap-tbl tbody tr:last-child td{border-bottom:0}
-.snap-page .snap-tbl tbody tr:hover{background:#FFFAF3}
+.snap-page .snap-tbl tbody tr:hover{background:var(--supply-orange-soft)}
 .snap-page .snap-tbl .society{font-weight:700;color:var(--txt)}
 .snap-page .snap-tbl .cell-pm{font-size:10.5px;color:var(--mut);font-weight:500;margin-top:2px}
 .snap-page .snap-tbl .unit{font-family:'SF Mono',Menlo,monospace;font-size:11.5px;color:var(--mut)}
 .snap-page .snap-tbl .area{font-weight:600;color:var(--txt)}
 .snap-page .snap-tbl .cfg{font-weight:600;color:var(--txt)}
-.snap-page .snap-tbl .ask-price{font-weight:700;color:#059669;font-size:13px}
+.snap-page .snap-tbl .ask-price{font-weight:700;color:var(--emerald);font-size:13px}
 
 /* ---- status pills. The CRM only ever saw Ready / Coming Soon; the live
        availability vocabulary (Booked / Sold / Dead) adds three kinds here. ---- */
@@ -1488,7 +1685,6 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .status-pill.bk{background:var(--blueBg);color:var(--blueDk)}
 .snap-page .status-pill.sd{background:var(--panel2);color:var(--mut)}
 .snap-page .status-pill.dd{background:var(--badBg);color:var(--badDk)}
-.snap-page .new-badge{background:#FF3B30;color:#fff;font-size:8.5px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.3px;text-transform:uppercase;margin-right:6px;vertical-align:1px}
 
 /* ---- mobile unit cards (<=900px, chosen in JS by useIsMobile) ---- */
 .snap-page .snap-mlist{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
@@ -1496,7 +1692,7 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .snap-mcard .smc-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
 .snap-page .snap-mcard .smc-soc{font-weight:600;font-size:14px}
 .snap-page .snap-mcard .smc-meta{font-size:12px;color:var(--mut);margin-top:4px;line-height:1.5}
-.snap-page .snap-mcard .smc-price{font-size:15px;font-weight:600;margin-top:6px;color:#059669}
+.snap-page .snap-mcard .smc-price{font-size:15px;font-weight:600;margin-top:6px;color:var(--emerald)}
 
 /* ---- empty / loading ---- */
 .snap-page .empty{text-align:center;padding:60px 20px;color:var(--mut)}
@@ -1508,12 +1704,12 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 
 /* ---- modals. The portal's own modal is .overlay.show + .modal .mh/.mb/.mf;
        these are the CRM's, scoped so the two never collide. ---- */
-.snap-page .modal-bg{position:fixed;inset:0;background:rgba(22,28,36,.55);display:flex;align-items:center;justify-content:center;z-index:100;animation:snap-fade-in .12s ease-out}
-.snap-page .modal-bg .modal{background:var(--panel);border-radius:12px;box-shadow:0 24px 60px rgba(0,0,0,.22);max-height:96vh;overflow:hidden;display:flex;flex-direction:column;width:auto;animation:none}
+.snap-page .modal-bg{position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;z-index:100;animation:snap-fade-in .12s ease-out}
+.snap-page .modal-bg .modal{background:var(--panel);border-radius:12px;box-shadow:0 24px 60px var(--scrim-2);max-height:96vh;overflow:hidden;display:flex;flex-direction:column;width:auto;animation:none}
 .snap-page .modal-head{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:10px}
 .snap-page .modal-head h2{font-size:15px;font-weight:700;margin:0;font-family:inherit}
 .snap-page .modal-body{padding:18px 20px;overflow-y:auto;flex:1}
-.snap-page .modal-foot{padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;background:#FAF8F4;flex-wrap:wrap}
+.snap-page .modal-foot{padding:12px 20px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px;background:var(--panel-2);flex-wrap:wrap}
 .snap-page .x-btn{width:30px;height:30px;border-radius:7px;border:0;background:none;color:var(--mut);display:inline-flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;flex:none}
 .snap-page .x-btn:hover{background:var(--panel2);color:var(--txt)}
 .snap-page .snap-modal-hint{font-size:11.5px;color:var(--mut);margin-bottom:8px}
@@ -1523,39 +1719,38 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
 .snap-page .snap-modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap}
 .snap-page .snap-loading{padding:40px;color:var(--mut);text-align:center}
 .snap-page .snap-preview{padding:14px;background:var(--panel2);border-radius:9px;text-align:center}
-.snap-page .snap-preview img{max-width:100%;border-radius:7px;box-shadow:0 4px 16px rgba(0,0,0,.12)}
+.snap-page .snap-preview img{max-width:100%;border-radius:7px;box-shadow:0 4px 16px var(--scrim-2)}
 
 /* ---- poster: off-screen source for html2canvas. Fixed 760px and its own
        colours, because the PNG is read outside the app. ---- */
-.snap-page .poster{position:absolute;left:-99999px;top:0;width:760px;background:#fff;padding:32px;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:#1C252E}
-.snap-page .poster .ph{display:flex;align-items:center;gap:14px;padding-bottom:18px;border-bottom:3px solid #FA541C;margin-bottom:18px}
+.snap-page .poster{position:absolute;left:-99999px;top:0;width:760px;background:var(--panel);padding:32px;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',sans-serif;color:var(--ink)}
+.snap-page .poster .ph{display:flex;align-items:center;gap:14px;padding-bottom:18px;border-bottom:3px solid var(--supply-orange);margin-bottom:18px}
 .snap-page .poster .ph svg{width:42px;height:42px}
-.snap-page .poster .ph .pht{font-size:22px;font-weight:800;color:#161C24;letter-spacing:-.3px;line-height:1.1}
-.snap-page .poster .ph .phs{font-size:13px;color:#637381;margin-top:2px;font-weight:500}
-.snap-page .poster .ph .phd{margin-left:auto;text-align:right;font-size:11px;color:#637381;font-weight:600}
+.snap-page .poster .ph .pht{font-size:22px;font-weight:800;color:var(--ink);letter-spacing:-.3px;line-height:1.1}
+.snap-page .poster .ph .phs{font-size:13px;color:var(--ink-3);margin-top:2px;font-weight:500}
+.snap-page .poster .ph .phd{margin-left:auto;text-align:right;font-size:11px;color:var(--ink-3);font-weight:600}
 .snap-page .poster .pcity{margin-bottom:22px;page-break-inside:avoid}
-.snap-page .poster .pcity-hd{background:linear-gradient(135deg,#FA541C,#D4380D);color:#fff;padding:11px 16px;border-radius:9px 9px 0 0;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.snap-page .poster .pcity-hd{background:linear-gradient(135deg,var(--supply-orange),var(--supply-orange-2));color:var(--on-accent);padding:11px 16px;border-radius:9px 9px 0 0;display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .snap-page .poster .pcity-hd h3{margin:0;font-size:16px;font-weight:700;letter-spacing:-.2px}
-.snap-page .poster .pcity-hd .cnt{background:rgba(255,255,255,.22);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700}
-.snap-page .poster .pcluster{border:1px solid #E5E1DA;border-top:0;background:#fff}
+.snap-page .poster .pcity-hd .cnt{background:var(--on-accent-3);padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700}
+.snap-page .poster .pcluster{border:1px solid var(--line);border-top:0;background:var(--panel)}
 .snap-page .poster .pcluster:last-child{border-radius:0 0 9px 9px}
-.snap-page .poster .pcluster .phl{background:#FFF6EC;padding:7px 16px;font-size:11px;font-weight:700;color:#D4380D;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #FCE3CB}
+.snap-page .poster .pcluster .phl{background:var(--supply-orange-soft);padding:7px 16px;font-size:11px;font-weight:700;color:var(--supply-orange-2);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--amber-soft-2)}
 .snap-page .poster table{width:100%;border-collapse:collapse;font-size:12px}
-.snap-page .poster table thead th{background:#FAFAF8;padding:8px 12px;text-align:left;color:#637381;font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.4px;border-bottom:1px solid #E5E1DA}
-.snap-page .poster table tbody td{padding:8px 12px;border-bottom:1px solid #F1ECE4;vertical-align:middle}
+.snap-page .poster table thead th{background:var(--panel-2);padding:8px 12px;text-align:left;color:var(--ink-3);font-size:10px;text-transform:uppercase;font-weight:700;letter-spacing:.4px;border-bottom:1px solid var(--line)}
+.snap-page .poster table tbody td{padding:8px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
 .snap-page .poster table tbody tr:last-child td{border-bottom:0}
-.snap-page .poster table .ps-soc{font-weight:700;color:#1C252E}
-.snap-page .poster table .ps-unit{font-family:'SF Mono',Menlo,monospace;font-size:10.5px;color:#637381}
-.snap-page .poster table .ps-status{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:#F4F6F8;color:#637381}
-.snap-page .poster table .ps-status.r{background:#E8F8EE;color:#15803D}
-.snap-page .poster table .ps-status.cs{background:#FEF3C7;color:#9A6700}
-.snap-page .poster table .ps-status.bk{background:#DBEAFE;color:#1E40AF}
-.snap-page .poster table .ps-status.sd{background:#F4F6F8;color:#637381}
-.snap-page .poster table .ps-status.dd{background:#FEE2E2;color:#B91C1C}
-.snap-page .poster table .ps-price{font-weight:700;color:#059669;font-size:13px;white-space:nowrap}
-.snap-page .poster table .ps-loc{font-size:10px;color:#637381;font-weight:500;margin-top:2px}
-.snap-page .poster .pfoot{margin-top:24px;padding-top:14px;border-top:1px solid #E5E1DA;font-size:11px;color:#637381;text-align:center;font-weight:500}
-.snap-page .poster .pnew{background:#FF3B30;color:#fff;font-size:8.5px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:1px;letter-spacing:.3px;text-transform:uppercase}
+.snap-page .poster table .ps-soc{font-weight:700;color:var(--ink)}
+.snap-page .poster table .ps-unit{font-family:'SF Mono',Menlo,monospace;font-size:10.5px;color:var(--ink-3)}
+.snap-page .poster table .ps-status{display:inline-block;padding:2px 7px;border-radius:4px;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;background:var(--panel-2);color:var(--ink-3)}
+.snap-page .poster table .ps-status.r{background:var(--emerald-soft);color:var(--emerald-deep)}
+.snap-page .poster table .ps-status.cs{background:var(--amber-soft);color:var(--amber-deep)}
+.snap-page .poster table .ps-status.bk{background:var(--blue-soft);color:var(--blue-deep)}
+.snap-page .poster table .ps-status.sd{background:var(--panel-2);color:var(--ink-3)}
+.snap-page .poster table .ps-status.dd{background:var(--coral-soft);color:var(--coral-deep)}
+.snap-page .poster table .ps-price{font-weight:700;color:var(--emerald);font-size:13px;white-space:nowrap}
+.snap-page .poster table .ps-loc{font-size:10px;color:var(--ink-3);font-weight:500;margin-top:2px}
+.snap-page .poster .pfoot{margin-top:24px;padding-top:14px;border-top:1px solid var(--line);font-size:11px;color:var(--ink-3);text-align:center;font-weight:500}
 
 @media (max-width:900px){
   .snap-page .snap-city-head{flex-wrap:wrap}
@@ -1583,3 +1778,624 @@ button.switch:focus-visible{outline:2px solid var(--emerald);outline-offset:2px}
    own typography and only gain the affordance. */
 .rec-time{color:inherit;text-decoration:none;cursor:pointer;border-bottom:1px dashed var(--line)}
 .rec-time:hover{color:var(--blue);border-bottom-color:currentColor}
+
+/* ── theme wipe ──────────────────────────────────────────────────────────────
+   The toggle runs through the View Transitions API. The OLD snapshot is held
+   still and the NEW one is revealed by an expanding clip-path, so the themes
+   look like one curtain being drawn rather than a flash. Direction is picked
+   fresh on each toggle (ThemeContext sets data-wipe). */
+::view-transition-old(root){animation:none}
+::view-transition-new(root){animation:theme-wipe .55s var(--ease) both}
+html[data-wipe='ltr'] ::view-transition-new(root){--wipe-from:0 100% 0 0}
+html[data-wipe='rtl'] ::view-transition-new(root){--wipe-from:0 0 0 100%}
+html[data-wipe='ttb'] ::view-transition-new(root){--wipe-from:0 0 100% 0}
+html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
+@keyframes theme-wipe{from{clip-path:inset(var(--wipe-from,0 100% 0 0))}to{clip-path:inset(0 0 0 0)}}
+@media (prefers-reduced-motion:reduce){
+  ::view-transition-new(root){animation:none}
+}
+
+/* ── profile page ────────────────────────────────────────────────────────── */
+.profile{display:flex;flex-direction:column;gap:16px;max-width:760px}
+.profile-head{display:flex;align-items:center;gap:16px}
+.profile-av{
+  width:68px;height:68px;border-radius:18px;flex:none;display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--brand),var(--brand-strong));
+  color:var(--on-brand);font-family:var(--font-display);font-weight:700;font-size:26px;
+  object-fit:cover;
+}
+.profile-head h2{font-family:var(--font-display);margin:0;font-size:24px;letter-spacing:-.02em}
+.profile-head .pe{color:var(--muted);font-size:13px;margin-top:2px}
+.profile-rows{display:flex;flex-direction:column}
+.profile-row{
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  padding:14px 0;border-bottom:1px solid var(--line-2);
+}
+.profile-row:last-child{border-bottom:0}
+.profile-row .pl{font-weight:600;font-size:13.5px}
+.profile-row .pd{color:var(--muted);font-size:12px;margin-top:2px}
+.profile-row .pv{color:var(--ink-2);font-size:13px;text-align:right}
+.theme-seg{display:inline-flex;background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:3px;gap:2px}
+.theme-seg button{
+  border:0;background:transparent;border-radius:7px;padding:6px 13px;font:inherit;font-size:12.5px;
+  font-weight:600;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:6px;
+  transition:background var(--t),color var(--t);
+}
+.theme-seg button.on{background:var(--panel);color:var(--brand);box-shadow:var(--shadow)}
+.theme-seg svg{width:14px;height:14px}
+
+/* ── motion ──────────────────────────────────────────────────────────────────
+   Everything here has a reduced-motion off-switch at the bottom. Durations and
+   easings come from the tokens, so a retune is one edit, not forty. */
+
+/* Route change. The direction is decided by nav depth (see App.tsx): going deeper
+   enters from the right, coming back from the left, a sibling just fades. */
+.page-anim{animation:pageFade var(--t-enter) var(--ease-out)}
+.page-anim.fwd{animation-name:pageInRight}
+.page-anim.back{animation-name:pageInLeft}
+@keyframes pageInRight{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes pageInLeft {from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
+@keyframes pageFade   {from{opacity:0}to{opacity:1}}
+
+/* Modal + scrim */
+@keyframes modal-in {from{opacity:0;transform:translateY(12px) scale(.99)}to{opacity:1;transform:none}}
+@keyframes scrim-in {from{opacity:0}to{opacity:1}}
+
+/* Skeletons. A shimmer, not a spinner: it holds the shape of what's arriving, so
+   the layout doesn't jump when the data lands. */
+.skel{
+  display:block;border-radius:7px;
+  background:linear-gradient(90deg,var(--panel-2),var(--panel-3),var(--panel-2));
+  background-size:200% 100%;animation:shimmer 1.2s linear infinite;
+}
+@keyframes shimmer{to{background-position:-200% 0}}
+.skel-row{display:flex;align-items:center;gap:12px;padding:11px 12px;border-bottom:1px solid var(--line-2)}
+.skel-text{height:11px}
+.skel-av{width:32px;height:32px;border-radius:9px;flex:none}
+
+/* Login card */
+.login-wrap{height:100vh;display:grid;place-items:center;background:var(--bg)}
+.login-card{animation:loginRise var(--t-sheet) var(--ease-out) both}
+.login-card img{animation:loginRise var(--t-sheet) var(--ease-out) .06s both}
+.login-card .sec-sub{animation:loginRise var(--t-sheet) var(--ease-out) .12s both}
+.login-card #g-signin{animation:loginRise var(--t-sheet) var(--ease-out) .18s both}
+@keyframes loginRise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+
+/* Buttons get a press, which is the one piece of motion people feel rather than see. */
+.btn:active:not(:disabled){transform:translateY(1px);transition:transform var(--t-press)}
+
+@media (prefers-reduced-motion:reduce){
+  .page-anim,.skel,.login-card,.login-card img,.login-card .sec-sub,.login-card #g-signin,
+  .toast,.modal,.overlay{animation:none!important}
+  .btn:active:not(:disabled){transform:none}
+}
+
+/* Status dot — was a ● glyph, which inherited the font and sat off the baseline. */
+.lc-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;vertical-align:middle;margin-right:2px}
+/* Icons inside text buttons/labels sit on the text baseline, not above it. */
+.btn svg,.note-toggle svg,.mand-flag svg,.lc-badge svg,.bv-danger svg{vertical-align:-2px}
+
+/* ── filter bar: chips + modal ───────────────────────────────────────────── */
+.fbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fbar-count{
+  margin-left:2px;min-width:17px;height:17px;padding:0 5px;border-radius:999px;
+  background:var(--brand);color:var(--on-brand);font-size:10.5px;font-weight:700;
+  display:inline-flex;align-items:center;justify-content:center;font-family:var(--font-mono);
+}
+.fchips{display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:10px 0 0}
+.fchip{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px 4px 11px;
+  border-radius:999px;border:1px solid var(--brand-soft);background:var(--brand-soft);
+  color:var(--brand);font:inherit;font-size:12px;font-weight:600;cursor:pointer;
+  transition:border-color var(--t),background var(--t);
+}
+.fchip:hover{border-color:var(--brand)}
+.fchip svg{width:13px;height:13px;opacity:.7}
+.fchip:hover svg{opacity:1}
+.fchip-clear{
+  background:none;border:0;font:inherit;font-size:12px;font-weight:600;
+  color:var(--muted);cursor:pointer;padding:4px 6px;transition:color var(--t);
+}
+.fchip-clear:hover{color:var(--coral)}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+@media (max-width:640px){.fgrid{grid-template-columns:1fr}}
+
+/* ── sliding segmented toggle ────────────────────────────────────────────────
+   The thumb paints the "selected" surface, so the active BUTTON goes transparent —
+   otherwise both render and the slide doesn't read. One moving part. */
+.seg-slide{position:relative}
+.seg-slide > button{position:relative;z-index:1;background:transparent}
+.seg-thumb{
+  position:absolute;left:0;top:3px;bottom:3px;z-index:0;border-radius:999px;
+  background:var(--panel);box-shadow:var(--shadow);pointer-events:none;
+  transition:transform var(--t-move) var(--ease),width var(--t-move) var(--ease),opacity var(--t);
+}
+/* Selection is carried by the COLOUR, which is instant; the thumb is the garnish,
+   so the toggle still reads correctly if the slide never plays. */
+.seg-slide button.on{background:transparent!important;box-shadow:none!important}
+/* reduced-motion: the thumb still moves (it IS the selection), just instantly. */
+@media (prefers-reduced-motion:reduce){.seg-thumb{transition:opacity var(--t)}}
+
+.view-toggle{
+  display:inline-flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:999px;padding:3px;
+}
+.view-toggle button{
+  border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;font-weight:600;
+  padding:7px 18px;border-radius:999px;cursor:pointer;display:inline-flex;align-items:center;gap:7px;
+  transition:color var(--t);
+}
+.view-toggle button.on{color:var(--brand)}
+.view-toggle svg{width:15px;height:15px}
+
+/* ── large stage filter boxes ───────────────────────────────────────────────
+   A pill is a filter AND a count. Clicking toggles it; nothing selected = ALL. */
+.stage-counts{display:flex;gap:10px;align-items:flex-start;margin-bottom:16px}
+.stage-pills{display:flex;gap:10px;flex-wrap:wrap;flex:1;min-width:0}
+.count-pill{
+  /* default declared here, not left to a var() fallback — each pill overrides it
+     inline with its stage's own hue. */
+  --pill-hue:var(--ink);
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-width:104px;
+  padding:12px 14px;border-radius:var(--radius);border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);cursor:pointer;font:inherit;
+  transition:border-color var(--t),background var(--t),box-shadow var(--t);
+}
+.count-pill:hover{border-color:var(--brand)}
+.count-pill.on{border-color:var(--brand);background:var(--brand-softer);box-shadow:0 0 0 3px var(--brand-ring)}
+/* The stage's hue lives in the NUMBER. A coloured top edge reads as decoration;
+   a coloured number reads as the count itself belonging to that stage. */
+.count-pill .num{font-family:var(--font-display);font-size:26px;font-weight:700;line-height:1;color:var(--pill-hue)}
+.count-pill .lbl{font-size:10px;font-weight:700;letter-spacing:.04em;color:var(--muted);text-align:center}
+
+/* ── lead popup ──────────────────────────────────────────────────────────────
+   Opening a lead no longer leaves the list. The detail-grid inside is unchanged,
+   so this is a container, not a second layout to keep in sync. */
+.overlay.closing{animation:scrim-out var(--t-enter) var(--ease-out) forwards}
+.overlay.closing .modal{animation:modal-out var(--t-enter) var(--ease-out) forwards}
+@keyframes scrim-out{to{opacity:0}}
+@keyframes modal-out{to{opacity:0;transform:translateY(18px)}}   /* exits downward */
+
+.modal-lead{
+  /* Portrait, not a wide slab. The sections stack, so width past ~880px only
+     stretches each card's fields further apart — the reading is vertical and the
+     body scrolls. `.expand-pair` still fits two sections side by side at this
+     width, which is the only place horizontal space is actually used. */
+  width:min(880px,100%);max-height:92vh;position:relative;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+/* The body scrolls, not the page behind it — otherwise a long lead drags the list
+   underneath and you lose your place, which is the whole reason this is a popup. */
+.modal-lead-body{overflow-y:auto;overscroll-behavior:contain;padding:26px 26px 22px}
+.modal-x{
+  position:absolute;top:14px;right:14px;z-index:3;width:32px;height:32px;border-radius:9px;
+  display:grid;place-items:center;border:1px solid var(--line);background:var(--panel);
+  color:var(--muted);cursor:pointer;transition:color var(--t),border-color var(--t),background var(--t);
+}
+.modal-x:hover{color:var(--ink);border-color:var(--line-3);background:var(--panel-2)}
+.modal-x svg{width:16px;height:16px}
+/* the page's own top padding is the modal body's job here */
+.modal-lead-body > .back{display:none}
+@media (max-width:900px){
+  .modal-lead{width:100%;max-height:100vh;border-radius:0}
+  .modal-lead-body{padding:20px 16px}
+}
+@media (prefers-reduced-motion:reduce){
+  .overlay.closing,.overlay.closing .modal{animation:none}
+}
+
+/* -- lead toolbar ---------------------------------------------------------- */
+.lead-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.lead-toolbar .fbar{gap:8px}
+.city-tabs{
+  display:inline-flex;gap:4px;background:var(--panel-2);border:1px solid var(--line);
+  border-radius:999px;padding:3px;
+}
+.city-tabs .tab{
+  border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:13px;font-weight:600;
+  padding:7px 14px;border-radius:999px;cursor:pointer;white-space:nowrap;transition:color var(--t);
+}
+.city-tabs .tab-active{color:var(--brand)}
+/* flex:1 with no cap, so the input elongates to fill the toolbar and shrinks as
+   the sidebar collapses or the window narrows. */
+.search-form{display:flex;gap:8px;flex:1;min-width:260px}
+.search-form input{
+  flex:1;min-width:0;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  border-radius:999px;padding:9px 16px;outline:none;
+  transition:border-color var(--t),box-shadow var(--t);
+}
+.search-form input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-ring)}
+.search-form .btn{border-radius:999px;flex-shrink:0;white-space:nowrap}
+
+/* -- notification bell ----------------------------------------------------- */
+.bell-wrap{position:relative}
+.bell-badge{
+  position:absolute;top:-4px;right:-4px;background:var(--brand);color:var(--on-brand);
+  font-size:10px;font-weight:700;min-width:17px;height:17px;border-radius:999px;
+  display:grid;place-items:center;padding:0 4px;font-family:var(--font-mono);
+}
+.bell-dropdown{
+  position:absolute;right:0;top:120%;width:360px;max-height:460px;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow-lg);z-index:1;padding:8px;
+  animation:bell-drawer var(--t-enter) var(--ease-out);
+}
+.bell-cat + .bell-cat{border-top:1px solid var(--line-2)}
+.bell-cat-head{
+  display:flex;align-items:center;gap:8px;width:100%;padding:12px 10px;background:transparent;
+  border:0;text-align:left;cursor:pointer;border-radius:8px;font:inherit;
+  transition:background var(--t);
+}
+.bell-cat-head:hover{background:var(--panel-2)}
+.bell-cat-name{flex:1;display:flex;align-items:baseline;gap:8px;font-size:13.5px;font-weight:700;color:var(--ink)}
+.bell-hint{font-weight:500;font-size:11.5px;color:var(--muted)}
+.bell-cat-count{
+  min-width:22px;height:20px;padding:0 7px;border-radius:999px;background:var(--brand-soft);
+  color:var(--brand);font-size:12px;font-weight:700;display:inline-grid;place-items:center;
+  font-family:var(--font-mono);
+}
+.bell-cat-count.zero{background:var(--panel-2);color:var(--muted)}
+.bell-cat-chev{color:var(--muted);display:inline-grid;place-items:center;transition:transform var(--t-move) var(--ease)}
+.bell-cat-chev svg{width:14px;height:14px}
+.bell-cat-chev.open{transform:rotate(180deg)}
+.bell-drawer{max-height:300px;overflow-y:auto;padding-bottom:6px;animation:bell-drawer var(--t-enter) var(--ease-out)}
+@keyframes bell-drawer{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){
+  .bell-drawer,.bell-dropdown{animation:none}
+  .bell-cat-chev{transition:none}
+}
+.bell-row{
+  display:flex;flex-direction:column;gap:2px;width:100%;text-align:left;background:transparent;
+  border:0;padding:9px 10px;border-radius:8px;cursor:pointer;font:inherit;
+}
+.bell-row:hover{background:var(--panel-2)}
+.bell-name{font-weight:600;font-size:13px;color:var(--ink)}
+.bell-meta{font-size:11.5px;color:var(--muted)}
+.bell-empty{color:var(--muted);font-size:13px;padding:8px 10px}
+
+/* Pages portal their own action buttons in here (Select, Download CSV, ...). */
+#topbar-slot{display:flex;align-items:center;gap:8px}
+
+/* Summary's greeting row. The toggle is pinned to the row's TOP edge rather than
+   centred, so it lands at the same height as the toolbar row's toggle in Table
+   view — a centred toggle drifts down by half the greeting's extra height. */
+.home-viewbar{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+.home-viewbar .view-toggle{flex:none}
+
+/* -- control heights --------------------------------------------------------
+   .btn now carries --control-h globally (see the .btn rule), so only the controls
+   that are NOT buttons need pinning here: the search input and the two segmented
+   shells. Inline <select>s that sit in a button row get it too.
+
+   DIRECT-CHILD selectors on purpose: the Filters modal renders inside
+   .lead-toolbar (FilterBar owns it), so a descendant selector would reach in and
+   squash the modal's own fields. */
+.lead-toolbar > .city-tabs,
+.lead-toolbar > .search-form > input,
+.fbar > .view-toggle{height:var(--control-h);padding-top:0;padding-bottom:0}
+/* The segmented shells carry the height; their buttons fill what is left inside
+   the 3px padding. */
+.lead-toolbar > .city-tabs .tab,
+.fbar > .view-toggle button{padding-top:0;padding-bottom:0;height:calc(var(--control-h) - 6px)}
+/* A bare <select> dropped into a row of buttons — match it rather than leaving a
+   third height in the same line. */
+.ctl{height:var(--control-h);border-radius:var(--r-input);border:1px solid var(--line);
+  background:var(--panel);color:var(--ink-2);font:inherit;font-size:12.5px;padding:0 10px;cursor:pointer}
+
+/* -- lead funnel ------------------------------------------------------------
+   The TRACK is half the card, not a full-width track with a half-full bar: the
+   empty half is the part that has to stop at the midpoint, so the right side is
+   free for the count, the share and the range filter. */
+.fn-card{display:flex;flex-direction:column;gap:2px}
+.fn-head{
+  display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  padding-bottom:14px;border-bottom:1px solid var(--line-2);margin-bottom:18px;
+}
+.fn-title{font-family:var(--font-display);font-size:19px;font-weight:700;letter-spacing:-.01em}
+.fn-rm{min-width:180px;max-width:240px}
+.fn-controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.fn-ranges{display:flex;gap:6px;flex-wrap:wrap}
+.fn-custom{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:12.5px}
+.fn-total{text-align:right;line-height:1.25}
+.fn-total span{display:block;font-size:13px;color:var(--muted)}
+.fn-total b{font-size:18px;font-variant-numeric:tabular-nums}
+
+.fn-rows{display:flex;flex-direction:column;gap:16px}
+/* 48% for the track, so the bar column ends at the card's midpoint. */
+.fn-row{display:grid;grid-template-columns:84px minmax(0,48%) minmax(0,1fr);align-items:center;gap:16px}
+.fn-label{font-size:13.5px;font-weight:600;color:var(--ink-2);text-align:right}
+.fn-track{height:22px;border-radius:999px;background:var(--panel-2)}
+/* background is set per bar from segHue(); this is only the fallback. */
+.fn-fill{height:100%;border-radius:999px;background:var(--brand);transition:width var(--t-move) var(--ease)}
+.fn-nums{display:flex;align-items:baseline;gap:10px}
+/* Future Prospect sits below Closed but is not a funnel step — a dashed rule sets it
+   apart, so a bar wider than the one above it reads as a separate bucket rather than a
+   funnel that widened. */
+.fn-row.fn-aside{padding-top:16px;border-top:1px dashed var(--line-2)}
+.fn-nums b{font-size:14px;font-variant-numeric:tabular-nums;min-width:52px}
+.fn-nums span{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){.fn-fill{transition:none}}
+@media (max-width:820px){
+  .fn-row{grid-template-columns:70px minmax(0,1fr);gap:10px}
+  .fn-nums{grid-column:2;justify-content:flex-end}
+  .fn-label{text-align:left}
+}
+
+/* -- pager (ported from Direct Inventory's filtered-header) ----------------- */
+.pager{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px;flex-wrap:wrap}
+.pager-spacer{flex:1}
+.page-num{display:flex;align-items:center;gap:10px;color:var(--ink-2);white-space:nowrap}
+.page-of{white-space:nowrap;flex:none}
+.page-input{
+  width:58px;text-align:center;height:var(--control-h);padding:0 6px;flex:none;
+  border:1px solid var(--line);border-radius:var(--r-input);background:var(--panel);
+  color:var(--ink);font:inherit;font-size:13px;outline:none;
+  -moz-appearance:textfield;appearance:textfield;
+}
+.page-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-ring)}
+
+/* -- lead popup: CP-Inventory-Portal's card-block layout ---------------------
+   Sections are real CARDS stacked down the popup, not flat panels on a grid:
+   `.card-block` is a bordered, rounded, softly-shadowed box with a serif title.
+   Two earlier attempts used a grid and a column flow; both fought the fact that
+   one section (the qualify form) is far taller than the rest. Stacked cards have
+   no such coupling, and `.expand-pair` puts two side by side where they belong.
+
+   The popup reuses the page's own cards rather than a second component tree, so
+   this converts them IN PLACE: change the page and the popup follows. */
+.modal-lead-body .detail-grid{
+  display:flex;flex-direction:column;gap:0;
+  /* The base .detail-grid sets align-items:start for its two-column PAGE layout.
+     In a COLUMN flex container that sizes every card to its content width instead
+     of the modal's — which is why the cards rendered half-empty and ragged. */
+  align-items:stretch;
+}
+.modal-lead-body .detail-grid > .dcol{display:contents}
+.modal-lead-body .detail-grid .card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;margin-bottom:18px;box-shadow:var(--shadow);min-width:0;
+}
+/* Section titles are the display face, as in the reference — not the small
+   uppercase brand labels, which belong to the inline expand panel. */
+.modal-lead-body .detail-grid .panel-title{
+  font-family:var(--font-display);font-size:17px;font-weight:600;letter-spacing:-.01em;
+  color:var(--ink);text-transform:none;margin-bottom:16px;
+  display:flex;align-items:center;gap:8px;
+}
+.modal-lead-body .detail-grid .panel-title svg{width:16px;height:16px;color:var(--brand)}
+/* Two sections side by side; they stack when the popup is too narrow for both. */
+
+/* Field pairs inside a section — label above, value below. */
+.field-row{display:flex;flex-direction:column;gap:2px;margin-bottom:11px}
+.field-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
+.field-val{font-size:13.5px;color:var(--ink);font-weight:500}
+.field-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+/* The qualify form's three actions sit on ONE line. */
+.form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}
+
+/* -- popup header ---------------------------------------------------------- */
+/* padding-right clears the absolutely-positioned .modal-x, which otherwise
+   sits on top of whatever the header ends with. */
+.lead-modal-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 52px 2px 4px}
+.lead-modal-head h3{font-family:var(--font-display);font-weight:600;font-size:21px;margin:0;letter-spacing:-.01em}
+.lead-modal-sub{color:var(--muted);font-size:13px;margin:2px 0 18px;padding:0 4px}
+.lead-modal-sub b{color:var(--brand);font-weight:600}
+.chip-soft{
+  font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  background:var(--panel-2);color:var(--ink-2);border:1px solid var(--line-2);
+  padding:3px 9px;border-radius:999px;white-space:nowrap;
+}
+
+/* The `new` stage badge (Direct Inventory's starburst), rendered by StageChip. */
+/* Height is set per call site (NewBadge `size`); this only keeps the aspect
+   ratio and the baseline. */
+.new-badge-img{width:auto;vertical-align:middle;flex:none}
+
+/* -- note thread (ported from CP-Inventory-Portal) --------------------------
+   The list is CAPPED and scrolls; the composer is pinned below it, outside the
+   scroll. Without the cap a lead with twenty remarks pushes the input off the
+   bottom of the popup and the thread becomes read-only in practice. */
+.note-list{
+  display:flex;flex-direction:column;gap:10px;
+  max-height:260px;overflow-y:auto;overscroll-behavior:contain;
+  margin:0 -4px 0 0;padding-right:4px;
+}
+.note-list::-webkit-scrollbar{width:6px}
+.note-list::-webkit-scrollbar-track{background:transparent}
+.note-list::-webkit-scrollbar-thumb{background:var(--line-3);border-radius:3px}
+.note-item{
+  background:var(--panel-2);border:1px solid var(--line-2);border-radius:10px;
+  padding:10px 12px;
+}
+/* Imported from the source sheet's remarks column, not typed by an RM here. */
+.note-item.imported{background:var(--brand-softer);border-color:var(--brand-soft)}
+.note-text{font-size:13px;color:var(--ink);line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.note-meta{font-size:10.5px;color:var(--muted);margin-top:5px;font-family:var(--font-mono)}
+.note-empty{color:var(--muted);font-size:12.5px;padding:14px 2px}
+/* Pinned below the scrolling list, separated by a hairline. */
+.note-composer{
+  display:flex;gap:8px;align-items:center;
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--line-2);
+}
+.note-input{
+  flex:1;min-width:0;height:var(--control-h);padding:0 13px;
+  border:1px solid var(--line);border-radius:var(--r-input);
+  background:var(--panel);color:var(--ink);font:inherit;font-size:13px;outline:none;
+  transition:border-color var(--t),box-shadow var(--t);
+}
+.note-input:focus{border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-ring)}
+.note-input::placeholder{color:var(--muted)}
+
+/* Phone column: the call button sits to the LEFT of the number it dials.
+   nowrap on the CELL as well — a table column shrinks to fit its neighbours, and a
+   10-digit number broken over three lines is what that looks like. */
+.phone-cell{display:flex;align-items:center;gap:9px;white-space:nowrap}
+/* width:1% + nowrap = "shrink to content" for a table cell. */
+td.ph-cell{white-space:nowrap;width:1%}
+
+/* -- rejected table: reason + note ------------------------------------------
+   A `max-width` on a <td> does NOT bind — the table layout algorithm sizes cells
+   from their content, so a long note squeezed the column and wrapped one word per
+   line. The cap has to live on an inner block. */
+/* -- shared lead-table cell sizing ------------------------------------------
+   A <td> sizes from its content, so without hints the wide columns (Society,
+   Notes) squeeze the narrow ones (chips, dates) until short values wrap one word
+   per line. `width:1%` + nowrap is the "shrink to content" idiom; the text
+   columns get a real cap and clamp instead. */
+.cell-tight{white-space:nowrap;width:1%}
+.cell-tight .stage,.cell-tight .src{white-space:nowrap}
+.cell-text{max-width:220px}
+/* The Lead column gets a FIXED width so a three-word name can't stretch it on one
+   page and wrap into a tower on another. A width on the <td> alone is only a hint
+   under table-layout:auto, so the cap lives on .nm — same reason the reject note
+   needed an inner block. */
+td.lead-cell{width:230px}
+/* Block, not flex: the name is a bare text node, and a text node inside a flex
+   container becomes an anonymous item that text-overflow can't reach — the
+   ellipsis silently stops working. The badge and the TEST tag are inline and
+   already vertical-align:middle, so normal flow lays them out fine.
+   font-weight is restated here because it used to come from `.who .nm`, and the
+   Lead column lost its `.who` wrapper when Phone became its own column. */
+td.lead-cell .nm{
+  max-width:230px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  font-weight:600;
+}
+.cell-text > span,.cell-text > div{
+  display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.reason-cell{white-space:nowrap;width:1%}
+.reason-cell .stage{white-space:nowrap}
+.note-cell{width:300px;max-width:300px}
+.note-clamp{
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+  overflow:hidden;text-overflow:ellipsis;
+  font-size:12.5px;color:var(--ink-2);line-height:1.45;
+}
+
+/* Funnel: bars on the left, the stages they don't draw in the band they leave empty.
+   (That band held step conversions until 14 Sep — see LeadFunnel.tsx for why.) */
+.fn-body{display:grid;grid-template-columns:minmax(0,1fr) 190px;gap:26px;align-items:start}
+.fn-others{display:flex;flex-direction:column;gap:14px;padding-left:22px;border-left:1px solid var(--line-2)}
+.fn-others-head{
+  font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+}
+.fn-other{display:flex;flex-direction:column;gap:1px}
+.fn-other b{font-family:var(--font-display);font-size:20px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+.fn-other span{font-size:11.5px;color:var(--muted)}
+@media (max-width:900px){
+  .fn-body{grid-template-columns:1fr;gap:18px}
+  .fn-others{padding-left:0;border-left:0;border-top:1px solid var(--line-2);padding-top:16px;
+    flex-direction:row;flex-wrap:wrap;gap:22px}
+  .fn-others-head{width:100%}
+}
+
+/* -- Meta Leads (delivery log) ----------------------------------------------
+   This page shipped on inline styles and never got the theme pass; the rules are
+   the same ones moved into the stylesheet so it reads like every other page. */
+.ml-panels{
+  display:grid;grid-template-columns:minmax(220px,320px) 1fr;gap:12px;
+  /* Was a flat 560px, which left a band of empty page below the cards on a tall
+     screen AND clipped the last row of both panels mid-height. The floor keeps it
+     a sibling of the WhatsApp panel on a short one. */
+  height:clamp(560px, calc(100vh - 160px), 1100px);
+}
+.ml-list{padding:0;overflow-y:auto}
+.ml-detail{overflow-y:auto;padding:18px 20px}
+
+.ml-item{
+  display:block;width:100%;text-align:left;padding:11px 13px;
+  border:0;border-left:3px solid transparent;font:inherit;cursor:pointer;
+  background:transparent;transition:var(--t);
+}
+.ml-item + .ml-item{border-top:1px solid var(--line)}
+.ml-item:hover{background:var(--panel-2)}
+/* The rail marks the SELECTED row. It used to mark "this delivery produced a
+   lead" — true of every row but the two failures, so an alarm colour sat on the
+   normal case and nothing was left to mark the row you are actually reading. */
+.ml-item.on{background:var(--panel-2);border-left-color:var(--brand)}
+/* failed rows keep their own ground: they are the ones that need acting on */
+.ml-item.bad{background:var(--coral-soft)}
+.ml-item.bad.on{border-left-color:var(--coral)}
+.ml-item-top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.ml-item-name{font-weight:600;color:var(--ink-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ml-item-sub{font-size:11.5px;color:var(--muted);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.ml-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}
+.ml-head-name{font-weight:700;font-size:16px;color:var(--ink-2)}
+.ml-head-sub{font-size:12px;color:var(--muted);margin-top:3px}
+
+.ml-sec{margin-bottom:18px}
+.ml-sec-h{
+  font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:4px;
+}
+/* The heading sat flush to the card while the rows under it carried the global
+   `td{padding:13px 14px}`, so every label started 14px to the heading's right.
+   Pulling the cells back to the card's own gutter lines the two up. */
+.ml-fields td{padding:10px 0;font-size:13px}
+.ml-fields td:first-child{width:260px;color:var(--muted);font-size:12.5px}
+.ml-fields td:last-child{font-weight:500;color:var(--ink)}
+.ml-fields tr:last-child td{border-bottom:0}
+.ml-id{color:var(--muted);font-size:11px;margin-left:6px;font-family:var(--font-mono)}
+.ml-id.bare{margin-left:0}
+
+.ml-fail{
+  background:var(--coral-soft);color:var(--coral);padding:10px 12px;border-radius:9px;
+  font-size:12.5px;margin-bottom:16px;line-height:1.55;
+}
+.ml-hint{font-size:11.5px;color:var(--muted);margin-top:6px}
+
+/* -- lead popup: captured-from-Meta form + lead history ---------------------- */
+/* `.expand-pair` had rules only inside `.modal-lead-body`, so on the full PAGE its
+   two cards stacked with no gap between them — `.dcol`'s gap sees the pair as one
+   item. Now that two rows of cards use it, it needs a base. */
+.expand-pair{display:flex;flex-wrap:wrap;gap:18px;align-items:stretch}
+.expand-pair > .card{flex:1 1 300px;min-width:0}
+
+/* The verbatim Meta form. Its OWN card, not a well inside "Lead data captured from
+   <src>": those fields are our editable columns and this is the immutable delivery
+   record, and nesting the two made the read-only rows read as part of the edit form. */
+.meta-form-n{
+  font-weight:500;font-size:11px;color:var(--amber);
+  margin-left:auto;white-space:nowrap;
+}
+.meta-form-row{
+  display:flex;gap:12px;align-items:baseline;
+  padding:6px 0;border-bottom:1px solid var(--line-2);
+}
+.meta-form-row:last-child{border-bottom:0;padding-bottom:0}
+.meta-form-q{flex:0 0 46%;font-size:12px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
+/* Meta returns answers as machine values ("noida_/_greater_noida"). Shown verbatim,
+   as the Meta Leads page does — this is the delivery record, so a prettified answer
+   would no longer be what the form actually returned. Mono makes that legible. */
+.meta-form-a{flex:1 1 auto;font-size:12.5px;font-weight:600;color:var(--ink);
+  font-family:var(--font-mono);min-width:0;overflow-wrap:anywhere}
+
+/* Lead history. Capped and scrolling for the same reason as the note thread: a
+   worked lead carries dozens of rows, and uncapped it pushes the cards under it off
+   the bottom of the popup. */
+.lh-list{max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:0}
+.lh-row{padding:9px 2px;border-bottom:1px solid var(--line-2)}
+.lh-row:last-child{border-bottom:0}
+.lh-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.lh-act{
+  font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 8px;border-radius:20px;white-space:nowrap;
+}
+.lh-when{font-size:11px;color:var(--muted);font-family:var(--font-mono)}
+.lh-det{font-size:12.5px;color:var(--ink-2);margin-top:4px;line-height:1.5;overflow-wrap:anywhere}
+.lh-who{font-size:11px;color:var(--muted);margin-top:2px}
+.lh-empty{font-size:12.5px;color:var(--muted);padding:6px 0}
+/* The ad this lead came from, tucked under the card title. The negative top margin
+   pulls it against `.panel-title`'s own 14px so the two read as one heading — that
+   gap stays full when there is no campaign and the line isn't rendered at all. */
+.meta-form-src{
+  font-size:11.5px;color:var(--muted);line-height:1.4;
+  margin:-10px 0 12px;overflow-wrap:anywhere;
+}
+
+/* Meta form answers inside an activity entry — Logs page and the lead popup's history.
+   One line per answer, question muted so the answer is what the eye lands on. */
+.lg-answers{display:flex;flex-direction:column;gap:2px;margin-top:5px}
+.lg-answer{font-size:12px;color:var(--ink-2);line-height:1.4}
+.lg-q{color:var(--muted);margin-right:4px}

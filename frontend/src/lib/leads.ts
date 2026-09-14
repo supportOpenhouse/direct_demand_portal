@@ -28,6 +28,15 @@ const SRC_LABEL: Record<string, string> = {
 export const srcClass = (s: string) => SRC_CLASS[s] || "meta";
 export const srcLabel = (s: string) => SRC_LABEL[s] || s;
 
+/* Meta's Instant Form field keys are machine names ("your_budget_range?",
+   "where_do_you_currently_live?"). The form asked them in words, so show words.
+   Shared by the Meta Leads page and the lead popup's captured-from-Meta card — the
+   same question must not read two ways on two screens. */
+export const metaQuestionLabel = (name: string): string => {
+  const s = name.replace(/_/g, " ").replace(/\s+/g, " ").trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : name;
+};
+
 // plan-to-buy value → .plan-chip modifier (colour ramp from the prototype)
 const PLAN_CLASS: Record<string, string> = {
   "Within 30 days": "plan-hot",
@@ -46,8 +55,9 @@ export const initials = (n: string | null) =>
     .join("")
     .toUpperCase();
 
-/* The eight stages. `stage` is authoritative — each maps to exactly one page, so a
-   lead is never in two lists or none. */
+/* Every stage. `stage` is authoritative — each maps to exactly one page, so a lead
+   is never in two lists or none. rnr and future_prospect have no page of their own;
+   both live on Rejected, badged. */
 const STAGE_LABEL: Record<string, string> = {
   new: "New",
   call_not_received: "Call Not Received",
@@ -56,9 +66,65 @@ const STAGE_LABEL: Record<string, string> = {
   visit_scheduled: "Visit Scheduled",
   revisit_scheduled: "Revisit Scheduled",
   won: "Won",
+  future_prospect: "Future Prospect",
   rejected: "Rejected",
   rnr: "RNR",
 };
+/* Every stage a lead can hold, in funnel order. Mirrors the backend's STAGES
+   tuple in routers/leads.py — the manual stage setter validates against that, so
+   a value here that is missing there is a 422 the user cannot explain. */
+/* The starburst NEW badge: this lead ARRIVED or was ASSIGNED today.
+
+   On the IST calendar, not the browser's — a UTC boundary rolls the day at 05:30
+   IST, mid-shift, so an RM abroad would see a different "today" than Delhi does.
+
+   Assigned counts as well as received: a lead handed to you this morning is new TO
+   YOU even if it came in last week, and that is the row you want marked. */
+const IST_OFFSET_MIN = 330;
+const istDayOf = (iso: string) =>
+  new Date(new Date(iso).getTime() + IST_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
+const todayIST = () =>
+  new Date(Date.now() + IST_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
+
+export function isNewToday(l: { received_at?: string | null; assigned_at?: string | null }): boolean {
+  const t = todayIST();
+  return (!!l.received_at && istDayOf(l.received_at) === t)
+      || (!!l.assigned_at && istDayOf(l.assigned_at) === t);
+}
+
+/* A SEGMENT's colour token — the one used by the stage filter boxes on Home →
+   Table and by the funnel bars, so the two can never disagree about what colour
+   "Qualified" is.
+
+   Keyed by segment (the page a lead lives on) rather than by stage, because that
+   is what both call sites actually hold. */
+const SEG_HUE: Record<string, string> = {
+  new: "--blue",
+  call_not_received: "--cyan",
+  followup: "--slate",
+  qualified: "--indigo",
+  pipeline: "--amber",
+  // Visit and Revisit share the `visit` stage class everywhere else, which renders
+  // two identical bars side by side here — gold keeps them apart without leaving
+  // the warm end of the ramp they both belong to.
+  revisit: "--gold",
+  converted: "--emerald",
+  rejected: "--coral",
+  // Not a segment — future prospects live inside "rejected" — but the funnel draws
+  // it as a bar of its own, and this map must stay the ONE place a stage's colour is
+  // decided. Same token as the stage chip, so the bar and the chip agree.
+  future_prospect: "--prospect",
+};
+
+/** CSS var for a segment's colour; `null` (the ALL bucket) is the brand. */
+export const segHue = (seg: string | null) =>
+  seg === null ? "var(--brand)" : `var(${SEG_HUE[seg] ?? "--slate"})`;
+
+export const ALL_STAGES = [
+  "new", "call_not_received", "follow_up", "qualified",
+  "visit_scheduled", "revisit_scheduled", "won", "future_prospect", "rejected", "rnr",
+] as const;
+
 const STAGE_CLASS: Record<string, string> = {
   new: "new",
   call_not_received: "contacted",
@@ -67,6 +133,9 @@ const STAGE_CLASS: Record<string, string> = {
   visit_scheduled: "visit",
   revisit_scheduled: "visit",
   won: "won",
+  // Its own hue, NOT `lost`: it shares the Rejected page with genuinely dead leads,
+  // and a parked buyer drawn in the same coral would be indistinguishable from one.
+  future_prospect: "prospect",
   rejected: "lost",
   rnr: "lost",
 };
@@ -86,7 +155,7 @@ export const LEAD_SEGMENTS: { seg: string; route: string; label: string }[] = [
   { seg: "pipeline", route: "/leads/pipeline", label: "Visited" },
   { seg: "revisit", route: "/leads/revisit", label: "Pipeline" },
   { seg: "converted", route: "/leads/converted", label: "Converted" },
-  // RNR leads keep stage='rnr' but live on the Rejected page, badged
+  // RNR and Future Prospect leads keep their own stage but live on the Rejected page, badged
   { seg: "rejected", route: "/leads/rejected", label: "Rejected" },
 ];
 

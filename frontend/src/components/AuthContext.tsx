@@ -5,6 +5,7 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, AuthUser, GOOGLE_CLIENT_ID, getToken, setToken,
          isDevBuild, getDevUser, setDevUser } from "../lib/api";
+import { IconWarn } from "./icons";
 
 interface AuthState {
   enabled: boolean;
@@ -116,7 +117,12 @@ function LoginGate({ onSignedIn }: { onSignedIn: (token: string) => void }) {
         callback: (r: { credential: string }) => window.__ddCredential?.(r),
       });
       const el = document.getElementById("g-signin");
-      if (el) window.google.accounts.id.renderButton(el, { theme: "filled_black", size: "large", shape: "pill" });
+      if (el) window.google.accounts.id.renderButton(el, {
+        // Google draws this button itself and cannot read our tokens, so the theme
+        // has to be chosen here rather than styled in CSS.
+        theme: document.documentElement.getAttribute("data-theme") === "dark" ? "filled_blue" : "filled_black",
+        size: "large", shape: "pill",
+      });
     };
     if (window.google) init();
     else {
@@ -129,16 +135,15 @@ function LoginGate({ onSignedIn }: { onSignedIn: (token: string) => void }) {
   }, [onSignedIn, qc]);
 
   return (
-    <div style={{ height: "100vh", display: "grid", placeItems: "center", background: "var(--bg)" }}>
-      <div className="card panel-pad" style={{ width: 360, textAlign: "center", padding: 32 }}>
-        {/* The card is light, so the artwork goes in untouched — the blue in
-            DIRECT DEMAND survives here, unlike the sidebar copy. */}
-        <img src="/direct_demand_logo.png" alt="Openhouse Direct Demand"
-             style={{ width: "100%", maxWidth: 232, display: "block",
-                      margin: "4px auto 22px" }} />
+    <div className="login-wrap">
+      <div className="card panel-pad login-card" style={{ width: 360, textAlign: "center", padding: 32 }}>
+        <img className="login-logo light-only" src="/direct_demand_logo.png"
+             alt="Openhouse Direct Demand" />
+        <img className="login-logo dark-only" src="/direct_demand_logo_dark.png"
+             alt="" aria-hidden="true" />
         <p className="sec-sub" style={{ marginBottom: 20 }}>Sign in with your Openhouse Google account.</p>
         <div id="g-signin" style={{ display: "flex", justifyContent: "center" }} />
-        {err && <div className="mand-flag show" style={{ marginTop: 16 }}>⚠ {err}</div>}
+        {err && <div className="mand-flag show" style={{ marginTop: 16 }}><IconWarn /> {err}</div>}
       </div>
     </div>
   );

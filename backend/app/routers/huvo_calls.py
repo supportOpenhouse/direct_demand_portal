@@ -279,7 +279,7 @@ async def huvo_create_lead(req: HuvoLeadRequest, user: dict = Depends(current_us
         lead_id = (await conn.execute(text(
             "SELECT id FROM leads WHERE phone IS NOT NULL "
             " AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = :p "
-            " ORDER BY (stage IN ('won','rejected','rnr')), created_at DESC LIMIT 1"),
+            " ORDER BY (stage IN ('won','future_prospect','rejected','rnr')), created_at DESC LIMIT 1"),
             {"p": phone10})).scalar()
         linked = (await conn.execute(text(
             "UPDATE huvo_call_updates SET lead_id = :lead "
@@ -383,7 +383,7 @@ async def huvo_bulk_create_leads(req: BulkHuvoLeadRequest, user: dict = Depends(
               FROM (SELECT DISTINCT ON (right(regexp_replace(phone,'[^0-9]','','g'),10))
                            right(regexp_replace(phone,'[^0-9]','','g'),10) AS p10, id
                       FROM leads WHERE phone IS NOT NULL
-                     ORDER BY p10, (stage IN ('won','rejected','rnr')), created_at DESC) l
+                     ORDER BY p10, (stage IN ('won','future_prospect','rejected','rnr')), created_at DESC) l
              WHERE h.from_number = l.p10
                AND h.from_number = ANY(:ps)
                AND h.lead_id IS NULL"""), {"ps": phones10})).rowcount

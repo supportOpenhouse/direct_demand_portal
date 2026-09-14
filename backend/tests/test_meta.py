@@ -362,3 +362,42 @@ async def test_a_graph_failure_is_recorded_not_raised(monkeypatch):
 
     assert await meta_leads.process_value({"leadgen_id": "L3"}, {}) == "failed"
     assert "graph is down" in _marked(calls)["error_message"]
+
+
+# ── every form submission is visible in the lead's history ──────────────────────
+
+def test_a_submission_that_reaches_a_lead_is_logged_with_its_answers():
+    import inspect
+
+    src = inspect.getsource(meta_leads._stamp_and_log)
+    assert 'action="meta_form_submitted"' in src
+    assert '"answers": answers' in src and '"new_lead": new_lead' in src
+    assert '"submitted_at"' in src
+
+
+def test_the_log_commits_with_the_attribution_it_describes():
+    """One transaction: an entry for a delivery whose stamp rolled back would describe
+    something that never happened."""
+    import inspect
+
+    src = inspect.getsource(meta_leads._stamp_and_log)
+    assert src.count("engine.begin()") == 1
+    assert src.index("STAMP_LEAD") < src.index("activity.record")
+
+
+def test_a_meta_retry_cannot_log_the_same_submission_twice():
+    """The duplicate branch returns before the stamp-and-log call is ever reached."""
+    import inspect
+
+    src = inspect.getsource(meta_leads.process_value)
+    assert src.index('return "duplicate"') < src.index("_stamp_and_log(")
+
+
+def test_a_delivery_with_no_lead_writes_no_entry():
+    """No phone means no lead, so there is nothing for an entry to belong to — that
+    delivery shows as failed on the Meta Leads page instead."""
+    import inspect
+
+    src = inspect.getsource(meta_leads.process_value)
+    stamp = src.index("_stamp_and_log(")
+    assert "if origin_key:" in src[:stamp]

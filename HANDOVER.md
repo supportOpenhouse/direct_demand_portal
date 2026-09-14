@@ -26,7 +26,7 @@ React SPA (Vite)  ──HTTPS/JSON──>  FastAPI (Python)  ──asyncpg/SQLAl
 
 The prototype is a single HTML file with an inline `<style>` block and HTML templates rendered by small JS functions. Port it like this:
 
-1. **Lift the entire `<style>` block verbatim** into the React app as global CSS (`src/styles/app.css`). Keep every class name (`.stat`, `.card`, `.opt-row`, `.ms-panel`, `.office-pitch`, `.plan-chip`, `.wa-ico`, `.tat`, `.stage`, etc.). Do **not** swap to a component library.
+1. **Lift the entire `<style>` block verbatim** into the React app as global CSS (`src/styles/app.css`). Keep every class name (`.stat`, `.card`, `.opt-row`, `.ms-panel`, `.plan-chip`, `.wa-ico`, `.tat`, `.stage`, etc.). Do **not** swap to a component library.
 2. **Fonts:** keep the Google Fonts link — Bricolage Grotesque, Hanken Grotesk, Spline Sans Mono.
 3. **Icons:** keep the inline SVGs as-is (sidebar, WhatsApp logo `WA_SVG`, chevrons, etc.).
 4. Each `tplXxx()` function in the prototype maps **1:1 to a React component** with the same DOM structure → identical rendering. The JS interactions (toggles, dropdowns, modals) become React state/handlers.
@@ -55,7 +55,7 @@ Acceptance for "interface unchanged": a screenshot diff of each screen vs the pr
 | **Visit Planner** (modal) | Multi-stop route from inventory; Google Map + optimize; saves itinerary. | `POST /leads/:id/visits` |
 | **Connect Meta** / **Add society insight** (modals) | As in prototype. | integration endpoints |
 
-> **UI changes vs the original PRD** (prototype is current): lead detail is simplified (no stage dropdown / create-reminder / schedule-visit buttons / smart-summary / call-tracking card on that page); the confirmed-data form is now **Q1–Q6** (purpose, ₹→lacs budget, config incl. 3.5 BHK, multi-select societies, multi-select localities, office-visit Yes/No/Maybe with conditional date + pitch); **Plan to Buy** added to source data; **Closing Manager** role added; **7-day Qualified→Pipeline** rule added; matched inventory/supply lists live on the lead page.
+> **UI changes vs the original PRD** (prototype is current): lead detail is simplified (no stage dropdown / create-reminder / schedule-visit buttons / smart-summary / call-tracking card on that page); the confirmed-data form is now **Q1–Q6** (purpose, ₹→lacs budget, config incl. 3.5 BHK, multi-select societies, multi-select localities, office-visit Yes/No/Maybe with conditional date); **Plan to Buy** added to source data; **Closing Manager** role added; **7-day Qualified→Pipeline** rule added; matched inventory/supply lists live on the lead page.
 
 ---
 
@@ -142,7 +142,7 @@ plan is internal preparation, not an appointment. Only a real Openhouse booking 
 
 **6.8 Plan to Buy** (source field): within_30_days / 1–3 months / 3–6 months / just_exploring — colour-coded chip.
 
-**6.9 Office-visit pitch** (Q6): on No/Maybe show the English + **Hinglish** pitch bullets (`{{City}}` = lead city); Preferred date shows on Yes/Maybe. This is static copy — keep verbatim from the prototype.
+**6.9 Office visit** (Q6): Preferred date shows on Yes/Maybe. (The English/Hinglish office-visit pitch that used to show on No/Maybe was removed on 14 Sep — do not rebuild it from the prototype.)
 
 ---
 
@@ -198,7 +198,7 @@ src/
   components/
     Sidebar, Topbar, KpiCard, StageChip, SrcBadge, TatChip, PlanChip,
     LeadTable, MultiSelectDropdown (.ms), OptionRow (.opt expandable),
-    OfficePitch, Modal, Toast, WaButton
+    Modal, Toast, WaButton
   pages/
     Dashboard, NewLeads, LeadsSegment (qualified/pipeline/converted),
     LeadDetail, Reminders, Inventory, Supply, SocietyInsights, GoldMine, Settings

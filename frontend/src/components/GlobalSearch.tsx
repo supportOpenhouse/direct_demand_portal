@@ -5,7 +5,9 @@
    lead dropdown is suppressed there. */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { IconSearch } from "./icons";
+import {
+  IconSearch,
+} from "./icons";
 import { useSearch } from "./SearchContext";
 import { useAllLeads } from "../lib/queries";
 import { leadMatchesQuery } from "../lib/leads";

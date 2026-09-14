@@ -7,7 +7,6 @@
    RMs see only the conversations assigned to them; admins see everything and can
    reassign. Scoping is enforced server-side — this page just reflects it. */
 import { useEffect, useId, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import { markWaSeen } from "../lib/whatsapp";
 import { SelectFirst } from "../components/SelectFirst";
 import { CITIES } from "../lib/leads";
@@ -19,9 +18,15 @@ import WaThread from "../components/WaThread";
 import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { useToast } from "../components/Toast";
-import { WhatsAppIcon } from "../components/icons";
+import {
+  IconCheck,
+  IconX,
+  WhatsAppIcon,
+} from "../components/icons";
+import { SkeletonRows } from "../components/Skeleton";
+import { LeadLink } from "../components/LeadModal";
+import { useSearchParams } from "react-router-dom";
 
-const WINDOW_MS = 24 * 60 * 60 * 1000;
 // fixed panel height — both columns scroll inside this rather than running to the
 // bottom of the viewport, so the page keeps a normal, predictable shape
 const PANEL_H = 560;
@@ -75,7 +80,11 @@ export default function Chat() {
 
   const { data, isLoading, error } = useWaMessages();
   const toast = useToast();
-  const [active, setActive] = useState<string | null>(null);
+  /* `?phone=` lets the notification bell open a specific conversation instead of
+     dropping you at the top of a 127-thread list. Read once as the INITIAL value, not
+     synced: picking another thread afterwards must not be undone by the stale URL. */
+  const [params] = useSearchParams();
+  const [active, setActive] = useState<string | null>(params.get("phone"));
   const [creating, setCreating] = useState(false);
   const [marking, setMarking] = useState(false);
   // bulk lead creation: off until the button is pressed, so the list stays a plain
@@ -115,15 +124,15 @@ export default function Chat() {
       // r.created — a conversation tagged `rejected` is never given an owner.
       const how = r.assigned ? `${r.assigned} assigned` : "unassigned";
       toast(`Created ${r.created} lead${r.created === 1 ? "" : "s"} · ${how}${skipped}`,
-            r.created ? "green" : "gold", r.created ? "✓" : "⚠");
+            r.created ? "green" : "gold");
       exitBulk();
     },
-    onError: (e: any) => toast(e.message, "gold", "⚠"),
+    onError: (e: any) => toast(e.message, "gold"),
   });
 
   const sendEnabled = data?.send_enabled ?? false;
 
-  if (isLoading) return <div className="card"><div className="empty" style={{ padding: 48 }}>Loading…</div></div>;
+  if (isLoading) return <div className="card"><SkeletonRows rows={7} /></div>;
   if (error) {
     return (
       <div className="card">
@@ -181,7 +190,7 @@ export default function Chat() {
       {threads.length === 0 ? (
         <div className="card">
           <div className="empty" style={{ padding: 48, textAlign: "center" }}>
-            <div style={{ width: 40, height: 40, margin: "0 auto 10px", color: "#25b15a" }}><WhatsAppIcon /></div>
+            <div style={{ width: 40, height: 40, margin: "0 auto 10px", color: "var(--wa-green-2)" }}><WhatsAppIcon /></div>
             <div style={{ fontWeight: 600, color: "var(--ink-2)" }}>No conversations yet</div>
             <div style={{ fontSize: 12.5, marginTop: 6, lineHeight: 1.6 }}>
               A customer has to message your business number first — WhatsApp doesn’t let a
@@ -214,7 +223,7 @@ export default function Chat() {
                       Rows that already have a lead get a spacer, so nothing shifts. */}
                   {bulk && (hasLead
                     ? <span style={{ width: 30, flex: "none", textAlign: "center",
-                                     fontSize: 10, color: "var(--muted)" }} title="Already a lead">✓</span>
+                                     fontSize: 10, color: "var(--muted)" }} title="Already a lead"><IconCheck /></span>
                     : <input
                         type="checkbox"
                         checked={picked.has(t.phone)}
@@ -284,7 +293,7 @@ export default function Chat() {
                   ) : null}
                   <div style={{ marginLeft: "auto" }}>
                     {lead ? (
-                      <Link to={`/leads/${lead.id}`} className="btn ghost sm">View lead</Link>
+                      <LeadLink id={lead.id} className="btn ghost sm">View lead</LeadLink>
                     ) : (
                       <button className="btn green sm" onClick={() => setCreating(true)}>+ Create new lead</button>
                     )}
@@ -349,11 +358,8 @@ function OwnerPicker({ phone, owner }: { phone: string; owner?: string }) {
       disabled={assign.isPending}
       onChange={(e) => assign.mutate({ phone, assigned_to: e.target.value || null })}
       title="Who owns this conversation"
-      style={{
-        marginLeft: 8, fontSize: 11.5, padding: "4px 8px", borderRadius: 8,
-        border: "1px solid var(--line)", background: "var(--panel)", color: "var(--ink-2)",
-        maxWidth: 150,
-      }}
+      className="ctl"
+      style={{ marginLeft: 8, maxWidth: 150 }}
     >
       <option value="">Unassigned</option>
       {(data?.items ?? []).map((a) => <option key={a.email} value={a.name}>{a.name}</option>)}
@@ -374,7 +380,7 @@ function MarkModal(
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ width: "min(420px, 100%)" }}>
         <div className="mh">
           <h3>Mark this contact</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -478,7 +484,7 @@ function CreateLeadModal(
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="mh">
           <h3>Create lead from WhatsApp</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="field">

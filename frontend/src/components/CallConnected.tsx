@@ -6,9 +6,10 @@
            calling hours by the backend), invalid number → Rejected.
            10 misses on a never-reached lead still escalates to RNR. */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { useCallResult } from "../lib/queries";
 import { useToast } from "./Toast";
+import { IconX } from "./icons";
+import { useOpenLead } from "./LeadModal";
 
 // hours until the callback; null = the number is unusable, so the lead is rejected
 const MISS_REASONS: { value: string; hours: number | null }[] = [
@@ -64,16 +65,16 @@ export function MissReasonModal(
       {
         onSuccess: (d) => {
           // refused by the cooldown — nothing was recorded, so don't report an outcome
-          if (d.blocked) toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${d.retry_in_minutes} MINUTES`, "gold", "⛔");
-          else if (d.rejected) toast("Invalid number — moved to Rejected", "blue", "✕");
-          else if (d.moved_to_rnr) toast("10 missed calls — moved to RNR", "gold", "✕");
+          if (d.blocked) toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${d.retry_in_minutes} MINUTES`, "gold");
+          else if (d.rejected) toast("Invalid number — moved to Rejected", "blue");
+          else if (d.moved_to_rnr) toast("10 missed calls — moved to RNR", "gold");
           else {
             const at = d.follow_up_at ? istLabel(new Date(d.follow_up_at)) : null;
-            toast(at ? `Not reached · follow-up ${at}` : "Not reached · follow-up set", "gold", "↻");
+            toast(at ? `Not reached · follow-up ${at}` : "Not reached · follow-up set", "gold");
           }
           onClose();
         },
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onError: (e: any) => toast(e.message, "gold"),
       },
     );
   };
@@ -81,7 +82,7 @@ export function MissReasonModal(
   return (
     <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="mh"><h3>Why didn't the call connect?</h3><div className="icon-btn" onClick={onClose}>✕</div></div>
+        <div className="mh"><h3>Why didn't the call connect?</h3><div className="icon-btn" onClick={onClose}><IconX /></div></div>
         <div className="mb">
           <div className="field">
             <label>Reason <span className="req">*</span></label>
@@ -110,7 +111,7 @@ export function MissReasonModal(
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" style={{ background: "var(--coral)", color: "#fff" }}
+          <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }}
             onClick={submit} disabled={m.isPending}>
             {m.isPending ? "Saving…" : "Submit"}
           </button>
@@ -126,14 +127,14 @@ export function MissReasonModal(
 const NO_COOLDOWN_MS = 2 * 60 * 60 * 1000;
 
 export function CallConnected({ leadId, lastNoAt }: { leadId: string; lastNoAt?: string | null }) {
-  const nav = useNavigate();
+  const openLead = useOpenLead();
   const m = useCallResult();
   const toast = useToast();
   const [asking, setAsking] = useState(false);
 
   const yes = (e: React.MouseEvent) => {
     e.stopPropagation();
-    m.mutate({ id: leadId, connected: true }, { onSuccess: () => nav(`/leads/${leadId}`) });
+    m.mutate({ id: leadId, connected: true }, { onSuccess: () => openLead(leadId) });
   };
 
   const no = (e: React.MouseEvent) => {
@@ -141,7 +142,7 @@ export function CallConnected({ leadId, lastNoAt }: { leadId: string; lastNoAt?:
     const since = lastNoAt ? Date.now() - new Date(lastNoAt).getTime() : Infinity;
     if (since < NO_COOLDOWN_MS) {
       const mins = Math.max(1, Math.ceil((NO_COOLDOWN_MS - since) / 60000));
-      toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${mins} MINUTES`, "gold", "⛔");
+      toast(`SPAM BLOCKER, PLEASE TRY AGAIN IN ${mins} MINUTES`, "gold");
       return;
     }
     setAsking(true);

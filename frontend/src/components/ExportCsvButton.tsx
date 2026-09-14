@@ -4,6 +4,7 @@
 import { Lead } from "../lib/api";
 import { downloadLeadsCsv } from "../lib/csv";
 import { useAuth } from "./AuthContext";
+import { IconDownload } from "./icons";
 
 export function ExportCsvButton({ leads, name }: { leads: Lead[]; name: string }) {
   const { enabled, user } = useAuth();
@@ -13,12 +14,12 @@ export function ExportCsvButton({ leads, name }: { leads: Lead[]; name: string }
   const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, locale-stable
   return (
     <button
-      className="btn ghost sm"
+      className="btn primary sm"
       disabled={leads.length === 0}
       onClick={() => downloadLeadsCsv(`${name}-${today}.csv`, leads)}
       title={leads.length ? `Export ${leads.length} row${leads.length === 1 ? "" : "s"} to CSV` : "Nothing to export"}
     >
-      ⬇ Export CSV
+      <IconDownload /> Export CSV
     </button>
   );
 }

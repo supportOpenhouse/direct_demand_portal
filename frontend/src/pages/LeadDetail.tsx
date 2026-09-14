@@ -2,49 +2,35 @@
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import {
-  useLead, useConfirmLead, useRejectLead, useMatchPreview, formatPrice,
-  useLeadNotes, useAddNote, usePatchSourceData, formatDateTime, useLatestVisit, formatDate, useMarkPriority,
-  useSetFollowup,
-} from "../lib/queries";
-import { srcClass, srcLabel, initials } from "../lib/leads";
-import { MatchUnit, api } from "../lib/api";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useRejectLead, useSetFollowup, useSetLeadStage } from "../lib/queries";
+import { ALL_STAGES, initials, metaQuestionLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { actionStyle, Details, pretty } from "../lib/activity";
+import { api, MetaFormDelivery } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { AutocompleteChips, AutocompleteInput } from "../components/Autocomplete";
 import { AssignControl } from "../components/AssignControl";
-import { WhatsAppIcon } from "../components/icons";
-import WaLeadCard from "../components/WaLeadCard";
+import {
+  IconCalendar,
+  IconEdit,
+  IconHome,
+  IconStar,
+  IconWarn,
+  IconX,
+  IconClock,
+  IconMeta,
+} from "../components/icons";
 import CallActivityCard from "../components/CallActivityCard";
 import HuvoCallCard from "../components/HuvoCallCard";
-import { waChat } from "../lib/whatsapp";
 import { useDebounce } from "../lib/useDebounce";
 import { openInMaps } from "../lib/maps";
 import { VisitPlanner } from "../features/VisitPlanner";
+import { StageChip } from "../components/StageChip";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
 const OFFICE = ["Yes", "No", "Maybe"];
 const PLANS = ["Within 30 days", "1–3 months", "3–6 months", "Just exploring"];
 const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
-
-const OFFICE_PITCH_EN = [
-  "First, we'll help you understand the market.",
-  "We'll give an overview of the city in half an hour.",
-  "We'll show on a map how long it takes to travel to different locations.",
-  "Areas & options available for you within your budget.",
-  "This gives you clarity — then we visit properties.",
-  "Advantages / disadvantages if you change your location.",
-  "Far better than roaming different properties & wasting 1–2 months on the ground.",
-];
-const OFFICE_PITCH_HI = [
-  "Sabse pehle hum aapko market samjhayenge.",
-  "Sheher ka pura overview aadhe ghante mein de denge.",
-  "Map pe dikhayenge ki alag-alag locations tak pahunchne mein kitna time lagega.",
-  "Aapke budget mein kaunse areas aur options available hain.",
-  "Isse aapko clarity milegi — phir properties visit karenge.",
-  "Agar aap location change karte hain to uske fayde/nuksan kya honge.",
-  "Yeh tareeka 1–2 mahine ground pe ghoom ke waste karne se kaafi behtar hai.",
-];
 
 // (re-add Broker/Budget/Location here later — backend accepts them too)
 const REJECT_REASONS = ["Requirement Mismatch", "No Requirement"];
@@ -59,15 +45,15 @@ function RejectModal({ id, name, onClose }: { id: string; name: string | null; o
   const submit = () => {
     if (!reason || !notes.trim()) { setErr(true); return; }
     reject.mutate({ reason, notes: notes.trim() }, {
-      onSuccess: () => { toast("Lead rejected", "blue", "✕"); onClose(); },
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onSuccess: () => { toast("Lead rejected", "blue"); onClose(); },
+      onError: (e: any) => toast(e.message, "gold"),
     });
   };
 
   return (
     <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
-        <div className="mh"><h3>Reject {name}</h3><div className="icon-btn" onClick={onClose}>✕</div></div>
+        <div className="mh"><h3>Reject {name}</h3><div className="icon-btn" onClick={onClose}><IconX /></div></div>
         <div className="mb">
           <div className={"field" + (err && !reason ? " invalid" : "")}>
             <label>Reason for rejection <span className="req">*</span></label>
@@ -82,14 +68,46 @@ function RejectModal({ id, name, onClose }: { id: string; name: string | null; o
               <textarea rows={3} value={notes} placeholder="Why is this lead being rejected?" onChange={(e) => setNotes(e.target.value)} />
             </div>
           )}
-          {err && (!reason || !notes.trim()) && <div className="mand-flag show">⚠ A reason and notes are required.</div>}
+          {err && (!reason || !notes.trim()) && <div className="mand-flag show"><IconWarn /> A reason and notes are required.</div>}
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" style={{ background: "var(--coral)", color: "#fff" }} onClick={submit} disabled={reject.isPending}>
+          <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }} onClick={submit} disabled={reject.isPending}>
             {reject.isPending ? "Rejecting…" : "Reject lead"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* Stage, changeable to anything.
+
+   Every other stage write in this app is forward-only on purpose — a qualify form
+   re-submitted on a visited lead is a no-op, which is what stops the funnel from
+   being walked backwards by accident. This control is the deliberate escape hatch
+   for the case that guard creates: a lead put in the wrong stage could not be put
+   back. It logs like any other stage move. */
+function StatusCard({ lead }: { lead: any }) {
+  const set = useSetLeadStage(lead.id);
+  const toast = useToast();
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title">Status</div>
+      {/* wrapped in .field so it inherits the full-width control styling — a bare
+          <select> sizes to its longest option and leaves the card half empty */}
+      <div className="field" style={{ marginBottom: 0 }}>
+      <select
+        value={lead.stage}
+        disabled={set.isPending}
+        onChange={(e) =>
+          set.mutate(e.target.value, {
+            onSuccess: (r: { after: string }) => toast(`Moved to ${stageLabel(r.after)}`, "green"),
+            onError: (err: any) => toast(err.message, "gold"),
+          })}
+      >
+        {ALL_STAGES.map((st: string) => <option key={st} value={st}>{stageLabel(st)}</option>)}
+      </select>
       </div>
     </div>
   );
@@ -109,10 +127,15 @@ function SourceCard({ lead }: { lead: any }) {
   }, [lead]);
 
   const save = () =>
-    patch.mutate(f, { onSuccess: () => { toast("Source data updated", "green", "✓"); setEdit(false); }, onError: (e: any) => toast(e.message, "gold", "⚠") });
+    patch.mutate(f, { onSuccess: () => { toast("Source data updated", "green"); setEdit(false); }, onError: (e: any) => toast(e.message, "gold") });
 
+  /* Read-only values render as TEXT, not a disabled <input>. A greyed box invites
+     a click that does nothing and makes a record look like an unfinished form. */
   const ro = (label: string, val: string | null) => (
-    <div className="field"><label>{label}</label><input value={val || "—"} disabled /></div>
+    <div className="field-row">
+      <span className="field-lbl">{label}</span>
+      <span className="field-val">{val || "—"}</span>
+    </div>
   );
   const inp = (label: string, key: keyof typeof f, placeholder = "") => (
     <div className="field"><label>{label}</label>
@@ -129,7 +152,7 @@ function SourceCard({ lead }: { lead: any }) {
             <button className="btn green sm" onClick={save} disabled={patch.isPending}>{patch.isPending ? "Saving…" : "Save"}</button>
           </span>
         ) : (
-          <button className="btn ghost sm" onClick={() => setEdit(true)}>✎ Edit</button>
+          <button className="btn ghost sm" onClick={() => setEdit(true)}><IconEdit /> Edit</button>
         )}
       </div>
       {edit ? (
@@ -166,10 +189,85 @@ function SourceCard({ lead }: { lead: any }) {
       ) : (
         <>
           <div className="two">{ro("Budget", lead.budget_band)}{ro("City", lead.city)}</div>
-          <div className="two">{ro("Society of interest", lead.society)}{ro("Plan to Buy", lead.plan_to_buy)}</div>
-          {lead.preferred_visit_day && ro("Preferred visit day (from ad)", lead.preferred_visit_day)}
+          {/* three short, related facts about what they asked for — one line */}
+          <div className="three">
+            {ro("Society of interest", lead.society)}
+            {ro("Plan to Buy", lead.plan_to_buy)}
+            {ro("Preferred visit day (from ad)", lead.preferred_visit_day)}
+          </div>
           {lead.source_remarks && ro("Source remarks", lead.source_remarks)}
         </>
+      )}
+    </div>
+  );
+}
+
+/* Every question the ad actually asked, verbatim from `meta_lead_events.raw_lead`.
+   The set differs per form and changes whenever marketing edits one, so nothing here
+   may assume a fixed list of questions. */
+/* The Instant Form exactly as Meta delivered it — read-only, because it is the
+   delivery record and editing what the buyer typed would destroy the only copy of
+   what they actually said.
+
+   Presentational: the parent fetches, because whether this has content decides which
+   card takes the slot beside "Conversation & remarks". */
+function MetaFormCard({ latest, count }: { latest: MetaFormDelivery; count: number }) {
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title">
+        <IconMeta /> From the Meta form
+        {count > 1 && (
+          <span className="meta-form-n">newest of {count} submissions</span>
+        )}
+      </div>
+      {/* Which ad actually produced this lead. Omitted entirely when Meta sent
+          neither — a test-tool submission has no campaign, and an empty bracket
+          claims an attribution that does not exist. */}
+      {(latest.campaign_name || latest.ad_name) && (
+        <div className="meta-form-src">
+          ({[latest.campaign_name, latest.ad_name].filter(Boolean).join(" · ")})
+        </div>
+      )}
+      {latest.responses.map((r) => (
+        <div className="meta-form-row" key={r.question}>
+          <span className="meta-form-q">{metaQuestionLabel(r.question)}</span>
+          <span className="meta-form-a">{r.answer || "—"}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Everything activity_log holds for this lead, newest first.
+
+   Rendered with the Logs page's own `Details` (lib/activity.tsx) rather than a second
+   formatter, so one event cannot read two ways on two screens.
+
+   Capped and scrolling like the note thread: a worked lead carries dozens of rows, and
+   an uncapped list pushes every card below it off the bottom of the popup. */
+function LeadHistory({ id }: { id: string }) {
+  const { data, isLoading } = useEntityActivity("lead", id);
+  const items = data?.items ?? [];
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title"><IconClock /> Lead history</div>
+      {isLoading ? (
+        <div className="lh-empty">Loading…</div>
+      ) : !items.length ? (
+        <div className="lh-empty">Nothing logged for this lead yet.</div>
+      ) : (
+        <div className="lh-list">
+          {items.map((r) => (
+            <div className="lh-row" key={r.id}>
+              <div className="lh-top">
+                <span className="lh-act" style={actionStyle(r)}>{pretty(r.action)}</span>
+                <span className="lh-when">{formatDateTime(r.created_at)}</span>
+              </div>
+              <div className="lh-det"><Details r={r} /></div>
+              <div className="lh-who">{r.actor_name || r.actor_email || "system"}</div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -183,7 +281,7 @@ function NotesThread({ id }: { id: string }) {
   const send = () => {
     const t = text.trim();
     if (!t) return;
-    addNote.mutate(t, { onSuccess: () => setText(""), onError: (e: any) => toast(e.message, "gold", "⚠") });
+    addNote.mutate(t, { onSuccess: () => setText(""), onError: (e: any) => toast(e.message, "gold") });
   };
   return (
     <div className="card panel-pad">
@@ -191,19 +289,16 @@ function NotesThread({ id }: { id: string }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>{" "}
         Conversation &amp; remarks
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 12 }}>
+      <div className="note-list">
         {isLoading ? (
           <div className="empty" style={{ padding: 14 }}>Loading…</div>
         ) : !data?.items.length ? (
-          <div className="empty" style={{ padding: 14, fontSize: 12 }}>No remarks yet — start the thread below.</div>
+          <div className="note-empty">No remarks yet — start the thread below.</div>
         ) : (
           data.items.map((n, i) => (
-            <div key={n.id || `seed-${i}`} style={{
-              background: n.source === "remarks" ? "var(--panel-2)" : "var(--blue-soft)",
-              border: "1px solid var(--line)", borderRadius: 10, padding: "9px 11px",
-            }}>
-              <div style={{ fontSize: 13, color: "var(--ink)", lineHeight: 1.45 }}>{n.body}</div>
-              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, fontFamily: "'Spline Sans Mono'" }}>
+            <div key={n.id || `seed-${i}`} className={"note-item" + (n.source === "remarks" ? " imported" : "")}>
+              <div className="note-text">{n.body}</div>
+              <div className="note-meta">
                 {n.author || "—"}{n.created_at ? ` · ${formatDateTime(n.created_at)}` : ""}
                 {n.source === "remarks" && " · imported"}
               </div>
@@ -211,13 +306,13 @@ function NotesThread({ id }: { id: string }) {
           ))
         )}
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div className="note-composer">
         <input
+          className="note-input"
           value={text}
           placeholder="Add a remark…"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
-          style={{ flex: 1 }}
         />
         <button className="btn primary sm" onClick={send} disabled={addNote.isPending || !text.trim()}>Send</button>
       </div>
@@ -234,10 +329,10 @@ function FollowupWidget({ id, value, onChange, invalid, current }: { id: string;
   const toast = useToast();
   const set = useSetFollowup(id);
   const save = () => {
-    if (!value) { toast("Follow-up is required — pick a date & time", "gold", "⚠"); return; }
+    if (!value) { toast("Follow-up is required — pick a date & time", "gold"); return; }
     set.mutate(new Date(value).toISOString(), {
-      onSuccess: () => { toast("Follow-up scheduled · moved to Follow-up", "green", "⏰"); nav("/leads/followup"); },
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onSuccess: () => { toast("Follow-up scheduled · moved to Follow-up", "green"); nav("/leads/followup"); },
+      onError: (e: any) => toast(e.message, "gold"),
     });
   };
   return (
@@ -247,132 +342,27 @@ function FollowupWidget({ id, value, onChange, invalid, current }: { id: string;
         Schedule a follow-up <span style={{ color: "var(--coral)" }}>*</span>
       </div>
       {current && (
-        <div style={{ fontSize: 12, color: "var(--ink-2)", marginBottom: 8 }}>
-          Currently set: <span className="fu-chip">⏰ {formatDateTime(current)}</span>
+        <div className="fu-current">
+          Currently set: <span className="fu-chip"><IconClock /> {formatDateTime(current)}</span>
         </div>
       )}
       <div className="fu-row">
         <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)}
           style={invalid ? { borderColor: "var(--coral)" } : undefined} />
-        <button className="btn green sm" onClick={save} disabled={set.isPending} style={{ whiteSpace: "nowrap" }}>
-          {set.isPending ? "Saving…" : "Save & move to Follow-up →"}
+        {/* Short label so the datetime beside it stays readable in a half-width
+            card; the full sentence lives in the tooltip. */}
+        <button className="btn green sm" onClick={save} disabled={set.isPending}
+                title="Save the follow-up time and move this lead to the Follow-up list">
+          {set.isPending ? "Saving…" : "Save & move →"}
         </button>
       </div>
     </div>
   );
 }
 
-function MatchRow({ u, isSupply, leadId, leadPhone, leadName }: { u: MatchUnit; isSupply: boolean; leadId: string; leadPhone: string | null; leadName: string | null }) {
-  const [open, setOpen] = useState(false);
-  const toast = useToast();
-  const markPriority = useMarkPriority(leadId);
-  const onMark = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    markPriority.mutate(
-      { uid: u.id, priority: true },
-      {
-        onSuccess: () => toast("Marked as Direct Demand priority", "green", "★"),
-        onError: (err) => toast(err instanceof Error ? err.message : "Could not mark priority", "gold", "⚠"),
-      },
-    );
-  };
-  // supply units show the OH reference price; "Check Price" when society+area didn't match
-  const isCheckPrice = isSupply && !!u.price_status && u.price_status !== "match";
-  const priceStr = isCheckPrice
-    ? `Check Price${u.price_reason ? ` · ${u.price_reason}` : ""}`
-    : formatPrice(u.price_lacs, u.price_text);
-  const detail: [string, string | null | undefined][] = [
-    ["Society", u.society],
-    ["City", u.city],
-    ["Configuration", u.configuration],
-    ["Super area", u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : null],
-    [isSupply ? "OH price" : "Ask price", priceStr],
-    isSupply ? ["Stage", u.stage] : ["Status", u.status],
-  ];
-  const share = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!leadPhone) { toast("No phone number for this lead", "gold", "⚠"); return; }
-    const text = `Hi ${leadName || ""}, sharing a property that matches your requirement:\n\n🏠 ${u.name}\n📍 ${[u.locality, u.city].filter(Boolean).join(", ")}\n${isCheckPrice ? "Price on request" : formatPrice(u.price_lacs, u.price_text)} · ${u.configuration || ""}`
-      + (u.image_url ? `\n${u.image_url}` : "");
-    waChat(leadPhone, text);
-  };
-  return (
-    <div className={"opt" + (open ? " open" : "")}>
-      <div className="opt-row" onClick={() => setOpen(!open)}>
-        {!isSupply && (
-          <div
-            className="opt-thumb"
-            style={u.image_url
-              ? { backgroundImage: `url('${u.image_url}')` }
-              : { background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center", fontSize: 16 }}
-          >
-            {!u.image_url && "🏠"}
-          </div>
-        )}
-        <div className="opt-info">
-          <div className="opt-name">
-            {u.name || "—"} <span className="match-mini">{u.score}%</span>
-            {isSupply && u.priority && (
-              <span className="match-mini" style={{ background: "var(--gold-soft)", color: "var(--gold)", marginLeft: 4 }}>★ Priority</span>
-            )}
-          </div>
-          <div className="opt-meta">
-            {u.configuration || "—"} · {u.area_sqft != null ? `${u.area_sqft.toLocaleString("en-IN")} sq.ft` : "—"} ·{" "}
-            {isCheckPrice ? (
-              <span title={u.price_tooltip || ""} style={{ color: "var(--gold)", fontWeight: 700, cursor: "help" }}>
-                Check Price{u.price_reason ? ` · ${u.price_reason}` : ""}
-              </span>
-            ) : (
-              <b title={u.price_tooltip || ""} style={{ color: isSupply && u.price_status === "match" ? "var(--emerald)" : "var(--ink-2)" }}>
-                {formatPrice(u.price_lacs, u.price_text)}
-              </b>
-            )}
-          </div>
-        </div>
-        <button className="wa-ico" title="Share on WhatsApp" onClick={share}><WhatsAppIcon /></button>
-        <svg className="opt-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="m6 9 6 6 6-6" />
-        </svg>
-      </div>
-      <div className="opt-detail">
-        {u.matched_on.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 10 }}>
-            {u.matched_on.map((r) => (
-              <span key={r} className="match-mini" style={{ background: "var(--emerald-soft)", color: "#06694b" }}>{r}</span>
-            ))}
-          </div>
-        )}
-        <div className="opt-dl">
-          {detail.map(([k, v]) => (
-            <div key={k} style={{ display: "contents" }}>
-              <div className="opt-dt">{k}</div>
-              <div className="opt-dd">{v || "—"}</div>
-            </div>
-          ))}
-        </div>
-        {isSupply && (
-          <div style={{ marginTop: 12 }}>
-            {u.priority ? (
-              <span className="btn sm" style={{ background: "var(--gold-soft)", color: "var(--gold)", cursor: "default", fontWeight: 700 }}>
-                ★ Marked Priority
-              </span>
-            ) : (
-              <button
-                className="btn sm"
-                style={{ background: "var(--gold)", color: "#fff", boxShadow: "0 6px 16px -8px var(--gold)" }}
-                onClick={onMark}
-                disabled={markPriority.isPending}
-              >
-                {markPriority.isPending ? "Marking…" : "★ Mark as Priority"}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
+/* `mobile` — same page, same behaviour, one column. The card order the phone asks for
+   is the desktop set with the confirm form moved last, which is a layout concern, so
+   the two columns collapse to a flex list (see .m-detail) instead of forking the JSX. */
 function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void; booked: boolean }) {
   const { data, isLoading } = useLatestVisit(id);
   const plan = data?.plan;
@@ -385,7 +375,7 @@ function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void
           {/* a saved plan is internal prep, not an appointment — it no longer moves
               the lead, so say plainly that nothing is booked yet */}
           {!booked && (
-            <span className="fu-chip" style={{ background: "var(--amber-soft)", color: "#9a5e07" }}>
+            <span className="fu-chip" style={{ background: "var(--amber-soft)", color: "var(--amber-deep)" }}>
               Visit not scheduled yet
             </span>
           )}
@@ -415,40 +405,31 @@ function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void
   );
 }
 
-function MatchPanel({ title, tag, units, loading, leadId, leadPhone, leadName }: { title: string; tag: string; units: MatchUnit[]; loading: boolean; leadId: string; leadPhone: string | null; leadName: string | null }) {
-  return (
-    <div className="card panel-pad">
-      <div className="panel-title" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {title}
-          <span title="Updates live as you edit" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 9.5, fontWeight: 700, color: "var(--emerald)", letterSpacing: ".04em" }}>
-            <span className="tat" style={{ padding: 0, background: "none" }}>
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--emerald)", display: "inline-block", animation: loading ? "pulse 1s infinite" : undefined }} />
-            </span>
-            LIVE
-          </span>
-        </span>
-        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--muted)", textTransform: "uppercase", letterSpacing: ".04em" }}>{tag}</span>
-      </div>
-      {units.length === 0 ? (
-        <div className="empty" style={{ padding: 16 }}>{loading ? "Matching…" : "No matches yet — add budget, config or a society to surface more."}</div>
-      ) : (
-        units.map((u) => <MatchRow key={u.id} u={u} isSupply={tag.includes("SUPPLY")} leadId={leadId} leadPhone={leadPhone} leadName={leadName} />)
-      )}
-    </div>
-  );
-}
-
-/* `mobile` — same page, same behaviour, one column. The card order the phone asks for
-   is the desktop set with the confirm form moved last, which is a layout concern, so
-   the two columns collapse to a flex list (see .m-detail) instead of forking the JSX. */
-export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
-  const { id = "" } = useParams();
+export default function LeadDetail({ mobile = false, leadId, inModal = false }: {
+  mobile?: boolean;
+  /** Set by the popup. Absent on the /leads/:id route, where the param wins. */
+  leadId?: string;
+  inModal?: boolean;
+}) {
+  const { id: routeId = "" } = useParams();
+  const id = leadId ?? routeId;
   const nav = useNavigate();
   // Live Calls sends this in router state when "Yes" opens the lead in the same tab.
   const fromLiveCalls = (useLocation().state as { from?: string } | null)?.from === "live-calls";
   const toast = useToast();
   const { data: lead, isLoading } = useLead(id);
+  /* Fetched HERE rather than inside the card, because what it returns decides which
+     card goes in the pair below — a child can't make that call for its own slot.
+
+     "Lead data captured from Meta" IS this form, normalised into our columns, so when
+     the form itself is available the form wins and that card is not rendered at all:
+     two cards of the same answers, one of them a lossy copy, reads worse than one. */
+  const metaForm = useLeadMetaForm(id, lead?.source === "meta");
+  const metaDeliveries = metaForm.data?.items ?? [];
+  // Newest submission. A repeat submitter has more than one and the answers can
+  // differ, so the card says how many rather than silently showing one of several.
+  const latestForm = metaDeliveries[0];
+  const hasMetaForm = !!latestForm?.responses.length;
   const confirm = useConfirmLead(id);
   const [planner, setPlanner] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -531,8 +512,6 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
     budget_max_lacs: bMax > 0 ? bMax : null,
     budget_band: lead?.budget_band ?? null,
   });
-  const debouncedReq = useDebounce(reqKey, 350);
-  const { data: matches, isFetching: matchesLoading } = useMatchPreview(JSON.parse(debouncedReq));
 
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
@@ -565,17 +544,17 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
   const save = (qualify: boolean) => {
     if (anyInvalid) {
       setShowErr(true);
-      toast("Fill the required (*) fields, including a follow-up", "gold", "⚠");
+      toast("Fill the required (*) fields, including a follow-up", "gold");
       return;
     }
     confirm.mutate(
       { ...basePayload(), follow_up_at: new Date(followUp).toISOString(), qualify },
       {
         onSuccess: () => {
-          if (qualify) toast("Lead confirmed & qualified", "green", "✓");
-          else { toast("Details saved · follow-up set", "green", "⏰"); nav("/leads/followup"); }
+          if (qualify) toast("Lead confirmed & qualified", "green");
+          else { toast("Details saved · follow-up set", "green"); nav("/leads/followup"); }
         },
-        onError: (e) => toast(e.message, "gold", "⚠"),
+        onError: (e) => toast(e.message, "gold"),
       }
     );
   };
@@ -584,14 +563,14 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
   const saveOnly = () => {
     if (reqInvalid) {
       setShowErr(true);
-      toast("Fill the required (*) fields", "gold", "⚠");
+      toast("Fill the required (*) fields", "gold");
       return;
     }
     confirm.mutate(
       { ...basePayload(), follow_up_at: null, qualify: false },
       {
-        onSuccess: () => toast("Details saved", "green", "✓"),
-        onError: (e) => toast(e.message, "gold", "⚠"),
+        onSuccess: () => toast("Details saved", "green"),
+        onError: (e) => toast(e.message, "gold"),
       }
     );
   };
@@ -600,15 +579,38 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
 
   return (
     <>
-      {/* Arriving from Live Calls, "Back" has to be unambiguous: the RM is mid-shift
+      {/* Page chrome only. In the popup there is nothing to go "back" to — you are
+          still on the list, and ✕ / Escape / the backdrop close it.
+          Arriving from Live Calls, "Back" has to be unambiguous: the RM is mid-shift
           and the campaign is still dialling them. nav(-1) would do it, but naming the
-          destination is what makes it obvious they aren't leaving the queue behind.
-          Any other entry point is unchanged. */}
-      {fromLiveCalls ? (
+          destination is what makes it obvious they aren't leaving the queue behind. */}
+      {!inModal && (fromLiveCalls ? (
         <div className="back" onClick={() => nav("/live-calls")}>← Live Calls</div>
       ) : (
         <div className="back" onClick={() => nav(-1)}>← Back</div>
-      )}
+      ))}
+      {/* In the popup the header is one line of identity — name, where, which
+          stage — with the detail underneath, matching Direct Inventory's detail
+          modal. The page keeps its avatar-and-actions header, which has room for
+          it. */}
+      {inModal ? (
+        <>
+          <div className="lead-modal-head">
+            <h3>{lead.name || "Unnamed"}</h3>
+            {lead.city && <span className="chip-soft">{lead.city}</span>}
+            {lead.is_test && <span className="chip-soft">Test</span>}
+            <StageChip stage={lead.stage} />
+            <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+              <AssignControl leadId={lead.id} assignedTo={lead.assigned_to} />
+              {!mobile && <button className="btn ghost sm" onClick={() => setPlanner(true)}><IconCalendar /> Plan visits</button>}
+            </span>
+          </div>
+          <div className="lead-modal-sub">
+            {[lead.phone, srcLabel(lead.source), lead.society, lead.configuration].filter(Boolean).join(" · ")}
+            {lead.budget_band ? <> · <b>{lead.budget_band}</b></> : null}
+          </div>
+        </>
+      ) : (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 14, marginBottom: 18 }}>
         <div className="lead-head">
           <div className="av">{initials(lead.name)}</div>
@@ -625,25 +627,32 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
         </div>
         <div className="lead-actions">
           {/* the planner is a wide drawer with a map — desktop only */}
-          {!mobile && <button className="btn ghost" onClick={() => setPlanner(true)}>📅 Plan visits</button>}
-          <button className="btn wa" onClick={() => lead.phone ? waChat(lead.phone, `Hi ${lead.name || ""}, this is Openhouse Direct Demand.`) : toast("No phone number", "gold", "⚠")}>
-            <WhatsAppIcon /> WhatsApp
-          </button>
+          {!mobile && <button className="btn ghost" onClick={() => setPlanner(true)}><IconCalendar /> Plan visits</button>}
         </div>
       </div>
+      )}
       {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} leadPhone={lead.phone} onClose={() => setPlanner(false)} />}
       {rejecting && <RejectModal id={id} name={lead.name} onClose={() => setRejecting(false)} />}
 
       <div className={mobile ? "m-detail" : "detail-grid"}>
         <div className="dcol">
-          {/* SOURCE-CAPTURED — editable */}
-          <SourceCard lead={lead} />
+          {/* Cards pair by what the reader is doing with them — the record on the
+              left, what to do about it on the right:
 
-          {/* CONVERSATION / REMARKS THREAD */}
-          <NotesThread id={id} />
+                STATUS / STAGE       | FOLLOW-UPS   where it is, when to call next
+                CAPTURED FROM <src>  | REMARKS      what the form said, what was said back
+          */}
+          <div className="expand-pair">
+            <StatusCard lead={lead} />
+            <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && !isPipeline && invalid.followup} current={lead.follow_up_at} />
+          </div>
 
-          {/* QUICK FOLLOW-UP SCHEDULER — the single (mandatory) follow-up input */}
-          <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && !isPipeline && invalid.followup} current={lead.follow_up_at} />
+          <div className="expand-pair">
+            {hasMetaForm
+              ? <MetaFormCard latest={latestForm} count={metaDeliveries.length} />
+              : <SourceCard lead={lead} />}
+            <NotesThread id={id} />
+          </div>
 
           {/* CONFIRMED call form — last on mobile, per the requested card order */}
           <div className={"card panel-pad compact-form" + (mobile ? " m-last" : "")}>
@@ -741,63 +750,49 @@ export default function LeadDetail({ mobile = false }: { mobile?: boolean }) {
               ) : <div />}
             </div>
 
-            {(office === "No" || office === "Maybe") && (
-              <div className="office-pitch">
-                <div className="op-head">💬 Pitch the office visit — why it helps</div>
-                <ul className="op-list">{OFFICE_PITCH_EN.map((x, i) => <li key={i}>{x}</li>)}</ul>
-                <div className="op-sub">Hinglish</div>
-                <ul className="op-list hi">{OFFICE_PITCH_HI.map((x, i) => <li key={i}>{x}</li>)}</ul>
-              </div>
-            )}
-
             <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>
               <label>Remark</label>
               <textarea rows={2} value={remark} placeholder="Anything notable from the call" onChange={(e) => setRemark(e.target.value)} />
             </div>
 
             {showErr && (isPipeline ? reqInvalid : anyInvalid) && (
-              <div className="mand-flag show">⚠ Fill all starred (*) fields{isPipeline ? "." : ", including the follow-up time above."}</div>
+              <div className="mand-flag show"><IconWarn /> Fill all starred (*) fields{isPipeline ? "." : ", including the follow-up time above."}</div>
             )}
-            <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div className="form-actions">
               {lead.stage === "rejected" ? (
                 <span className="stage lost">Rejected — {lead.reject_reason}</span>
               ) : (
-                <button className="btn" style={{ background: "var(--coral)", color: "#fff" }} onClick={() => setRejecting(true)}>
-                  ✕ Reject lead
+                <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }} onClick={() => setRejecting(true)}>
+                  <IconX /> Reject lead
                 </button>
               )}
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {isPipeline ? (
+              {isPipeline ? (
                   // a visit is booked — past qualification, so just save the details
-                  <button className="btn green" onClick={saveOnly} disabled={confirm.isPending}>
-                    {confirm.isPending ? "Saving…" : "Save"}
+                <button className="btn green" onClick={saveOnly} disabled={confirm.isPending}>
+                  {confirm.isPending ? "Saving…" : "Save"}
+                </button>
+              ) : (
+                <>
+                  <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
+                    Save details &amp; set follow-up
                   </button>
-                ) : (
-                  <>
-                    <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
-                      Save details &amp; set follow-up
-                    </button>
-                    <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
-                      {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
-                    </button>
-                  </>
-                )}
-              </div>
+                  <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
+                    {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
-        </div>
 
-        {/* RIGHT column — saved visit plan + live matched inventory + supply */}
+          <LeadHistory id={id} />
+        </div>
         <div className="dcol">
           {!mobile && <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />}
-          <WaLeadCard phone={lead.phone} />
           <CallActivityCard leadId={lead.id} />
           {/* Separate from Call activity: that card is the RM's own calls via Bonvoice,
               this one is what Huvo's bot got out of the lead. Both render nothing when
               empty, so a lead with neither shows neither. */}
           <HuvoCallCard leadId={lead.id} />
-          <MatchPanel title="Best matches from inventory" tag="ACQUIRED PROPERTY" units={matches?.inventory ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
-          <MatchPanel title="From supply pipeline" tag="SUPPLY CLOSURE TRACKER" units={matches?.supply ?? []} loading={matchesLoading} leadId={lead.id} leadPhone={lead.phone} leadName={lead.name} />
         </div>
       </div>
     </>

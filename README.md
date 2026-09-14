@@ -33,8 +33,11 @@ with an empty `.env` — endpoints report `not_configured` instead of crashing.
 ### Run (dev)
 
 ```bash
-cd backend  && uv sync     && uv run uvicorn app.main:app --reload --port 8000
-cd frontend && npm install && npm run dev          # http://localhost:5173
+cd backend  
+uv sync     && uv run uvicorn app.main:app --reload --port 8000
+
+cd frontend
+npm install && npm run dev          # http://localhost:5173
 ```
 
 API: `GET /v1/health` · `GET /v1/inventory` · `POST /v1/inventory/sync` · `GET /v1/supply`.

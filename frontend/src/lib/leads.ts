@@ -15,8 +15,10 @@ const SRC_CLASS: Record<string, string> = {
   gads: "gads",
   youtube: "yt",
   whatsapp: "wa",
+  manual: "manual",
 };
 const SRC_LABEL: Record<string, string> = {
+  manual: "Manual",   // added by hand from the topbar
   meta: "Meta",
   "99acres": "99acres",
   magicbricks: "MagicBricks",

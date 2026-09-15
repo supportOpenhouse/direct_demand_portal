@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useRejectLead, useSetFollowup, useSetLeadStage } from "../lib/queries";
-import { ALL_STAGES, initials, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import type { ActivityRow } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { actionStyle, Details, pretty } from "../lib/activity";
 import { api, MetaFormDelivery } from "../lib/api";
@@ -114,18 +115,37 @@ function StatusCard({ lead }: { lead: any }) {
   );
 }
 
-function SourceCard({ lead }: { lead: any }) {
+/* The lead's captured source data: its OWN source plus every source merged into it
+   that has no Meta form ("WhatsApp + 99acres"). A merged source's row no longer exists
+   — what it captured lives in its `lead_repeat` entry's metadata.lead — so each field
+   shows the lead's own value, then any DIFFERENT value a merged source carried. */
+function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
   const patch = usePatchSourceData(lead.id);
   const toast = useToast();
   const [edit, setEdit] = useState(false);
-  const [f, setF] = useState({
-    city: lead.city || "", society: lead.society || "", budget_band: lead.budget_band || "",
-    plan_to_buy: lead.plan_to_buy || "", source_remarks: lead.source_remarks || "",
+  const rows = merged.map((r) => (r.metadata.lead ?? {}) as Record<string, unknown>);
+  // every distinct non-empty value, own first — no source's answer is hidden. Distinct
+  // ignores case: a portal's "PUNEET BAWA" is the same answer as Meta's "Puneet Bawa".
+  const all = (key: string): string[] => {
+    const byLower = new Map<string, string>();
+    for (const v of [lead[key], ...rows.map((x) => x[key])]) {
+      const s = v == null ? "" : String(v).trim();
+      if (s && !byLower.has(s.toLowerCase())) byLower.set(s.toLowerCase(), s);
+    }
+    return [...byLower.values()];
+  };
+  const shown = (key: string) => all(key).join(" / ") || null;
+  // Edit writes the lead's own columns, prefilled with the first value any source has
+  const initial = () => ({
+    city: all("city")[0] ?? "", society: all("society")[0] ?? "", budget_band: all("budget_band")[0] ?? "",
+    plan_to_buy: all("plan_to_buy")[0] ?? "", source_remarks: all("source_remarks")[0] ?? "",
   });
-  useEffect(() => {
-    setF({ city: lead.city || "", society: lead.society || "", budget_band: lead.budget_band || "",
-      plan_to_buy: lead.plan_to_buy || "", source_remarks: lead.source_remarks || "" });
-  }, [lead]);
+  const [f, setF] = useState(initial);
+  // keyed on ids, not the array: the parent rebuilds `merged` every render
+  const mergedKey = merged.map((r) => r.id).join();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { setF(initial()); }, [lead, mergedKey]);
+  const title = [lead.source, ...merged.map((r) => String(r.metadata.source ?? ""))].map(srcLabel).join(" + ");
 
   const save = () =>
     patch.mutate(f, { onSuccess: () => { toast("Source data updated", "green"); setEdit(false); }, onError: (e: any) => toast(e.message, "gold") });
@@ -146,7 +166,7 @@ function SourceCard({ lead }: { lead: any }) {
   return (
     <div className="card panel-pad meta-card">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>Lead data captured from {srcLabel(lead.source)}</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>Lead data captured from {title}</span>
         {edit ? (
           <span style={{ display: "flex", gap: 6 }}>
             <button className="btn ghost sm" onClick={() => setEdit(false)}>Cancel</button>
@@ -189,14 +209,25 @@ function SourceCard({ lead }: { lead: any }) {
         </>
       ) : (
         <>
-          <div className="two">{ro("Budget", lead.budget_band)}{ro("City", lead.city)}</div>
+          <div className="two">{ro("Budget", shown("budget_band"))}{ro("City", shown("city"))}</div>
           {/* three short, related facts about what they asked for — one line */}
           <div className="three">
-            {ro("Society of interest", lead.society)}
-            {ro("Plan to Buy", lead.plan_to_buy)}
-            {ro("Preferred visit day (from ad)", lead.preferred_visit_day)}
+            {ro("Society of interest", shown("society"))}
+            {ro("Plan to Buy", shown("plan_to_buy"))}
+            {ro("Preferred visit day (from ad)", shown("preferred_visit_day"))}
           </div>
-          {lead.source_remarks && ro("Source remarks", lead.source_remarks)}
+          {/* only when some source carried them — most portal rows never do */}
+          {(shown("configuration") || shown("current_location") || shown("email")) && (
+            <div className="three">
+              {ro("Configuration", shown("configuration"))}
+              {ro("Currently lives in", shown("current_location"))}
+              {ro("Email", shown("email"))}
+            </div>
+          )}
+          {/* a merged source that knew them by another name (a WhatsApp lead is often
+              named after its number) */}
+          {all("name").length > 1 && ro("Name", shown("name"))}
+          {shown("source_remarks") && ro("Source remarks", shown("source_remarks"))}
         </>
       )}
     </div>
@@ -212,32 +243,58 @@ function SourceCard({ lead }: { lead: any }) {
 
    Presentational: the parent fetches, because whether this has content decides which
    card takes the slot beside "Conversation & remarks". */
-function MetaFormCard({ latest, count }: { latest: MetaFormDelivery; count: number }) {
+function MetaFormCard({ deliveries, landscape = false }: {
+  deliveries: MetaFormDelivery[];   // newest first
+  /* full width under the pair — the Meta form of a lead whose card beside Remarks
+     belongs to another source; the answers then flow into columns */
+  landscape?: boolean;
+}) {
+  // A repeat submitter's answers can differ between submissions. The newest shows by
+  // default; the "newest of N" label is the toggle that reveals the earlier ones.
+  const [showAll, setShowAll] = useState(false);
+  const shownForms = showAll ? deliveries : deliveries.slice(0, 1);
+  const many = deliveries.length > 1;
   return (
-    <div className="card panel-pad">
+    <div className={"card panel-pad" + (landscape ? " meta-form-wide" : "")}>
       <div className="panel-title">
         <IconMeta /> From the Meta form
-        {count > 1 && (
-          <span className="meta-form-n">newest of {count} submissions</span>
+        {many && (
+          <button type="button" className="meta-form-n meta-form-toggle"
+                  aria-expanded={showAll} onClick={() => setShowAll((v) => !v)}>
+            {showAll ? `all ${deliveries.length} submissions · hide earlier`
+                     : `newest of ${deliveries.length} submissions`}
+          </button>
         )}
       </div>
-      {/* Which ad actually produced this lead. Omitted entirely when Meta sent
-          neither — a test-tool submission has no campaign, and an empty bracket
-          claims an attribution that does not exist. */}
-      {(latest.campaign_name || latest.ad_name) && (
-        <div className="meta-form-src">
-          ({[latest.campaign_name, latest.ad_name].filter(Boolean).join(" · ")})
-        </div>
-      )}
-      {latest.responses.map((r) => (
-        <div className="meta-form-row" key={r.question}>
-          <span className="meta-form-q">{metaQuestionLabel(r.question)}</span>
-          <span className="meta-form-a">{r.answer || "—"}</span>
+      {shownForms.map((d, i) => (
+        <div key={d.meta_lead_id} className={i ? "meta-form-older" : undefined}>
+          {showAll && many && (
+            <div className="meta-form-when">
+              {i === 0 ? "Newest" : "Earlier"} · submitted {d.received_at ? formatDateTime(d.received_at) : "—"}
+            </div>
+          )}
+          {/* Which ad actually produced this submission. Omitted entirely when Meta sent
+              neither — a test-tool submission has no campaign, and an empty bracket
+              claims an attribution that does not exist. */}
+          {(d.campaign_name || d.ad_name) && (
+            <div className="meta-form-src">
+              ({[d.campaign_name, d.ad_name].filter(Boolean).join(" · ")})
+            </div>
+          )}
+          <div className="meta-form-rows">
+            {d.responses.map((r) => (
+              <div className="meta-form-row" key={r.question}>
+                <span className="meta-form-q">{metaQuestionLabel(r.question)}</span>
+                <span className="meta-form-a">{r.answer || "—"}</span>
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>
   );
 }
+
 
 /* Everything activity_log holds for this lead, newest first.
 
@@ -425,12 +482,31 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
      "Lead data captured from Meta" IS this form, normalised into our columns, so when
      the form itself is available the form wins and that card is not rendered at all:
      two cards of the same answers, one of them a lossy copy, reads worse than one. */
-  const metaForm = useLeadMetaForm(id, lead?.source === "meta");
+  // any lead Meta is ONE of the sources of — a Meta arrival merged into a
+  // MagicBricks/WhatsApp lead still has its form
+  const metaForm = useLeadMetaForm(id, !!lead && leadSources(lead).includes("meta"));
   const metaDeliveries = metaForm.data?.items ?? [];
   // Newest submission. A repeat submitter has more than one and the answers can
   // differ, so the card says how many rather than silently showing one of several.
   const latestForm = metaDeliveries[0];
   const hasMetaForm = !!latestForm?.responses.length;
+  /* Every other source folded into this lead: each `lead_repeat` entry carries the
+     arriving row in metadata.lead. Newest per source (the list is newest first). Shares
+     the Lead history card's query, so it costs no extra request. These go INTO the
+     source card beside Remarks ("WhatsApp + 99acres") — the full-width box is for a
+     Meta form only, so a Meta arrival that has a form is left to that box. */
+  const activity = useEntityActivity("lead", id);
+  const seenSources = new Set<string>();
+  const mergedSources = (activity.data?.items ?? []).filter((r) => {
+    const src = String(r.metadata?.source ?? "");
+    if (r.action !== "lead_repeat" || !r.metadata?.lead || !src || seenSources.has(src)) return false;
+    seenSources.add(src);
+    return src !== lead?.source && !(src === "meta" && hasMetaForm);
+  });
+  // The form takes the source card's slot only when Meta is the lead's own source AND
+  // nothing else was merged in; otherwise the source card stays and the form goes
+  // full width underneath.
+  const formInPair = hasMetaForm && lead?.source === "meta" && mergedSources.length === 0;
   const confirm = useConfirmLead(id);
   const [planner, setPlanner] = useState(false);
   const [rejecting, setRejecting] = useState(false);
@@ -649,11 +725,14 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
           </div>
 
           <div className="expand-pair">
-            {hasMetaForm
-              ? <MetaFormCard latest={latestForm} count={metaDeliveries.length} />
-              : <SourceCard lead={lead} />}
+            {formInPair
+              ? <MetaFormCard deliveries={metaDeliveries} />
+              : <SourceCard lead={lead} merged={mergedSources} />}
             <NotesThread id={id} />
           </div>
+
+          {/* the Meta form, full width, when the card above is another source's */}
+          {hasMetaForm && !formInPair && <MetaFormCard deliveries={metaDeliveries} landscape />}
 
           {/* CONFIRMED call form — last on mobile, per the requested card order */}
           <div className={"card panel-pad compact-form" + (mobile ? " m-last" : "")}>

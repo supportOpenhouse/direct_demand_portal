@@ -236,6 +236,35 @@ def test_the_log_reads_newest_first():
     assert "ORDER BY e.received_at DESC" in str(LIST_EVENTS)
 
 
+def test_the_page_its_count_and_the_status_counts_filter_identically():
+    """If the count used a different clause from the page, 'N deliveries' would stop
+    describing the list under it — the whole reason counting moved server-side."""
+    from app.routers.meta import _WHERE, COUNT_EVENTS, LIST_EVENTS, STATUS_COUNTS
+
+    for q in (LIST_EVENTS, COUNT_EVENTS, STATUS_COUNTS):
+        assert _WHERE in str(q)
+    assert "LIMIT :limit OFFSET :offset" in str(LIST_EVENTS)
+
+
+def test_list_filters_blank_means_no_constraint():
+    from app.routers.meta import UNASSIGNED, _filters
+
+    p = _filters("", "Noida Q3", None, "  ", None, UNASSIGNED)
+    assert p["status"] is None and p["adset"] is None and p["ad"] is None
+    assert p["campaign"] == "Noida Q3", "values pass through exactly — they match exactly"
+    assert p["owner"] == UNASSIGNED and p["unassigned"] == UNASSIGNED
+
+
+def test_the_popup_form_includes_deliveries_merged_into_the_lead():
+    """A Meta arrival merged into a MagicBricks/WhatsApp lead keeps its key only in
+    merged_origin_keys — matching the lead's own key alone hides that form."""
+    from app.routers.meta import LEAD_FORM
+
+    sql = str(LEAD_FORM)
+    assert "l.origin_key = e.origin_key" in sql
+    assert "ANY(l.merged_origin_keys)" in sql
+
+
 def test_every_delivery_records_which_lead_it_landed_on():
     """Without this the join above has nothing to join on."""
     assert "origin_key = :origin_key" in str(meta_leads.MARK_EVENT)

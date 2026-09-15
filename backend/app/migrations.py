@@ -216,23 +216,17 @@ async def run_migrations(engine) -> None:
             # (see docs/superpowers/specs/2026-07-29-lead-stage-model-design.md).
             # Idempotent: after one run nothing matches, so re-running is a no-op.
             #   contacted + visit_planned  → qualified   (these ARE the qualified leads)
-            #   new with an open callback  → call_not_received / follow_up, split on
-            #                                whether we ever reached them. Without this
-            #                                they'd land back on New — they're in
-            #                                Follow-up today.
             #   lost/timepass → rejected (declared in code, zero rows)
+            #   The old "new with an open callback → call_not_received / follow_up" fold
+            #   was REMOVED 15 Sep: it runs on every boot, and a lead that arrives again
+            #   is deliberately put back in `new` (lead_sources.sql). One local startup
+            #   silently reverted 54 of those resets with no activity entry.
             #   future_prospect is NOT folded any more — it was revived as a real stage
             #   on 14 Sep. This block runs on EVERY boot, so leaving it in the list
             #   would silently rewrite every future prospect to rejected on the next
             #   deploy, after the feature had already passed testing.
             await conn.execute(text(
                 "UPDATE leads SET stage = 'qualified' WHERE stage IN ('contacted','visit_planned')"))
-            await conn.execute(text(
-                "UPDATE leads SET stage = 'call_not_received' "
-                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND NOT ever_connected"))
-            await conn.execute(text(
-                "UPDATE leads SET stage = 'follow_up' "
-                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND ever_connected"))
             await conn.execute(text(
                 "UPDATE leads SET stage = 'rejected' "
                 "WHERE stage IN ('lost','timepass')"))

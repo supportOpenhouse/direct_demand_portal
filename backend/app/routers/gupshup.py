@@ -541,13 +541,9 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
         # WhatsApp into that lead and logged `lead_repeat` itself.
         row = inserted or (await conn.execute(
             LEAD_ID_BY_KEY, {"ok": values["origin_key"]})).first()
-        # Attribution for where a lead came from and who turned it into one — the
-        # sheet sync creates most leads, so a hand-made one is worth marking.
+        # `lead_created` is written by the leads_lead_created DB trigger, with the
+        # actor taken from source_meta.created_by — logging it here too would double it.
         if inserted:
-            await activity.record(conn, activity.row_for(
-                activity.Actor.of(user), entity_type="lead", entity_id=row[0],
-                action="lead_created",
-                metadata={"source": "whatsapp", "name": req.name.strip()}))
             # A lead that gained an owner without an `assigned` event is invisible on
             # the Reports page, which counts events and not current state.
             if owner:
@@ -647,22 +643,14 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
 
         if rows:
             # RETURNING, not executemany: a number that already has a lead under another
-            # source is merged by the leads trigger and returns nothing — that lead was
-            # not created here, so it must not get a `lead_created` entry.
+            # source is merged by the leads trigger and returns nothing — it was not
+            # created here, so `created`/`assigned` below must not count it.
+            # (`lead_created` itself is logged by the leads_lead_created DB trigger.)
             made = set((await conn.execute(
                 pg_insert(Lead).values(rows)
                 .on_conflict_do_nothing(index_elements=["origin_key"])
                 .returning(Lead.id))).scalars().all())
             rows = [r for r in rows if r["id"] in made]
-        if rows:
-            # The single-lead endpoint has always logged `lead_created`; bulk never
-            # did, so leads made this way were invisible on the Reports page.
-            await activity.record(conn, [
-                activity.row_for(activity.Actor.of(user), entity_type="lead",
-                                 entity_id=str(r["id"]), action="lead_created",
-                                 metadata={"source": "whatsapp_bulk",
-                                           "assigned_to": r["assigned_to"]})
-                for r in rows])
 
     assigned = sum(1 for r in rows if r["assigned_to"])
     log.info("whatsapp: bulk-created %d leads (%d assigned, %d already existed) by %s",

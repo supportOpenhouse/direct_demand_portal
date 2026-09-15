@@ -75,17 +75,56 @@ async def receive(request: Request):
 # The join is on `origin_key`, not `leads.meta_lead_id`: that column only ever holds
 # the FIRST delivery's id, so joining on it would show every repeat submission from
 # the same buyer as an orphan.
-LIST_EVENTS = text("""
+#
+# The page, its count and its status counts share ONE filter clause, so they can never
+# disagree about which deliveries a filter selects. A blank filter arrives as NULL and
+# constrains nothing — `CAST(:x AS text)`, because asyncpg can't type a bare NULL.
+UNASSIGNED = "__unassigned__"  # the "Unassigned" owner option: no RM, or no lead at all
+
+_FROM = """
+      FROM meta_lead_events e
+      LEFT JOIN leads l ON l.origin_key = e.origin_key
+"""
+_WHERE = """
+     WHERE (CAST(:status AS text) IS NULL OR e.status = CAST(:status AS text))
+       AND (CAST(:campaign AS text) IS NULL OR e.campaign_name = CAST(:campaign AS text))
+       AND (CAST(:adset AS text) IS NULL OR e.raw_lead->>'adset_name' = CAST(:adset AS text))
+       AND (CAST(:ad AS text) IS NULL OR e.ad_name = CAST(:ad AS text))
+       AND (CAST(:form AS text) IS NULL OR e.form_id = CAST(:form AS text))
+       AND (CAST(:owner AS text) IS NULL
+            OR (CAST(:owner AS text) = CAST(:unassigned AS text)
+                AND coalesce(btrim(l.assigned_to), '') = '')
+            OR l.assigned_to = CAST(:owner AS text))
+"""
+LIST_EVENTS = text(f"""
     SELECT e.meta_lead_id, e.status, e.attempts, e.error_message,
            e.received_at, e.processed_at,
            e.page_id, e.form_id, e.campaign_id, e.campaign_name,
            e.adset_id, e.ad_id, e.ad_name, e.raw_lead,
            l.id AS lead_id, l.name AS lead_name, l.phone AS lead_phone,
            l.stage AS lead_stage, l.city AS lead_city, l.assigned_to AS lead_assigned_to
+{_FROM}{_WHERE}
+     ORDER BY e.received_at DESC, e.meta_lead_id
+     LIMIT :limit OFFSET :offset
+""")
+COUNT_EVENTS = text(f"SELECT count(*) {_FROM}{_WHERE}")
+STATUS_COUNTS = text(f"SELECT e.status, count(*) AS n {_FROM}{_WHERE} GROUP BY e.status")
+# Every value each filter can take, over the WHOLE table — not the loaded page, or a
+# campaign further down the list could never be picked.
+FACETS = text("""
+    SELECT count(*) AS total_all,
+           array_remove(array_agg(DISTINCT nullif(e.campaign_name, '')), NULL) AS campaigns,
+           array_remove(array_agg(DISTINCT nullif(e.raw_lead->>'adset_name', '')), NULL) AS adsets,
+           array_remove(array_agg(DISTINCT nullif(e.ad_name, '')), NULL) AS ads,
+           array_remove(array_agg(DISTINCT nullif(e.form_id, '')), NULL) AS forms
       FROM meta_lead_events e
-      LEFT JOIN leads l ON l.origin_key = e.origin_key
-     ORDER BY e.received_at DESC
-     LIMIT :limit
+""")
+OWNER_COUNTS = text(f"""
+    SELECT CASE WHEN coalesce(btrim(l.assigned_to), '') = '' THEN NULL
+                ELSE l.assigned_to END AS owner,
+           count(*) AS n
+{_FROM}
+     GROUP BY 1
 """)
 
 
@@ -112,7 +151,10 @@ LEAD_FORM = text("""
       -- delivery's id (STAMP_LEAD is guarded IS NULL), so joining on it drops every
       -- repeat submission from the same buyer -- exactly the case where a second,
       -- different set of answers exists and is worth showing.
-      JOIN leads l ON l.origin_key = e.origin_key
+      -- A merged lead also owns every key folded into it (merged_origin_keys): without
+      -- that, a buyer whose Meta arrival was merged into their MagicBricks/WhatsApp
+      -- lead has a form nobody can see.
+      JOIN leads l ON (l.origin_key = e.origin_key OR e.origin_key = ANY(l.merged_origin_keys))
       -- cast the uuid to text, not the param to uuid: entity ids reach us as strings
       -- and casting the other way raises on anything that isn't one
      WHERE l.id::text = :lead_id
@@ -150,23 +192,56 @@ async def lead_form(lead_id: str, _: dict = Depends(current_user)):
     } for r in rows]}
 
 
+PAGE_SIZE = 100
+
+
+def _filters(status, campaign, adset, ad, form, owner) -> dict:
+    """Query-string filters → SQL params. Blank is NULL (no constraint); values are
+    otherwise passed exactly, since they match stored values exactly."""
+    def clean(v):
+        return v if v and v.strip() else None
+    return {"status": clean(status), "campaign": clean(campaign), "adset": clean(adset),
+            "ad": clean(ad), "form": clean(form), "owner": clean(owner),
+            "unassigned": UNASSIGNED}
+
+
 @router.get("/leads")
 async def list_meta_leads(
-    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=PAGE_SIZE, ge=1, le=500),
+    status: str | None = None,
+    campaign: str | None = None,
+    adset: str | None = None,
+    ad: str | None = None,
+    form: str | None = None,
+    owner: str | None = None,
     _: dict = Depends(require_admin),
 ):
-    """Every webhook delivery and what became of it. Admin only.
+    """Every webhook delivery and what became of it, a page at a time. Admin only.
 
-    Returns the whole recent window in one go and lets the browser filter it — the
-    volume is a few hundred rows, and paging a list this small buys nothing but two
-    more states to get wrong.
+    Filtering and counting happen HERE, over every delivery — not in the browser over
+    the rows it has loaded, which once the list is paged would make every count and
+    every filter silently describe only what has been scrolled into view.
+
+    `total` = deliveries matching every filter · `status_counts` = the same minus the
+    status filter (the status buttons) · `facets` = every value each filter can take.
     """
     engine = neon_engine()
     if engine is None:
-        return {"status": "not_configured", "count": 0, "items": []}
+        return {"status": "not_configured", "total": 0, "total_all": 0, "status_counts": {},
+                "facets": {"campaigns": [], "adsets": [], "ads": [], "forms": [],
+                           "owners": {}, "unassigned": 0},
+                "items": [], "next_offset": None}
 
-    async with engine.begin() as conn:
-        rows = (await conn.execute(LIST_EVENTS, {"limit": limit})).mappings().all()
+    p = _filters(status, campaign, adset, ad, form, owner)
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            LIST_EVENTS, {**p, "limit": limit, "offset": offset})).mappings().all()
+        total = (await conn.execute(COUNT_EVENTS, p)).scalar() or 0
+        status_counts = {r["status"]: r["n"] for r in (await conn.execute(
+            STATUS_COUNTS, {**p, "status": None})).mappings()}
+        facet = (await conn.execute(FACETS)).mappings().first()
+        owner_rows = (await conn.execute(OWNER_COUNTS)).mappings().all()
 
     items = []
     for r in rows:
@@ -196,4 +271,19 @@ async def list_meta_leads(
                 "assigned_to": r["lead_assigned_to"],
             } if r["lead_id"] else None,
         })
-    return {"status": "ok", "count": len(items), "items": items}
+    return {
+        "status": "ok",
+        "total": total,
+        "total_all": facet["total_all"],
+        "status_counts": status_counts,
+        "facets": {
+            "campaigns": sorted(facet["campaigns"] or [], key=str.lower),
+            "adsets": sorted(facet["adsets"] or [], key=str.lower),
+            "ads": sorted(facet["ads"] or [], key=str.lower),
+            "forms": sorted(facet["forms"] or []),
+            "owners": {r["owner"]: r["n"] for r in owner_rows if r["owner"]},
+            "unassigned": sum(r["n"] for r in owner_rows if not r["owner"]),
+        },
+        "items": items,
+        "next_offset": offset + len(items) if offset + len(items) < total else None,
+    }

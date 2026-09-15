@@ -532,6 +532,29 @@ export interface MetaLeadResponse {
   question: string;
   answer: string;
 }
+/* A lead added by hand (topbar "Add lead"). Only name and phone are required. */
+export interface NewLead {
+  name: string; phone: string; city: string; society: string;
+  budget_band: string; configuration: string; source_remarks: string;
+}
+
+/* Server-side filters for the Meta Leads page. "" = no constraint. */
+export interface MetaLeadFilters {
+  status: string; campaign: string; adset: string; ad: string; form: string; owner: string;
+}
+export interface MetaLeadsPage {
+  status: string;
+  total: number;        // deliveries matching every filter
+  total_all: number;    // every delivery, unfiltered
+  status_counts: Record<string, number>;  // per status, under the OTHER filters
+  facets: {             // every value each filter can take, over the whole table
+    campaigns: string[]; adsets: string[]; ads: string[]; forms: string[];
+    owners: Record<string, number>; unassigned: number;
+  };
+  items: MetaLeadEvent[];
+  next_offset: number | null;  // null = last page
+}
+
 export interface MetaLeadEvent {
   meta_lead_id: string;
   status: "pending" | "success" | "failed" | "duplicate";
@@ -566,6 +589,12 @@ export const api = {
   /* Telemetry only: who opened which lead. Deduped server-side, 204 on success,
      and deliberately fire-and-forget — see LeadModal. */
   leadViewed: (id: string) => request<void>(`/v1/leads/${id}/viewed`, { method: "POST" }),
+  /* Add a lead by hand. The OWNER is decided server-side from the caller's role (RM →
+     them, admin → the round-robin pick by city). A number that is already a lead is
+     merged into it instead of duplicated: created=false, lead_id = that lead. */
+  createLead: (body: NewLead) =>
+    request<{ status: string; created: boolean; lead_id: string | null; assigned_to?: string | null }>(
+      "/v1/leads", { method: "POST", body: JSON.stringify(body) }),
   setLeadStage: (id: string, stage: string) =>
     request<{ status: string; before: string; after: string }>(`/v1/leads/${id}/stage`, {
       method: "POST", body: JSON.stringify({ stage }),
@@ -593,8 +622,11 @@ export const api = {
   /* Conversations that never became a lead. One row per thread, four columns — not
      /gupshup/messages, which carries every message body and is polled every 5s. */
   waPending: () => request<{ items: WaPending[] }>("/v1/gupshup/pending"),
-  metaLeads: () =>
-    request<{ status: string; count: number; items: MetaLeadEvent[] }>("/v1/meta/leads"),
+  metaLeads: (f: MetaLeadFilters, offset: number) => {
+    const q = new URLSearchParams({ offset: String(offset) });
+    for (const [k, v] of Object.entries(f)) if (v) q.set(k, v);
+    return request<MetaLeadsPage>(`/v1/meta/leads?${q}`);
+  },
   /* The Instant Form answers behind ONE lead, for the lead popup. Not the admin
      delivery log above — this is the lead's own source data and any RM who can open
      the lead can read it. Newest delivery first; a repeat submitter has more than one. */

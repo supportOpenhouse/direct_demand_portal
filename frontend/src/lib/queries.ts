@@ -1,5 +1,5 @@
-import { keepPreviousData, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AppSettings, ConfirmPayload, HuvoCallQuery, MatchPreviewReq } from "./api";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, AppSettings, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -496,6 +496,19 @@ export function useConfirmLead(id: string) {
   });
 }
 
+export function useCreateLead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.createLead,
+    // a new lead lands in New Leads; a merged one may have changed stage — refresh all
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useSetLeadStage(id: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -674,10 +687,16 @@ export function useCampaignAction() {
    Polled like the WhatsApp inbox rather than loaded once — leads arrive by webhook
    within seconds of a form submit, and a page that needs reloading to show them
    would hide exactly the thing it exists to prove. */
-export function useMetaLeads() {
-  return useQuery({
-    queryKey: ["meta-leads"],
-    queryFn: api.metaLeads,
+export function useMetaLeads(filters: MetaLeadFilters) {
+  return useInfiniteQuery({
+    queryKey: ["meta-leads", filters],
+    // 100 per page (the server's PAGE_SIZE); the next page starts where this one ended
+    queryFn: ({ pageParam }) => api.metaLeads(filters, pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last) => last.next_offset ?? undefined,
+    // changing a filter keeps the old list on screen until the new one lands,
+    // instead of flashing the whole page back to a skeleton
+    placeholderData: keepPreviousData,
     refetchInterval: 15_000,
   });
 }

@@ -512,6 +512,10 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .src.bricks{background:var(--coral-soft);color:var(--coral-deep)}.src.bricks::before{background:var(--coral)}
 .src.yt{background:var(--coral-soft);color:var(--coral-deep)}.src.yt::before{background:var(--coral)}
 .src.wa{background:var(--emerald-soft);color:var(--emerald-deep)}.src.wa::before{background:var(--wa-green)}
+/* added by hand — neutral: it's not a channel with a brand colour */
+.src.manual{background:var(--panel-2);color:var(--ink-2)}.src.manual::before{background:var(--muted)}
+/* the Add lead form's "who will own this" line */
+.add-lead-owner{margin-top:14px;font-size:12px;color:var(--muted);line-height:1.5}
 /* a lead from several sources: its chips side by side */
 .src-list{display:inline-flex;flex-wrap:wrap;gap:4px}
 /* (N) arrivals beside the lead name */
@@ -2304,6 +2308,8 @@ td.lead-cell .nm{
   height:clamp(560px, calc(100vh - 160px), 1100px);
 }
 .ml-list{padding:0;overflow-y:auto}
+/* infinite-scroll sentinel + "Loading more…" / "no match" line at the list's end */
+.ml-more{min-height:40px;padding:12px;text-align:center;font-size:12px;color:var(--muted)}
 .ml-detail{overflow-y:auto;padding:18px 20px}
 
 .ml-item{
@@ -2368,6 +2374,16 @@ td.lead-cell .nm{
   padding:6px 0;border-bottom:1px solid var(--line-2);
 }
 .meta-form-row:last-child{border-bottom:0;padding-bottom:0}
+/* landscape: the Meta form full width under the pair, when the card beside Remarks is
+   another source's — its answers flow into columns instead of one long narrow list */
+.meta-form-wide .meta-form-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));column-gap:32px}
+/* "newest of N submissions" is a button that reveals the earlier ones. .meta-form-n
+   gives it size/colour/alignment; this strips the native button chrome — a <button>
+   does not inherit the page font family on its own */
+.meta-form-toggle{background:none;border:0;padding:0;font-family:inherit;cursor:pointer;
+  text-decoration:underline dotted;text-underline-offset:3px}
+.meta-form-older{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.meta-form-when{font-size:11.5px;font-weight:600;color:var(--muted);margin-bottom:6px}
 .meta-form-q{flex:0 0 46%;font-size:12px;color:var(--muted);min-width:0;overflow-wrap:anywhere}
 /* Meta returns answers as machine values ("noida_/_greater_noida"). Shown verbatim,
    as the Meta Leads page does — this is the delivery record, so a prettified answer

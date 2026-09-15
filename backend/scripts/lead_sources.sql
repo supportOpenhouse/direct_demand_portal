@@ -62,7 +62,13 @@ BEGIN
            miss_count   = CASE WHEN stage IN ('new','visit_scheduled','revisit_scheduled','won')
                                THEN miss_count ELSE 0 END,
            tat_deadline = CASE WHEN stage IN ('new','visit_scheduled','revisit_scheduled','won')
-                               THEN tat_deadline ELSE now() + interval '1 hour' END
+                               THEN tat_deadline ELSE now() + interval '1 hour' END,
+           -- the old callback goes too: a `new` lead with follow_up_at set is exactly
+           -- what the boot migration on main folds back to call_not_received/follow_up
+           follow_up_at    = CASE WHEN stage IN ('new','visit_scheduled','revisit_scheduled','won')
+                                  THEN follow_up_at ELSE NULL END,
+           follow_up_since = CASE WHEN stage IN ('new','visit_scheduled','revisit_scheduled','won')
+                                  THEN follow_up_since ELSE NULL END
      WHERE id = NEW.entity_id::uuid;
 
     -- log the move like any other, so Reports and the lead history see it

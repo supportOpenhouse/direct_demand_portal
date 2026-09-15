@@ -3,13 +3,13 @@ from math import ceil
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user, is_calling_rm
 from ..db import neon_engine
-from ..models import LeadConfirmedData, LeadNote, Visit
+from ..models import Lead, LeadConfirmedData, LeadNote, Visit
 from ..services import activity
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
@@ -121,6 +121,9 @@ def _lead_row(r) -> dict:
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
         "note_count": int(r.get("note_count") or 0) + len(remarks),
         "is_test": r["is_test"],
+        # drives the "Meta form" filter on every lead list; it was never serialised,
+        # so that filter read "Yes (0)" while 265 leads had a form
+        "meta_lead_id": r.get("meta_lead_id"),
     }
 
 
@@ -740,6 +743,83 @@ async def reject_lead(lead_id: UUID, payload: RejectPayload,
             action="stage_change", field="stage", before=row[0], after="rejected",
             metadata={"reason": payload.reason, "notes": payload.notes.strip()}))
     return {"status": "ok"}
+
+
+class NewLead(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    phone: str = Field(min_length=1, max_length=40)
+    city: str | None = Field(default=None, max_length=100)
+    society: str | None = Field(default=None, max_length=200)
+    budget_band: str | None = Field(default=None, max_length=100)
+    configuration: str | None = Field(default=None, max_length=100)
+    source_remarks: str | None = Field(default=None, max_length=2000)
+
+
+@router.post("/leads")
+async def create_lead(payload: NewLead, user: dict = Depends(current_user)):
+    """A lead added by hand — the topbar's "Add lead".
+
+    Owner, by who adds it: an RM keeps it; anyone else (admin) hands it to the same
+    `pick_rm` the hourly sweep uses — an RM covering the city, else the least-loaded RM
+    today — but now, so a lead added on purpose doesn't sit unowned for up to an hour.
+
+    Identity is `manual:<phone10>`. A number that is already a lead is NOT duplicated:
+    under another source the leads_merge_source trigger folds this arrival in
+    (lead_repeat, count, stage) and skips the insert; under `manual:` it is the same
+    hand-add twice. Either way nothing is created and nobody is reassigned — the
+    response points at the lead that already exists.
+    """
+    from ..services.lead_assign import covered_cities, pick_rm
+    from ..services.leads_sync import LEAD_ID_BY_KEY, TAT_HOURS, display_phone, norm_phone
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    phone10 = norm_phone(payload.phone)
+    if not phone10 or len(phone10) != 10:
+        raise HTTPException(status_code=422, detail="phone must be a 10-digit number")
+
+    def clean(v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+    city = clean(payload.city)
+    key = f"manual:{phone10}"
+    now = datetime.now(timezone.utc)
+    async with engine.begin() as conn:
+        if is_calling_rm(user.get("role")):
+            owner, how = clean(user.get("assignment_name") or user.get("name")), "added_by_rm"
+        else:
+            owner, how = await pick_rm(conn, city, await covered_cities(conn)), "auto_round_robin"
+
+        inserted = (await conn.execute(
+            pg_insert(Lead).values(
+                origin_key=key, source_category="manual", source="manual",
+                name=payload.name.strip(), phone=display_phone(phone10),
+                city=city, society=clean(payload.society),
+                budget_band=clean(payload.budget_band),
+                configuration=clean(payload.configuration),
+                source_remarks=clean(payload.source_remarks),
+                assigned_to=owner, assigned_at=now if owner else None,
+                received_at=now, tat_deadline=now + timedelta(hours=TAT_HOURS),
+                source_meta={"created_from": "add_lead", "created_by": user.get("email")},
+            ).on_conflict_do_nothing(index_elements=["origin_key"]).returning(Lead.id)
+        )).first()
+        if inserted is None:
+            # already a lead: its own `manual:` key, or merged into another source's
+            # lead by the trigger — LEAD_ID_BY_KEY resolves both
+            existing = (await conn.execute(LEAD_ID_BY_KEY, {"ok": key})).first()
+            return {"status": "exists", "created": False,
+                    "lead_id": str(existing[0]) if existing else None}
+
+        lead_id = inserted[0]
+        # `lead_created` comes from the leads_lead_created DB trigger (actor from
+        # source_meta.created_by, set above); only the assignment is logged here.
+        if owner:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="assigned", field="assigned_to", before=None, after=owner,
+                metadata={"source": how, "city": city}))
+    return {"status": "ok", "created": True, "lead_id": str(lead_id), "assigned_to": owner}
 
 
 class StagePayload(BaseModel):

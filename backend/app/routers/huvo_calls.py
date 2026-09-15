@@ -22,7 +22,6 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..models import Lead
-from ..services import activity
 
 log = logging.getLogger("huvo_calls")
 router = APIRouter(tags=["huvo"])
@@ -286,10 +285,8 @@ async def huvo_create_lead(req: HuvoLeadRequest, user: dict = Depends(current_us
             " WHERE from_number = :p AND lead_id IS NULL"),
             {"lead": lead_id, "p": phone10})).rowcount
 
-        await activity.record(conn, activity.row_for(
-            activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
-            action="lead_created",
-            metadata={"source": "huvo_call_log", "calls_linked": linked}))
+        # `lead_created` is written by the leads_lead_created DB trigger — and only when
+        # a lead really was inserted, which this endpoint used to log even when not.
     log.info("huvo: lead %s from call log by %s (%d calls linked)",
              lead_id, user.get("email"), linked)
     return {"status": "ok", "lead_id": str(lead_id) if lead_id else None, "calls_linked": linked}
@@ -393,16 +390,9 @@ async def huvo_bulk_create_leads(req: BulkHuvoLeadRequest, user: dict = Depends(
             "  AND source_meta->>'created_from' = 'huvo_call_log_bulk'"),
             {"ks": [f"huvo:{p}" for p in phones10]})).scalar()
 
-        # One row per number, not one for the batch: a report asking "how many leads
-        # did this person create" must count leads, and `bulk` in metadata still lets
-        # the Logs page collapse them into a single line.
-        await activity.record(conn, [
-            activity.row_for(activity.Actor.of(user), entity_type="lead", entity_id=None,
-                             action="lead_created",
-                             metadata={"source": "huvo_call_log_bulk", "phone10": p,
-                                       "bulk": len(phones10)})
-            for p in phones10
-        ])
+        # `lead_created` is written per inserted lead by the leads_lead_created DB
+        # trigger (actor from source_meta.created_by). This used to log one row per
+        # requested number with a NULL entity_id, whether or not a lead was made.
     log.info("huvo: bulk %d numbers by %s — %d calls linked",
              len(phones10), user.get("email"), linked)
     return {"status": "ok", "requested": len(phones10),

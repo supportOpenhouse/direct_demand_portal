@@ -12,13 +12,13 @@
    The list is the delivery log, not the lead list. A `failed` row is the whole point
    of showing it: those leads exist at Meta and are NOT in the CRM, and this is the
    only place that difference is visible. */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAssignees, useMetaLeads } from "../lib/queries";
 import { MetaLeadEvent } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { SkeletonRows } from "../components/Skeleton";
 import { FilterBar, useFilterValues } from "../components/FilterBar";
-import { matchesOption, rmOptions, uniqueValues } from "../components/Filters";
+import { NO_VALUE, type FilterOption } from "../components/Filters";
 import { LeadLink } from "../components/LeadModal";
 import { metaQuestionLabel } from "../lib/leads";
 
@@ -52,11 +52,22 @@ function labelOf(e: MetaLeadEvent): string {
   return fromForm || e.lead?.phone || e.meta_lead_id;
 }
 
+/* rmOptions' rules — every known RM with their count (zero included), anyone still
+   holding deliveries who left the list, Unassigned, the selection pinned — but the
+   counts come from the server over every delivery, not from the loaded page. */
+function ownerOptions(counts: Record<string, number>, unassigned: number,
+                      assignees: string[], keep: string): FilterOption[] {
+  const names = [...new Set([...assignees, ...Object.keys(counts)])].sort((a, b) => a.localeCompare(b));
+  const opts: FilterOption[] = names.map((n) => ({ value: n, label: `${n} (${counts[n] ?? 0})` }));
+  if (unassigned > 0 || keep === NO_VALUE) opts.push({ value: NO_VALUE, label: `Unassigned (${unassigned})` });
+  if (keep && keep !== NO_VALUE && !names.includes(keep)) opts.push({ value: keep, label: `${keep} (0)` });
+  return opts;
+}
+
 export default function MetaLeads() {
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
 
-  const { data, isLoading, error } = useMetaLeads();
   const [active, setActive] = useState<string | null>(null);
   // "everything" plus one entry per status that actually occurs — a filter for a
   // status with no rows is a control that can only disappoint
@@ -66,26 +77,50 @@ export default function MetaLeads() {
   const { values: f, set, clear } = useFilterValues({ campaign: "", adset: "", ad: "", form: "", owner: "" });
   const assignees = useAssignees();
 
-  const items = data?.items ?? [];
-  const counts = useMemo(() => {
-    const by: Record<string, number> = {};
-    for (const e of items) by[e.status] = (by[e.status] ?? 0) + 1;
-    return by;
-  }, [items]);
+  /* Filtering and counting are server-side, over EVERY delivery. The list loads 100 at
+     a time, so anything computed here from loaded rows would silently describe only
+     what has been scrolled into view. */
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } = useMetaLeads({
+    status: filter === "all" ? "" : filter,
+    campaign: f.campaign, adset: f.adset, ad: f.ad, form: f.form,
+    // the RM who owns the lead a delivery produced; a failed delivery has no lead at
+    // all, so it only matches Unassigned. NO_VALUE is a client sentinel — map it.
+    owner: f.owner === NO_VALUE ? "__unassigned__" : f.owner,
+  });
+  const first = data?.pages[0];
+  const total = first?.total ?? 0;
+  const counts = first?.status_counts ?? {};
 
-  const shown = useMemo(
-    () => items.filter((e) =>
-      (filter === "all" || e.status === filter) &&
-      (!f.campaign || (e.campaign_name ?? "") === f.campaign) &&
-      (!f.adset || (e.adset_name ?? "") === f.adset) &&
-      (!f.ad || (e.ad_name ?? "") === f.ad) &&
-      (!f.form || (e.form_id ?? "") === f.form) &&
-      // the RM who owns the lead this delivery produced; a failed delivery has no
-      // lead at all, so it only matches the Unassigned bucket
-      matchesOption(e.lead?.assigned_to, f.owner)),
-    [items, filter, f],
-  );
-  const selected = shown.find((e) => e.meta_lead_id === active) ?? shown[0] ?? null;
+  // Offset paging: a delivery landing between two page fetches shifts every row down
+  // one, so the next page can repeat the last row. Dedupe by id.
+  const items = useMemo(() => {
+    const seen = new Set<string>();
+    const out: MetaLeadEvent[] = [];
+    for (const page of data?.pages ?? [])
+      for (const e of page.items)
+        if (!seen.has(e.meta_lead_id)) { seen.add(e.meta_lead_id); out.push(e); }
+    return out;
+  }, [data]);
+  const selected = items.find((e) => e.meta_lead_id === active) ?? items[0] ?? null;
+
+  /* Infinite scroll: a sentinel after the last row, observed inside the list panel
+     (which scrolls on its own, not the window). Re-armed after every fetch, so a panel
+     taller than the rows loaded keeps pulling pages until it is full. */
+  const listRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = moreRef.current;
+    if (!el || !hasNextPage || isFetchingNextPage) return;
+    const io = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) fetchNextPage(); },
+      { root: listRef.current, rootMargin: "300px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage, items.length]);
+
+  // a new filter is a new list — start it from the top
+  useEffect(() => { listRef.current?.scrollTo({ top: 0 }); }, [filter, f]);
 
   if (!isAdmin) {
     return (
@@ -116,7 +151,10 @@ export default function MetaLeads() {
     <div>
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{items.length}</b> deliver{items.length === 1 ? "y" : "ies"}
+          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> deliver{total === 1 ? "y" : "ies"}
+          {items.length < total && (
+            <span style={{ marginLeft: 6 }}>· {items.length.toLocaleString("en-IN")} loaded</span>
+          )}
           {counts.failed ? (
             <span style={{ color: "var(--coral)", marginLeft: 8 }}>
               · {counts.failed} not in the CRM
@@ -129,29 +167,30 @@ export default function MetaLeads() {
           <button className={filter === "all" ? "btn primary sm" : "btn ghost sm"}
             onClick={() => setFilter("all")}>All</button>
           {Object.keys(STATUS_STYLE)
-            .filter((s) => counts[s])
+            // the selected status stays listed even at 0, or it couldn't be un-picked
+            .filter((s) => counts[s] || filter === s)
             .map((s) => (
               <button key={s} className={filter === s ? "btn primary sm" : "btn ghost sm"}
                 onClick={() => setFilter(s)}>
-                {STATUS_STYLE[s].label} ({counts[s]})
+                {STATUS_STYLE[s].label} ({counts[s] ?? 0})
               </button>
             ))}
           <FilterBar
             fields={[
-              { key: "campaign", label: "Campaign", options: uniqueValues(items, (e) => e.campaign_name) },
-              { key: "adset", label: "Ad set", options: uniqueValues(items, (e) => e.adset_name) },
-              { key: "ad", label: "Ad", options: uniqueValues(items, (e) => e.ad_name) },
-              { key: "form", label: "Form", options: uniqueValues(items, (e) => e.form_id) },
+              { key: "campaign", label: "Campaign", options: first?.facets.campaigns ?? [] },
+              { key: "adset", label: "Ad set", options: first?.facets.adsets ?? [] },
+              { key: "ad", label: "Ad", options: first?.facets.ads ?? [] },
+              { key: "form", label: "Form", options: first?.facets.forms ?? [] },
               { key: "owner", label: "Assigned RM",
-                options: rmOptions(items, (e) => e.lead?.assigned_to,
-                                   (assignees.data?.items ?? []).map((a) => a.name), f.owner) },
+                options: ownerOptions(first?.facets.owners ?? {}, first?.facets.unassigned ?? 0,
+                                      (assignees.data?.items ?? []).map((a) => a.name), f.owner) },
             ]}
             values={f} onChange={set} onClear={clear}
           />
         </div>
       </div>
 
-      {items.length === 0 ? (
+      {first?.total_all === 0 ? (
         <div className="card">
           <div className="empty" style={{ padding: 48, textAlign: "center" }}>
             <div style={{ fontWeight: 600, color: "var(--ink-2)" }}>No deliveries yet</div>
@@ -166,8 +205,9 @@ export default function MetaLeads() {
       ) : (
         <div className="ml-panels">
           {/* delivery list */}
-          <div className="card ml-list">
-            {shown.map((e) => (
+          <div className="card ml-list" ref={listRef}>
+            {items.length === 0 && <div className="ml-more">No deliveries match these filters.</div>}
+            {items.map((e) => (
               <button
                 key={e.meta_lead_id}
                 onClick={() => setActive(e.meta_lead_id)}
@@ -184,6 +224,9 @@ export default function MetaLeads() {
                 </div>
               </button>
             ))}
+            {hasNextPage && (
+              <div ref={moreRef} className="ml-more">{isFetchingNextPage ? "Loading more…" : ""}</div>
+            )}
           </div>
 
           {/* detail */}

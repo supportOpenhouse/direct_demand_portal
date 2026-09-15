@@ -385,6 +385,22 @@ def test_a_pushed_row_stores_a_clean_pin():
 
 # --- manual stage change -----------------------------------------------------
 
+def test_add_lead_owner_is_the_rm_or_the_round_robin_pick():
+    """An RM keeps a lead they add; anyone else's goes to the sweep's own pick_rm —
+    reused, not re-implemented, so hand-added and swept leads balance as one pool."""
+    body = _body_of("create_lead")
+    assert "is_calling_rm(" in body
+    assert "pick_rm(" in body and "covered_cities(" in body
+
+
+def test_add_lead_never_duplicates_or_reassigns_an_existing_number():
+    """An existing number returns the lead it already is, before anything is logged."""
+    body = _body_of("create_lead")
+    assert "on_conflict_do_nothing" in body and ".returning(" in body
+    assert "LEAD_ID_BY_KEY" in body  # also finds a lead a merged key was folded into
+    assert body.index("if inserted is None") < body.index("activity.record")
+
+
 def _body_of(fn_name: str) -> str:
     """Source of a leads-router function with its docstring removed.
 

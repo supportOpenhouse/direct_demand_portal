@@ -2,9 +2,11 @@
 
    Reminders and Add New Lead used to sit here. Both only ever raised a toast saying
    the feature was coming, so they were two permanently disabled controls taking the
-   most valuable space on every page — removed rather than left as furniture. */
+   most valuable space on every page — removed rather than left as furniture.
+   "Add lead" came back (15 Sep) as a working control: components/AddLead.tsx. */
 import { useLocation } from "react-router-dom";
 import { NotificationBell } from "./NotificationBell";
+import { AddLeadButton } from "./AddLead";
 
 const TITLES: Record<string, string> = {
   "/": "Home",
@@ -60,6 +62,8 @@ export default function Topbar() {
           the page's action bar, so a page-specific button belongs in it rather than
           duplicated into every toolbar. */}
       <div id="topbar-slot" />
+      {/* on every page, unlike the slot's page actions — a buyer can call in anywhere */}
+      <AddLeadButton />
       <NotificationBell />
     </div>
   );

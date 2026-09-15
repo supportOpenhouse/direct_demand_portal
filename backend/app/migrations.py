@@ -51,6 +51,13 @@ _ADD_COLUMNS = [
     # UNIQUE, so a given leadgen_id is processed once and can stamp at most one lead;
     # add a partial unique index here if that ever stops being true.
     ("leads", "meta_lead_id", "TEXT"),
+    # One lead per buyer across sources (scripts/lead_sources.sql). `sources` is every
+    # source the phone arrived from, `merged_origin_keys` the other-source keys folded
+    # into this lead (so a sheet re-sync can't re-merge them), `count_leads_repeat` the
+    # arrivals beyond the first. The merging itself is a DB trigger, not boot code.
+    ("leads", "sources", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
+    ("leads", "merged_origin_keys", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
+    ("leads", "count_leads_repeat", "INTEGER NOT NULL DEFAULT 0"),
     # create_all() builds meta_lead_events whole on a fresh database; this is only for
     # the window where the table shipped before origin_key was added to it.
     ("meta_lead_events", "origin_key", "TEXT"),

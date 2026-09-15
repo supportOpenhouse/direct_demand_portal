@@ -10,7 +10,9 @@
 import { useState } from "react";
 import { useAllSocieties, useAssignees, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { isNewToday, leadMatchesQuery, srcClass, srcLabel } from "../lib/leads";
+import { isNewToday, leadMatchesQuery, sourcesLabel } from "../lib/leads";
+import { ArrivalCount, SourceChips } from "../components/StageChip";
+import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { DATE_PRESETS, rmOptions } from "../components/Filters";
 import { countedOptions, matchesOption, inDatePreset, type DatePreset } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras } from "../lib/leadFilters";
@@ -67,7 +69,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   const all = data?.items ?? [];
   // faceted counts: each dropdown counts leads passing all the OTHER filters (skip its own)
   const pass = (l: Lead, skip?: string) =>
-    (skip === "source" || !source || l.source === source) &&
+    (skip === "source" || sourceMatches(l, source)) &&
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
     inDatePreset(l.follow_up_at, datePreset, dateFrom, dateTo) &&
@@ -97,7 +99,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(ordered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
-    source: (l) => srcLabel(l.source),
+    source: (l) => sourcesLabel(l),
     due: (l) => (l.follow_up_at ? Date.parse(l.follow_up_at) : null),
     misses: (l) => l.miss_count,
     assigned: (l) => l.assigned_to,
@@ -136,7 +138,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
           city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
           fields={[
             { key: "source", label: "Source",
-              options: countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel, source) },
+              options: sourceOptions(all.filter((l) => pass(l, "source")), source) },
             { key: "owner", label: "Assigned RM",
               options: rmOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to,
                                  (assignees.data?.items ?? []).map((a) => a.name), owner) },
@@ -197,7 +199,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                     </td>
                   )}
                   <td className="lead-cell" title={l.name ?? ""}>
-                                            <div className="nm">{isNewToday(l) && <NewBadge size={18} style={{ marginRight: 6 }} />}{l.name}{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
+                                            <div className="nm">{isNewToday(l) && <NewBadge size={18} style={{ marginRight: 6 }} />}{l.name}<ArrivalCount lead={l} />{l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}</div>
                   </td>
                   <td className="ph-cell" onClick={(e) => e.stopPropagation()}>
                     <div className="phone-cell">
@@ -205,7 +207,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
                       <LeadPhone phone={l.phone} missCount={l.miss_count} />
                     </div>
                   </td>
-                  <td className="cell-tight"><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
+                  <td className="cell-tight"><SourceChips lead={l} /></td>
                   <td className="cell-tight"><DueChip at={l.follow_up_at} /></td>
                   <td>
                     {l.miss_count > 0

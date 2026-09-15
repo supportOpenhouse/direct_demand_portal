@@ -1,4 +1,21 @@
-import { stageClass, stageLabel } from "../lib/leads";
+import type { Lead } from "../lib/api";
+import { leadSources, srcClass, srcLabel, stageClass, stageLabel } from "../lib/leads";
+
+/* One chip per source the buyer arrived from — Meta then 99acres shows both. */
+export function SourceChips({ lead }: { lead: Pick<Lead, "source" | "sources"> }) {
+  return (
+    <span className="src-list">
+      {leadSources(lead).map((s) => <span key={s} className={`src ${srcClass(s)}`}>{srcLabel(s)}</span>)}
+    </span>
+  );
+}
+
+/* "(3)" in red beside the name once a buyer has arrived more than once — total
+   arrivals, so a lead that came in twice reads (2). Nothing for a single arrival. */
+export function ArrivalCount({ lead }: { lead: Pick<Lead, "count_leads_repeat"> }) {
+  const n = (lead.count_leads_repeat ?? 0) + 1;
+  return n > 1 ? <span className="arrival-count" title={`Arrived ${n} times`}>({n})</span> : null;
+}
 
 /* The starburst NEW badge (Direct Inventory's asset).
 

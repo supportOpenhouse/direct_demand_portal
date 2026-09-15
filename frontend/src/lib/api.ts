@@ -379,6 +379,10 @@ export interface Lead {
   // Set on the first Meta webhook delivery that reached this lead; null for sheet-only
   // Meta leads and every other source. Drives the "Meta form" filter.
   meta_lead_id: string | null;
+  // Every source this buyer arrived from, first first. Empty until the column is filled.
+  sources: string[];
+  // Arrivals beyond the first — a new source, or the same Meta form again.
+  count_leads_repeat: number;
 }
 
 export interface MatchUnit {

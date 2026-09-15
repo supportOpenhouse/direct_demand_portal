@@ -512,6 +512,10 @@ tr.lead-row.fu-due,tr.lead-row.fu-due:hover{background:var(--blue-soft)}
 .src.bricks{background:var(--coral-soft);color:var(--coral-deep)}.src.bricks::before{background:var(--coral)}
 .src.yt{background:var(--coral-soft);color:var(--coral-deep)}.src.yt::before{background:var(--coral)}
 .src.wa{background:var(--emerald-soft);color:var(--emerald-deep)}.src.wa::before{background:var(--wa-green)}
+/* a lead from several sources: its chips side by side */
+.src-list{display:inline-flex;flex-wrap:wrap;gap:4px}
+/* (N) arrivals beside the lead name */
+.arrival-count{color:var(--coral);font-weight:700;margin-left:6px}
 
 /* stage chips — a logical colour ramp across the pipeline */
 .stage{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:20px;border:1px solid transparent}

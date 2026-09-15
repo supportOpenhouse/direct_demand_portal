@@ -28,6 +28,14 @@ const SRC_LABEL: Record<string, string> = {
 export const srcClass = (s: string) => SRC_CLASS[s] || "meta";
 export const srcLabel = (s: string) => SRC_LABEL[s] || s;
 
+/** Every source the buyer arrived from, first one first. Falls back to `source` for a
+    lead whose `sources` column hasn't been filled. */
+export const leadSources = (l: Pick<Lead, "source" | "sources">): string[] =>
+  l.sources?.length ? l.sources : [l.source];
+/** "Meta, 99acres" — for sorting, search and CSV. */
+export const sourcesLabel = (l: Pick<Lead, "source" | "sources">) =>
+  leadSources(l).map(srcLabel).join(", ");
+
 /* Meta's Instant Form field keys are machine names ("your_budget_range?",
    "where_do_you_currently_live?"). The form asked them in words, so show words.
    Shared by the Meta Leads page and the lead popup's captured-from-Meta card — the
@@ -169,7 +177,7 @@ export function leadMatchesQuery(query: string, l: Lead): boolean {
       query,
       l.name, l.phone, l.email, l.city, l.society, l.configuration,
       l.budget_band, l.plan_to_buy, l.assigned_to, l.latest_note, l.source_remarks,
-      srcLabel(l.source), stageLabel(l.stage),
+      sourcesLabel(l), stageLabel(l.stage),
     )
   )
     return true;

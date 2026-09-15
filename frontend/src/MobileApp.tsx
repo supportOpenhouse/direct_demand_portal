@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useLeads } from "./lib/queries";
 import { leadMatchesQuery, srcClass, srcLabel } from "./lib/leads";
+import { ArrivalCount, SourceChips } from "./components/StageChip";
 import { useSearch } from "./components/SearchContext";
 import { useAuth } from "./components/AuthContext";
 import GlobalSearch from "./components/GlobalSearch";
@@ -147,8 +148,8 @@ export function MobileLeads({ segment }: { segment: string }) {
       {list.map((l) => (
         <button key={l.id} className="m-row" onClick={() => nav(`/leads/${l.id}`)}>
           <div className="m-row-line">
-            <span className="m-nm">{l.name || "Unknown lead"}</span>
-            <span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span>
+            <span className="m-nm">{l.name || "Unknown lead"}<ArrivalCount lead={l} /></span>
+            <SourceChips lead={l} />
           </div>
           <div className="m-row-line">
             <span className="m-ph">{l.phone || "—"}</span>

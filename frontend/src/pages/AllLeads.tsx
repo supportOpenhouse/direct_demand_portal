@@ -5,9 +5,9 @@
    This is that place — read-only triage, not a replacement for the worklists. */
 import { useMemo, useState } from "react";
 import { useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
-import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, segHue, srcClass, srcLabel, stageLabel } from "../lib/leads";
-import { countedOptions, matchesOption, rmOptions } from "../components/Filters";
-import { EXTRA_DEFAULTS, extraFields, passExtras } from "../lib/leadFilters";
+import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, segHue, sourcesLabel, stageLabel } from "../lib/leads";
+import { matchesOption, rmOptions } from "../components/Filters";
+import { EXTRA_DEFAULTS, extraFields, passExtras, sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { useFilterValues } from "../components/FilterBar";
 import { LeadToolbar, cityMatches } from "../components/LeadToolbar";
 import { Skeleton, SkeletonTable } from "../components/Skeleton";
@@ -20,7 +20,7 @@ import { useRowOpen } from "../components/LeadModal";
 import { TopbarSlot } from "../components/TopbarSlot";
 import { Pager, usePaging } from "../components/Pager";
 import { StageChip } from "../components/StageChip";
-import { NewBadge } from "../components/StageChip";
+import { ArrivalCount, NewBadge, SourceChips } from "../components/StageChip";
 
 
 export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode }) {
@@ -41,7 +41,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
 
   const pass = (l: Lead & { _seg: string }, skip?: string) =>
     (skip === "seg" || !g.seg || l._seg === g.seg) &&
-    (skip === "source" || !f.source || l.source === f.source) &&
+    (skip === "source" || sourceMatches(l, f.source)) &&
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, f.owner)) &&
     passExtras(l, f, skip) &&
@@ -60,7 +60,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
   const { sorted: list, sortKey, dir, onSort } = useSort(filtered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
-    source: (l) => srcLabel(l.source),
+    source: (l) => sourcesLabel(l),
     stage: (l) => stageLabel(l.stage),
     city: (l) => l.city,
     society: (l) => l.society,
@@ -85,7 +85,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
         city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
         fields={[
           { key: "source", label: "Source",
-            options: countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel, f.source) },
+            options: sourceOptions(all.filter((l) => pass(l, "source")), f.source) },
           { key: "owner", label: "Assigned RM",
             options: rmOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to,
                                (assignees.data?.items ?? []).map((a) => a.name), f.owner) },
@@ -153,7 +153,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
                   <td className="lead-cell" title={l.name ?? ""}>
                                             <div className="nm">
                           {isNewToday(l) && <NewBadge size={18} style={{ marginRight: 6 }} />}
-                          {l.name}
+                          {l.name}<ArrivalCount lead={l} />
                         </div>
                   </td>
                   <td className="ph-cell" onClick={(e) => e.stopPropagation()}>
@@ -162,7 +162,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
                       <LeadPhone phone={l.phone} missCount={l.miss_count} />
                     </div>
                   </td>
-                  <td className="cell-tight"><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
+                  <td className="cell-tight"><SourceChips lead={l} /></td>
                   <td className="cell-tight"><StageChip stage={l.stage} /></td>
                   <td className="cell-tight">{l.city || <span style={{ color: "var(--muted)" }}>—</span>}</td>
                   <td className="cell-text" title={l.society || ""}><span>{l.society || "—"}</span></td>

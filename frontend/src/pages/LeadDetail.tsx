@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useRejectLead, useSetFollowup, useSetLeadStage } from "../lib/queries";
-import { ALL_STAGES, initials, metaQuestionLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { ALL_STAGES, initials, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { actionStyle, Details, pretty } from "../lib/activity";
 import { api, MetaFormDelivery } from "../lib/api";
 import { useToast } from "../components/Toast";
@@ -596,7 +597,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
       {inModal ? (
         <>
           <div className="lead-modal-head">
-            <h3>{lead.name || "Unnamed"}</h3>
+            <h3>{lead.name || "Unnamed"}<ArrivalCount lead={lead} /></h3>
             {lead.city && <span className="chip-soft">{lead.city}</span>}
             {lead.is_test && <span className="chip-soft">Test</span>}
             <StageChip stage={lead.stage} />
@@ -606,7 +607,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             </span>
           </div>
           <div className="lead-modal-sub">
-            {[lead.phone, srcLabel(lead.source), lead.society, lead.configuration].filter(Boolean).join(" · ")}
+            {[lead.phone, sourcesLabel(lead), lead.society, lead.configuration].filter(Boolean).join(" · ")}
             {lead.budget_band ? <> · <b>{lead.budget_band}</b></> : null}
           </div>
         </>
@@ -615,10 +616,10 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
         <div className="lead-head">
           <div className="av">{initials(lead.name)}</div>
           <div>
-            <h2>{lead.name}{lead.is_test && <span className="bucket-tag" style={{ marginLeft: 8, verticalAlign: "middle" }}>TEST</span>}</h2>
+            <h2>{lead.name}<ArrivalCount lead={lead} />{lead.is_test && <span className="bucket-tag" style={{ marginLeft: 8, verticalAlign: "middle" }}>TEST</span>}</h2>
             <div className="meta" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {lead.phone}
-              <span className={`src ${srcClass(lead.source)}`}>{srcLabel(lead.source)}</span>
+              <SourceChips lead={lead} />
               <span style={{ color: "var(--muted)" }}>Assigned:</span>
               <AssignControl leadId={lead.id} assignedTo={lead.assigned_to} />
               {lead.confirmed && <span className="stage contacted">Qualified</span>}

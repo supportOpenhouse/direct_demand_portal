@@ -509,7 +509,7 @@ class CreateLeadRequest(BaseModel):
 async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(current_user)):
     """Create a spine lead from a WhatsApp conversation. Idempotent on origin_key, so
     a double-click returns the existing lead rather than a duplicate."""
-    from ..services.leads_sync import TAT_HOURS, display_phone, norm_phone
+    from ..services.leads_sync import LEAD_ID_BY_KEY, TAT_HOURS, display_phone, norm_phone
 
     engine = neon_engine()
     if engine is None:
@@ -532,15 +532,18 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
         owner = await _designated_rm(conn, phone10) if req.assign else None
         if owner:
             values["assigned_to"] = owner
-        await conn.execute(
+        inserted = (await conn.execute(
             pg_insert(Lead).values(values).on_conflict_do_nothing(index_elements=["origin_key"])
-        )
-        row = (await conn.execute(
-            select(Lead.id).where(Lead.origin_key == values["origin_key"])
+            .returning(Lead.id)
         )).first()
+        # No row back when the number already had a lead: under this key (a double
+        # click), or under another source — the leads_merge_source trigger then folded
+        # WhatsApp into that lead and logged `lead_repeat` itself.
+        row = inserted or (await conn.execute(
+            LEAD_ID_BY_KEY, {"ok": values["origin_key"]})).first()
         # Attribution for where a lead came from and who turned it into one — the
         # sheet sync creates most leads, so a hand-made one is worth marking.
-        if row:
+        if inserted:
             await activity.record(conn, activity.row_for(
                 activity.Actor.of(user), entity_type="lead", entity_id=row[0],
                 action="lead_created",
@@ -643,8 +646,15 @@ async def gupshup_bulk_create_leads(req: BulkLeadRequest, user: dict = Depends(c
         } for p in phones10 if f"whatsapp:{p}" not in already]
 
         if rows:
-            await conn.execute(
-                pg_insert(Lead).on_conflict_do_nothing(index_elements=["origin_key"]), rows)
+            # RETURNING, not executemany: a number that already has a lead under another
+            # source is merged by the leads trigger and returns nothing — that lead was
+            # not created here, so it must not get a `lead_created` entry.
+            made = set((await conn.execute(
+                pg_insert(Lead).values(rows)
+                .on_conflict_do_nothing(index_elements=["origin_key"])
+                .returning(Lead.id))).scalars().all())
+            rows = [r for r in rows if r["id"] in made]
+        if rows:
             # The single-lead endpoint has always logged `lead_created`; bulk never
             # did, so leads made this way were invisible on the Reports page.
             await activity.record(conn, [

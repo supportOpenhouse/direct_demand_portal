@@ -78,4 +78,21 @@ assert.deepEqual(
   ["Rejected (2)", "RNR (1)", "Future Prospect (0)"],
   "all three are always listed, a zero included — 'none yet' is still askable");
 
+// ── source: multi-valued, a lead is found under every source it arrived from ───────
+const both = { source: "meta", sources: ["meta", "99acres"] };
+assert.ok(m.sourceMatches(both, "meta") && m.sourceMatches(both, "99acres"), "found under either source");
+assert.ok(!m.sourceMatches(both, "whatsapp"), "and not under one it never came from");
+assert.ok(m.sourceMatches(both, ""), "no selection constrains nothing");
+assert.ok(m.sourceMatches({ source: "meta", sources: [] }, "meta"), "an unfilled sources column falls back to source");
+assert.deepEqual(
+  m.sourceOptions([both, { source: "meta", sources: ["meta"] }]).map((o) => o.label),
+  ["Multiple sources (1)", "99acres (1)", "Meta (2)"],
+  "each source counts every lead that has it; Multiple sources leads the list");
+assert.ok(m.sourceMatches(both, m.MULTI_SOURCE), "two sources = multiple");
+assert.ok(!m.sourceMatches({ source: "meta", sources: ["meta"] }, m.MULTI_SOURCE), "one source is not");
+assert.ok(!m.sourceMatches({ source: "meta", sources: [] }, m.MULTI_SOURCE), "an unfilled column is one source");
+assert.equal(m.sourceOptions([])[0].label, "Multiple sources (0)", "listed even when there are none");
+assert.ok(m.sourceOptions([], "whatsapp").some((o) => o.value === "whatsapp"),
+  "an active selection faceting dropped is pinned");
+
 console.log("lead filters: ok");

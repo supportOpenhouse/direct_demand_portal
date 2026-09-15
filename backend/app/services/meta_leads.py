@@ -29,7 +29,7 @@ from sqlalchemy import text
 from ..config import get_settings
 from ..db import neon_engine
 from . import activity
-from .leads_sync import ingest_meta_rows, norm_phone
+from .leads_sync import LEAD_ID_BY_KEY, ingest_meta_rows, norm_phone
 
 log = logging.getLogger("meta_leads")
 
@@ -181,11 +181,14 @@ STAMP_LEAD = text("""
 """)
 
 
-LEAD_ID_BY_ORIGIN = text("SELECT id FROM leads WHERE origin_key = :origin_key")
+async def _lead_exists(origin_key: str) -> bool:
+    """Whether this key already belongs to a lead — its own, or one it was merged into."""
+    async with neon_engine().begin() as conn:
+        return (await conn.execute(LEAD_ID_BY_KEY, {"ok": origin_key})).scalar() is not None
 
 
 async def _stamp_and_log(lid: str, origin_key: str, answers: dict, lead: dict,
-                         new_lead: bool) -> None:
+                         new_lead: bool, merged: bool) -> None:
     """Attribute the lead to this delivery AND log what arrived, in one transaction.
 
     One `meta_form_submitted` entry per delivery that reached a lead — including a
@@ -202,7 +205,7 @@ async def _stamp_and_log(lid: str, origin_key: str, answers: dict, lead: dict,
         raise RuntimeError("DATABASE_URL not configured")
     async with engine.begin() as conn:
         await conn.execute(STAMP_LEAD, {"lid": lid, "origin_key": origin_key})
-        lead_id = (await conn.execute(LEAD_ID_BY_ORIGIN, {"origin_key": origin_key})).scalar()
+        lead_id = (await conn.execute(LEAD_ID_BY_KEY, {"ok": origin_key})).scalar()
         if lead_id is None:
             return
         await activity.record(conn, activity.row_for(
@@ -216,6 +219,10 @@ async def _stamp_and_log(lid: str, origin_key: str, answers: dict, lead: dict,
                 # is when it reached us, which can trail it after a retry
                 "submitted_at": lead.get("created_time"),
                 "new_lead": new_lead,
+                # true when this form was a NEW SOURCE for a buyer we already had: the
+                # leads trigger logged `lead_repeat` for it, so the repeat count must
+                # not count this row as well
+                "merged": merged,
                 "answers": answers,
             }))
 
@@ -258,11 +265,15 @@ async def process_value(value: dict, payload: dict) -> str:
         lead = await fetch_lead(lid)
         row = flatten(lead)
         phone = norm_phone(row.get("phone_number"))
-        result = await ingest_meta_rows([row], actor="meta-webhook")
         origin_key = f"meta:{phone}" if phone else None
+        # Read BEFORE ingest: afterwards a lead exists either way, and only this tells a
+        # repeat form (existed) from a new source merged by the leads trigger (didn't).
+        existed = bool(origin_key) and await _lead_exists(origin_key)
+        result = await ingest_meta_rows([row], actor="meta-webhook")
         if origin_key:
-            await _stamp_and_log(lid, origin_key, row, lead,
-                                 new_lead=bool(result.get("new")))
+            new_lead = bool(result.get("new"))
+            await _stamp_and_log(lid, origin_key, row, lead, new_lead=new_lead,
+                                 merged=not existed and not new_lead)
             status, error = "success", None
         else:
             # `build_meta` skips a row with no phone, which is the right call — phone is

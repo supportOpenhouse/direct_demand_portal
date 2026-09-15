@@ -77,6 +77,8 @@ def _lead_row(r) -> dict:
         "id": str(r["id"]),
         "source_category": r["source_category"],
         "source": r["source"],
+        "sources": list(r.get("sources") or []),
+        "count_leads_repeat": r.get("count_leads_repeat") or 0,
         "name": r["name"],
         "phone": r["phone"],
         "email": r["email"],

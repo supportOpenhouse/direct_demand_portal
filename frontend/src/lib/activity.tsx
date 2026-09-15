@@ -79,6 +79,12 @@ export function Details({ r }: { r: ActivityRow }) {
         </>
       );
     }
+    case "lead_repeat": {
+      // the same phone arrived from another source and was folded into this lead
+      const src = String(m.source ?? "");
+      const via = srcLabel(src) === src ? pretty(src) : srcLabel(src);
+      return <><b>{r.lead_name || (m.name as string) || "Lead"}</b> came in again{src && <> via <b>{via}</b></>}</>;
+    }
     case "meta_form_submitted": {
       // What arrived, and when. Questions are humanised with the same helper the Meta
       // Leads page uses; ANSWERS stay exactly as Meta returned them.
@@ -86,7 +92,7 @@ export function Details({ r }: { r: ActivityRow }) {
       const via = [m.campaign_name, m.ad_name].filter(Boolean).join(" · ");
       return (
         <>
-          Meta form {m.new_lead ? "created this lead" : "submitted again"}
+          Meta form {m.new_lead ? "created this lead" : m.merged ? "arrived for this lead" : "submitted again"}
           {via && <span className="lg-sub"> · {via}</span>}
           {answers.length > 0 && (
             <span className="lg-answers">

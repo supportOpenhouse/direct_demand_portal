@@ -401,3 +401,41 @@ def test_a_delivery_with_no_lead_writes_no_entry():
     src = inspect.getsource(meta_leads.process_value)
     stamp = src.index("_stamp_and_log(")
     assert "if origin_key:" in src[:stamp]
+
+
+# ── one lead per buyer across sources ───────────────────────────────────────────
+
+async def _stamp_args(monkeypatch, *, existed: bool, new: int) -> dict:
+    """Run process_value and return what it handed _stamp_and_log."""
+    calls, seen = [], {}
+    _stub(monkeypatch, calls, field_data=[{"name": "phone_number", "values": ["9999799588"]}])
+
+    async def fake_ingest(rows, actor):
+        return {"received": 1, "valid": 1, "new": new, "city_fixed": 0}
+
+    async def fake_exists(origin_key):
+        return existed
+
+    async def fake_stamp(lid, origin_key, answers, lead, new_lead, merged):
+        seen.update(new_lead=new_lead, merged=merged)
+
+    monkeypatch.setattr(meta_leads, "ingest_meta_rows", fake_ingest)
+    monkeypatch.setattr(meta_leads, "_lead_exists", fake_exists)
+    monkeypatch.setattr(meta_leads, "_stamp_and_log", fake_stamp)
+    assert await meta_leads.process_value({"leadgen_id": "L9"}, {}) == "success"
+    return seen
+
+
+async def test_a_new_buyer_is_a_new_lead(monkeypatch):
+    assert await _stamp_args(monkeypatch, existed=False, new=1) == {"new_lead": True, "merged": False}
+
+
+async def test_the_same_form_again_counts_as_a_repeat(monkeypatch):
+    """merged=False → the activity trigger counts it and resets the stage."""
+    assert await _stamp_args(monkeypatch, existed=True, new=0) == {"new_lead": False, "merged": False}
+
+
+async def test_meta_as_a_new_source_is_not_counted_twice(monkeypatch):
+    """No meta lead before, and ingest created none: the leads trigger merged it into
+    another source's lead and already logged `lead_repeat` — this row must say merged."""
+    assert await _stamp_args(monkeypatch, existed=False, new=0) == {"new_lead": False, "merged": True}

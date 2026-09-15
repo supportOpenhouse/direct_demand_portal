@@ -4,7 +4,9 @@
 import { useState } from "react";
 import { formatDate, useAllSocieties, useAssignees, useLeads, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { isNewToday, leadMatchesQuery, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { isNewToday, leadMatchesQuery, sourcesLabel, stageLabel } from "../lib/leads";
+import { ArrivalCount, SourceChips } from "../components/StageChip";
+import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { countedOptions, matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras } from "../lib/leadFilters";
 import { useSort, SortTh } from "../lib/useSort";
@@ -89,7 +91,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   // computed over the leads passing all the OTHER filters (faceted), so they react to
   // the current selection; `filtered` (skip nothing) drives the table + header count.
   const pass = (l: Lead, skip?: string) =>
-    (skip === "source" || !source || l.source === source) &&
+    (skip === "source" || sourceMatches(l, source)) &&
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
     (!hotOnly || l.is_hot) &&
@@ -100,7 +102,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
-    source: (l) => srcLabel(l.source),
+    source: (l) => sourcesLabel(l),
     stage: (l) => stageLabel(l.stage),
     society: (l) => l.society,
     assigned: (l) => l.assigned_to,
@@ -129,7 +131,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
         city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
         fields={[
           { key: "source", label: "Source",
-            options: countedOptions(all.filter((l) => pass(l, "source")), (l) => l.source, "Unknown", srcLabel, source) },
+            options: sourceOptions(all.filter((l) => pass(l, "source")), source) },
           { key: "owner", label: "Assigned RM",
             options: rmOptions(all.filter((l) => pass(l, "owner")), (l) => l.assigned_to,
                                (assignees.data?.items ?? []).map((a) => a.name), owner) },
@@ -199,7 +201,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   <td className="lead-cell" title={l.name ?? ""}>
                                             <div className="nm">
                           {isNewToday(l) && <NewBadge size={18} style={{ marginRight: 6 }} />}
-                          {l.name}
+                          {l.name}<ArrivalCount lead={l} />
                           {l.is_test && <span className="bucket-tag" style={{ marginLeft: 6 }}>TEST</span>}
                           {/* RNR and Future Prospect keep their own stage but share the
                               Rejected page — the badge is the only thing that tells a
@@ -221,7 +223,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                       <LeadPhone phone={l.phone} missCount={l.miss_count} />
                     </div>
                   </td>
-                  <td className="cell-tight"><span className={`src ${srcClass(l.source)}`}>{srcLabel(l.source)}</span></td>
+                  <td className="cell-tight"><SourceChips lead={l} /></td>
                   {rejected ? (
                     <>
                       <td className="reason-cell"><span className="stage lost">{l.reject_reason || "—"}</span></td>

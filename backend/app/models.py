@@ -269,6 +269,14 @@ class Lead(Base):
     # into meta_lead_events, where the campaign/ad set/ad attribution lives. Null for
     # every lead that arrived by sheet, which is all of them before 10 Sep.
     meta_lead_id: Mapped[str | None] = mapped_column(Text)
+    # Every source this phone arrived from, first one first; `source` stays the first.
+    # Filled and extended by the leads_merge_source trigger (scripts/lead_sources.sql).
+    sources: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    # other-source origin_keys merged into this lead — lets a re-sync of them be skipped
+    merged_origin_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}")
+    # arrivals beyond the first (new source, or a repeat Meta form); kept by trigger
+    count_leads_repeat: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
     # when the lead came in (source date for listing; ingest time for meta)
     received_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))

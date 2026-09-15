@@ -297,10 +297,13 @@ body{
    direct_demand_logo_dark.png is the same artwork with the ink remapped to #ffffff
    and the blue to #07b6d4. Regenerate it if --brand changes in the dark block. */
 .brand-logo{width:100%;height:auto;object-fit:contain;display:block;padding:4px 2px}
+.login-logo{width:100%;max-width:232px;height:auto;object-fit:contain;display:block;margin:4px auto 22px}
+/* ⚠ Keep these AFTER every logo rule. `.dark-only{display:none}` has the same
+   specificity as `.login-logo{display:block}`, so whichever comes LAST wins — with
+   .login-logo below them, the sign-in card showed the dark lockup under the light one. */
 .dark-only{display:none}
 [data-theme='dark'] .light-only{display:none}
 [data-theme='dark'] .dark-only{display:block}
-.login-logo{width:100%;max-width:232px;height:auto;object-fit:contain;display:block;margin:4px auto 22px}
 .proto-pill{
   margin:2px 8px 14px;font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;
   color:var(--gold);background:var(--gold-soft);border:1px solid var(--gold-soft-2);

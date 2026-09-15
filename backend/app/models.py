@@ -373,6 +373,28 @@ class Visit(Base):
     )
 
 
+class AppVisitData(Base):
+    """Openhouse Core's own record of a visit we booked, fetched by visit id from
+    GET /api/v1/oh/crm/visits/?ids=… (services/app_visit_data.py).
+
+    Stored VERBATIM in `data` on purpose: what it will be used for isn't decided yet,
+    and a raw copy can be projected into columns later without re-fetching. Keyed and
+    foreign-keyed on crm_visits.visit_id, so it joins straight onto our own visit row.
+    `found = false` = Core listed the id in `missingIds`; the last good `data` is kept."""
+
+    __tablename__ = "app_visit_data"
+
+    visit_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("crm_visits.visit_id", ondelete="CASCADE"), primary_key=True
+    )
+    found: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    crm_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))  # Core's updatedAt
+    fetched_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class CrmVisit(Base):
     """A visit actually booked on the Openhouse app via POST /v1/visits/book.
 

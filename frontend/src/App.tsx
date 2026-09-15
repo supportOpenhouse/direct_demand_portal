@@ -37,8 +37,11 @@ export default function App() {
 
   const prev = useRef(pathname);
   const depth = (s: string) => s.split("/").filter(Boolean).length;
-  const dir = depth(pathname) > depth(prev.current) ? " fwd"
-            : depth(pathname) < depth(prev.current) ? " back" : "";
+  // NB: these must NOT be bare `fwd`/`back` — `.back` is also the "← Back" link
+  // utility (display:inline-flex), and it would collapse the whole page wrapper to
+  // content width on any shallower navigation. Scope them to the animation.
+  const dir = depth(pathname) > depth(prev.current) ? " anim-fwd"
+            : depth(pathname) < depth(prev.current) ? " anim-back" : "";
   prev.current = pathname;
 
   return (

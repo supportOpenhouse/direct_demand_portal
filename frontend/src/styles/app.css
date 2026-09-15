@@ -1842,8 +1842,8 @@ html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
 /* Route change. The direction is decided by nav depth (see App.tsx): going deeper
    enters from the right, coming back from the left, a sibling just fades. */
 .page-anim{animation:pageFade var(--t-enter) var(--ease-out)}
-.page-anim.fwd{animation-name:pageInRight}
-.page-anim.back{animation-name:pageInLeft}
+.page-anim.anim-fwd{animation-name:pageInRight}
+.page-anim.anim-back{animation-name:pageInLeft}
 @keyframes pageInRight{from{transform:translateX(24px);opacity:0}to{transform:none;opacity:1}}
 @keyframes pageInLeft {from{transform:translateX(-24px);opacity:0}to{transform:none;opacity:1}}
 @keyframes pageFade   {from{opacity:0}to{opacity:1}}

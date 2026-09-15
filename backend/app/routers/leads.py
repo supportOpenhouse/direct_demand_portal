@@ -79,6 +79,7 @@ def _lead_row(r) -> dict:
         "source": r["source"],
         "sources": list(r.get("sources") or []),
         "count_leads_repeat": r.get("count_leads_repeat") or 0,
+        "stage_changed_at": r["stage_changed_at"].isoformat() if r.get("stage_changed_at") else None,
         "name": r["name"],
         "phone": r["phone"],
         "email": r["email"],

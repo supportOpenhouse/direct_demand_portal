@@ -1,7 +1,7 @@
 """Backfill a Huvo call export into huvo_call_updates.
 
-    uv run python scripts/import_huvo_csv.py ../leads-2026-08-13.csv           # dry run
-    uv run python scripts/import_huvo_csv.py ../leads-2026-08-13.csv --apply   # write
+    uv run python scripts/04_import_huvo_csv.py ../leads-2026-08-13.csv           # dry run
+    uv run python scripts/04_import_huvo_csv.py ../leads-2026-08-13.csv --apply   # write
 
 Dry run by default. This writes to the live leads database, and a 1399-row insert is
 not something to discover was wrong afterwards.

@@ -1,5 +1,5 @@
 -- Merge leads that ALREADY share a phone (last 10 digits) — the ones created before the
--- leads_merge_source trigger existed. Needs lead_sources.sql applied first.
+-- leads_merge_source trigger existed. Needs 07_lead_sources.sql applied first.
 --
 -- Per phone: keep the OLDEST lead (created_at, then received_at, then id as the final
 -- tiebreak), fold every newer one into it, delete the newer ones.

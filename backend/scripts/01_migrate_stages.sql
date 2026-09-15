@@ -4,7 +4,7 @@
 -- The app applies these same statements at startup (app/migrations.py). This script is
 -- for running by hand against Neon, with a backup and before/after counts.
 --
---   psql "$DATABASE_URL" -f backend/scripts/migrate_stages.sql
+--   psql "$DATABASE_URL" -f backend/scripts/01_migrate_stages.sql
 --
 -- Idempotent: after one run no row matches any WHERE, so re-running changes nothing.
 

@@ -1,5 +1,8 @@
 /**
- * Openhouse Direct Demand — "Noida Leads 10 Sep Onwards" → Neon, directly.
+ * Openhouse Direct Demand — "Noida Leads 10 Sep Onwards" and
+ * "Gurgaon Leads 10 Sep Onwards" → Neon, directly. One hourly run pushes both
+ * (see ND_SHEETS); the Gurgaon sheet's city is forced to Gurgaon and its
+ * Society_Name column fills `society`.
  *
  * Apps Script's JDBC service covers Cloud SQL / MySQL / SQL Server / Oracle only —
  * there is no Postgres driver — so this uses Neon's SQL-over-HTTP endpoint instead,
@@ -31,7 +34,15 @@
  * both forms stays one lead.
  */
 
-const ND_SHEET_NAME = 'Noida Leads 10 Sep Onwards';
+/* Every sheet one run pushes — one hourly trigger covers them all.
+     name  the tab, exactly as it's titled
+     tag   → source_meta.created_from = 'apps_script:<tag>'
+     city  forced onto every row when set: the Gurgaon form only runs Gurgaon ads, so
+           its "where are you looking" answer is not trusted over the sheet itself */
+const ND_SHEETS = [
+  { name: 'Noida Leads 10 Sep Onwards',   tag: 'noida_leads',   city: null },
+  { name: 'Gurgaon Leads 10 Sep Onwards', tag: 'gurgaon_leads', city: 'Gurgaon' },
+];
 const ND_BATCH_SIZE = 200;   // rows per HTTP round trip
 const ND_PUSHED_COLUMN = 'pushed';   // TRUE once the row is in the database
 
@@ -61,6 +72,8 @@ const ND_HEADER_ALIASES = {
   'where_are_you_looking_to_buy_a_home': 'city',
   'where_do_you_currently_live': 'current_location',
   'which_flat_apartment_size_do_you_need': 'configuration',
+  // Gurgaon sheet
+  'society_name': 'society',
 };
 
 /* ── normalisers ──────────────────────────────────────────────────────────────
@@ -208,15 +221,15 @@ function ND_sql_(statements) {
    omits id fails 23502. Harmless once the migration adds gen_random_uuid(). */
 const ND_INSERT_LEAD = `
 INSERT INTO leads (id, origin_key, source_category, source, name, phone, email, city,
-                   configuration, budget_band, preferred_visit_day,
+                   society, configuration, budget_band, preferred_visit_day,
                    current_location, zip_code, is_test, received_at, tat_deadline,
                    source_meta, raw)
 SELECT gen_random_uuid(), r.origin_key, 'meta', 'meta', r.name, r.phone, r.email, r.city,
-       r.configuration, r.budget_band, r.preferred_visit_day,
+       r.society, r.configuration, r.budget_band, r.preferred_visit_day,
        r.current_location, r.zip_code, false, now(), now() + interval '1 hour',
        r.source_meta, r.raw
   FROM jsonb_to_recordset($1::jsonb) AS r(
-       origin_key text, name text, phone text, email text, city text,
+       origin_key text, name text, phone text, email text, city text, society text,
        configuration text, budget_band text, preferred_visit_day text,
        current_location text, zip_code text, source_meta jsonb, raw jsonb)
  ON CONFLICT (origin_key) DO NOTHING`;
@@ -231,9 +244,25 @@ function ND_installTrigger() {
   Logger.log('Trigger installed: ND_runSync, hourly.');
 }
 
+/* Pushes every sheet in ND_SHEETS. One sheet failing — missing, renamed, a batch that
+   errors — doesn't stop the others; the run still THROWS at the end, so the trigger's
+   execution log shows a failure instead of a quiet partial success. */
 function ND_runSync() {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ND_SHEET_NAME);
-  if (!sheet) throw new Error('Sheet "' + ND_SHEET_NAME + '" not found');
+  const errors = [];
+  ND_SHEETS.forEach(cfg => {
+    try {
+      ND_syncSheet_(cfg);
+    } catch (e) {
+      errors.push(cfg.name + ': ' + e.message);
+      Logger.log('FAILED [' + cfg.name + '] ' + e.message);
+    }
+  });
+  if (errors.length) throw new Error(errors.join(' | '));
+}
+
+function ND_syncSheet_(cfg) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(cfg.name);
+  if (!sheet) throw new Error('Sheet "' + cfg.name + '" not found');
 
   const values = sheet.getDataRange().getValues();
   if (values.length < 2) { Logger.log('Sheet has no data rows.'); return; }
@@ -283,7 +312,9 @@ function ND_runSync() {
     seen[p10] = leads.length;
     rowsOf.push([mark]);
 
-    const city = ND_city_(row.city);
+    // the sheet's own city when it has one (Gurgaon), else the buyer's answer (Noida)
+    const city = cfg.city || ND_city_(row.city);
+    const society = row.society || null;
     const config = ND_config_(row.configuration);
     const current = ND_city_(row.current_location);
     const budget = ND_prettyEnum_(row.your_budget_range);
@@ -295,10 +326,10 @@ function ND_runSync() {
 
     leads.push({
       origin_key: 'meta:' + p10, name: name, phone: phone, email: email, city: city,
-      configuration: config, budget_band: budget, preferred_visit_day: visitDay,
-      current_location: current, zip_code: zip,
+      society: society, configuration: config, budget_band: budget,
+      preferred_visit_day: visitDay, current_location: current, zip_code: zip,
       source_meta: {
-        created_from: 'apps_script:noida_leads', budget_range: budget,
+        created_from: 'apps_script:' + cfg.tag, society: society, budget_range: budget,
         preferred_visit_day: visitDay, city: city, configuration: config,
         current_location: current, zip_code: zip,
       },
@@ -307,7 +338,7 @@ function ND_runSync() {
   }
 
   const batches = Math.ceil(leads.length / ND_BATCH_SIZE);
-  Logger.log(alreadyPushed + ' already pushed, ' + leads.length +
+  Logger.log('[' + cfg.name + '] ' + alreadyPushed + ' already pushed, ' + leads.length +
              ' to push → ' + batches + ' batch(es).');
   if (!batches) { flushMarks(); return; }      // still record the unpushable rows
 
@@ -331,7 +362,7 @@ function ND_runSync() {
                ', marked ' + marked);
   }
 
-  Logger.log('DONE — ' + leads.length + ' offered, ' + newLeads +
+  Logger.log('DONE [' + cfg.name + '] — ' + leads.length + ' offered, ' + newLeads +
              ' new leads (the rest already existed), ' + marked +
              ' rows marked TRUE, ' + alreadyPushed + ' skipped as already pushed.');
 }

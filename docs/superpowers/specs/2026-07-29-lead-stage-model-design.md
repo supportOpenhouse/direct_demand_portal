@@ -150,7 +150,7 @@ FROM leads GROUP BY stage ORDER BY total DESC;
 
 ### Standalone script
 
-`backend/scripts/migrate_stages.sql` — the same statements wrapped in a transaction
+`backend/scripts/01_migrate_stages.sql` — the same statements wrapped in a transaction
 with before/after counts, for running by hand against Neon.
 
 ## Files affected

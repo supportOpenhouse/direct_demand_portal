@@ -2,7 +2,7 @@
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
 import { formatDate, useAllSocieties, useAssignees, useLeadCounts, useLeads, useSyncLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { isNewToday, leadMatchesQuery, planClass, sourcesLabel } from "../lib/leads";
+import { isNewToday, leadMatchesQuery, newFirst, planClass, sourcesLabel } from "../lib/leads";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { useAuth } from "../components/AuthContext";
@@ -80,7 +80,7 @@ export default function NewLeads() {
     passExtras(l, f, skip) &&
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
-  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
     source: (l) => sourcesLabel(l),
@@ -92,6 +92,8 @@ export default function NewLeads() {
     assigned: (l) => l.assigned_to,
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
   });
+  // NEW-badge leads on top, the chosen sort within each group
+  const list = newFirst(sortedRows);
   const rowOpen = useRowOpen();
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();

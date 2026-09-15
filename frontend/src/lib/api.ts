@@ -383,6 +383,8 @@ export interface Lead {
   sources: string[];
   // Arrivals beyond the first — a new source, or the same Meta form again.
   count_leads_repeat: number;
+  // When it entered its CURRENT stage (DB trigger). null = moved before logging began.
+  stage_changed_at: string | null;
 }
 
 export interface MatchUnit {

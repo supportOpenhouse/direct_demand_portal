@@ -4,7 +4,7 @@ Run AFTER the webhook is deployed and "Verify and Save" has gone green in the ap
 dashboard. Subscribing a Page whose callback URL is not yet verified is accepted and
 then delivers nothing, which looks exactly like a broken endpoint.
 
-    cd backend && uv run python scripts/subscribe_page.py
+    cd backend && uv run python scripts/05_subscribe_page.py
 
 Re-runnable: subscribing twice is a no-op on Meta's side. Reads META_ACCESS_TOKEN and
 META_PAGE_ID from the environment / ../.env like the app does.

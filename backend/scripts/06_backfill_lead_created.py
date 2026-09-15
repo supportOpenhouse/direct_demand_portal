@@ -1,7 +1,7 @@
 """Give every existing lead a "{Lead} created on {date} via {source}" activity entry.
 
-    uv run python scripts/backfill_lead_created.py            # dry run
-    uv run python scripts/backfill_lead_created.py --apply    # write
+    uv run python scripts/06_backfill_lead_created.py            # dry run
+    uv run python scripts/06_backfill_lead_created.py --apply    # write
 
 Dry run by default. This writes to the live database — `backend/.env` points at
 production and there is no staging — so it prints which database it is about to touch

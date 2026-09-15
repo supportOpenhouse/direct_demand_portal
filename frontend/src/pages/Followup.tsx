@@ -10,7 +10,7 @@
 import { useState } from "react";
 import { useAllSocieties, useAssignees, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { isNewToday, leadMatchesQuery, sourcesLabel } from "../lib/leads";
+import { isNewToday, leadMatchesQuery, newFirst, sourcesLabel } from "../lib/leads";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { DATE_PRESETS, rmOptions } from "../components/Filters";
@@ -96,7 +96,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     const tb = b.follow_up_at ? Date.parse(b.follow_up_at) : 0;
     return ra === 2 ? tb - ta : ta - tb; // overdue: latest first · others: soonest first
   });
-  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(ordered, {
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(ordered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
     source: (l) => sourcesLabel(l),
@@ -105,6 +105,8 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     assigned: (l) => l.assigned_to,
     society: (l) => l.society,
   });
+  // NEW-badge leads on top; the callback ranking above still orders each group
+  const list = newFirst(sortedRows);
   const rowOpen = useRowOpen();
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();

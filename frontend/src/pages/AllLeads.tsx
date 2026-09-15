@@ -5,7 +5,7 @@
    This is that place — read-only triage, not a replacement for the worklists. */
 import { useMemo, useState } from "react";
 import { useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
-import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, segHue, sourcesLabel, stageLabel } from "../lib/leads";
+import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, newFirst, segHue, sourcesLabel, stageLabel } from "../lib/leads";
 import { matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras, sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { useFilterValues } from "../components/FilterBar";
@@ -57,7 +57,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, f, q, cityTab]);
 
-  const { sorted: list, sortKey, dir, onSort } = useSort(filtered, {
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort(filtered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
     source: (l) => sourcesLabel(l),
@@ -67,6 +67,9 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     assigned: (l) => l.assigned_to,
     created: (l) => (l.received_at ? Date.parse(l.received_at) : null),
   });
+
+  // NEW-badge leads on top, the chosen sort within each group
+  const list = newFirst(sortedRows);
 
   const totalPassing = all.filter((l) => pass(l, "seg")).length;
   /* 4,000 rows in one DOM table is a scroll nobody finishes and a slow first

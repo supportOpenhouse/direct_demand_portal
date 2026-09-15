@@ -96,11 +96,23 @@ const istDayOf = (iso: string) =>
 const todayIST = () =>
   new Date(Date.now() + IST_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
 
-export function isNewToday(l: { received_at?: string | null; assigned_at?: string | null }): boolean {
+export function isNewToday(l: {
+  received_at?: string | null; assigned_at?: string | null;
+  stage?: string; stage_changed_at?: string | null;
+}): boolean {
   const t = todayIST();
   return (!!l.received_at && istDayOf(l.received_at) === t)
-      || (!!l.assigned_at && istDayOf(l.assigned_at) === t);
+      || (!!l.assigned_at && istDayOf(l.assigned_at) === t)
+      // moved into its CURRENT stage today — any stage: a lead that reached Qualified this
+      // morning is new to the Qualified list, and a repeat arrival reset to New keeps its
+      // old received_at, so without this both would read as stale leads
+      || (!!l.stage_changed_at && istDayOf(l.stage_changed_at) === t);
 }
+
+/** Rows carrying the NEW badge first, the rest after. Each group keeps the order it
+    arrived in — the page's own sort — so a column sort still applies within both. */
+export const newFirst = <T extends Parameters<typeof isNewToday>[0]>(rows: T[]): T[] =>
+  [...rows.filter((r) => isNewToday(r)), ...rows.filter((r) => !isNewToday(r))];
 
 /* A SEGMENT's colour token — the one used by the stage filter boxes on Home →
    Table and by the funnel bars, so the two can never disagree about what colour

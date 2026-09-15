@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { formatDate, useAllSocieties, useAssignees, useLeads, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { isNewToday, leadMatchesQuery, sourcesLabel, stageLabel } from "../lib/leads";
+import { isNewToday, leadMatchesQuery, newFirst, sourcesLabel, stageLabel } from "../lib/leads";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { countedOptions, matchesOption, rmOptions } from "../components/Filters";
@@ -99,7 +99,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     passExtras(l, f, skip) &&
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
-  const { sorted: list, sortKey, dir, onSort } = useSort<Lead>(filtered, {
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, {
     name: (l) => l.name,
     phone: (l) => l.phone,
     source: (l) => sourcesLabel(l),
@@ -112,6 +112,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
     visit: (l) => l.visit_status,
   });
+  // NEW-badge leads on top, the chosen sort within each group
+  const list = newFirst(sortedRows);
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();
   const pg = usePaging(list);

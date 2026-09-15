@@ -96,8 +96,9 @@ EXECUTE FUNCTION trg_lead_repeat_count();
 CREATE OR REPLACE FUNCTION trg_leads_merge_source()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
-    v_p10 text := right(regexp_replace(coalesce(NEW.phone, ''), '\D', '', 'g'), 10);
-    v_id  uuid;
+    v_p10  text := right(regexp_replace(coalesce(NEW.phone, ''), '\D', '', 'g'), 10);
+    v_id   uuid;
+    v_name text;
 BEGIN
     IF NEW.sources = '{}' THEN
         NEW.sources := ARRAY[NEW.source];
@@ -117,7 +118,7 @@ BEGIN
     END IF;
 
     -- same buyer under another source; prefer a live lead, then the newest
-    SELECT id INTO v_id
+    SELECT id, name INTO v_id, v_name
       FROM leads
      WHERE right(regexp_replace(phone, '\D', '', 'g'), 10) = v_p10
      ORDER BY (stage IN ('won','future_prospect','rejected','rnr')), created_at DESC
@@ -129,8 +130,23 @@ BEGIN
     UPDATE leads
        SET sources = CASE WHEN NEW.source = ANY(sources) THEN sources
                           ELSE sources || NEW.source END,
-           merged_origin_keys = merged_origin_keys || NEW.origin_key
+           merged_origin_keys = merged_origin_keys || NEW.origin_key,
+           -- a lead named after its own number ("+91 85955 94789", how WhatsApp creates
+           -- them) takes the first real name any source brings
+           name = CASE WHEN coalesce(name, '') ~ '^\s*\+?[\d\s()-]{8,}\s*$'
+                        AND coalesce(btrim(NEW.name), '') <> ''
+                        AND NEW.name !~ '^\s*\+?[\d\s()-]{8,}\s*$'
+                       THEN btrim(NEW.name) ELSE name END
      WHERE id = v_id;
+
+    IF coalesce(v_name, '') ~ '^\s*\+?[\d\s()-]{8,}\s*$'
+       AND coalesce(btrim(NEW.name), '') <> ''
+       AND NEW.name !~ '^\s*\+?[\d\s()-]{8,}\s*$' THEN
+        INSERT INTO activity_log (id, entity_type, entity_id, action, field,
+                                  before_value, after_value, metadata, created_at)
+        VALUES (gen_random_uuid(), 'lead', v_id::text, 'name_from_source', 'name',
+                v_name, btrim(NEW.name), jsonb_build_object('source', NEW.source), now());
+    END IF;
 
     -- fires activity_log_lead_repeat → count + stage.
     -- `lead` = everything the incoming row carried (city, budget, raw sheet row, …),

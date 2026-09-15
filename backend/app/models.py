@@ -270,13 +270,16 @@ class Lead(Base):
     # every lead that arrived by sheet, which is all of them before 10 Sep.
     meta_lead_id: Mapped[str | None] = mapped_column(Text)
     # Every source this phone arrived from, first one first; `source` stays the first.
-    # Filled and extended by the leads_merge_source trigger (scripts/lead_sources.sql).
+    # Filled and extended by the leads_merge_source trigger (scripts/07_lead_sources.sql).
     sources: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
     # other-source origin_keys merged into this lead — lets a re-sync of them be skipped
     merged_origin_keys: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default="{}")
     # arrivals beyond the first (new source, or a repeat Meta form); kept by trigger
     count_leads_repeat: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # when the lead entered its CURRENT stage — kept by the leads_stage_changed_at trigger
+    # (scripts/10_stage_changed_at.sql). NULL = moved before stage logging existed.
+    stage_changed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
 
     # when the lead came in (source date for listing; ingest time for meta)
     received_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
@@ -353,7 +356,7 @@ class Visit(Base):
     )
     trip_date: Mapped[str | None] = mapped_column(Date)
     # legacy single field — kept populated until nothing reads it (see
-    # scripts/split_visit_rm.sql). Its value was always the lead's own RM.
+    # scripts/02_split_visit_rm.sql). Its value was always the lead's own RM.
     rm: Mapped[str | None] = mapped_column(Text)
     lead_rm: Mapped[str | None] = mapped_column(Text)          # who owns the lead
     # who actually goes; defaults to lead_rm. Their smid is what the Openhouse

@@ -196,7 +196,7 @@ class Settings(BaseSettings):
     META_ACCESS_TOKEN: str = ""
     # A var, not a constant, so a version bump is config and not a deploy.
     META_GRAPH_VERSION: str = "v23.0"
-    # The Openhouse Page. Only used by scripts/subscribe_page.py.
+    # The Openhouse Page. Only used by scripts/05_subscribe_page.py.
     META_PAGE_ID: str = ""
 
     @property

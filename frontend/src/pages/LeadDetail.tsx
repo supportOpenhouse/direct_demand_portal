@@ -119,6 +119,10 @@ function StatusCard({ lead }: { lead: any }) {
    that has no Meta form ("WhatsApp + 99acres"). A merged source's row no longer exists
    — what it captured lives in its `lead_repeat` entry's metadata.lead — so each field
    shows the lead's own value, then any DIFFERENT value a merged source carried. */
+// "+91 85955 94789" standing in for a name. Same pattern as the DB's rename in
+// scripts/07_lead_sources.sql and scripts/11_fix_number_names.sql.
+const PHONE_ONLY_NAME = /^\s*\+?[\d\s()-]{8,}\s*$/;
+
 function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
   const patch = usePatchSourceData(lead.id);
   const toast = useToast();
@@ -130,6 +134,9 @@ function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
     const byLower = new Map<string, string>();
     for (const v of [lead[key], ...rows.map((x) => x[key])]) {
       const s = v == null ? "" : String(v).trim();
+      // a WhatsApp lead is named after its number until someone knows better — that
+      // is a placeholder, not a name, so it never shows beside the real one
+      if (key === "name" && PHONE_ONLY_NAME.test(s)) continue;
       if (s && !byLower.has(s.toLowerCase())) byLower.set(s.toLowerCase(), s);
     }
     return [...byLower.values()];

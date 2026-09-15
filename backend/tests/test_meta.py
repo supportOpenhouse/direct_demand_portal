@@ -236,6 +236,35 @@ def test_the_log_reads_newest_first():
     assert "ORDER BY e.received_at DESC" in str(LIST_EVENTS)
 
 
+def test_the_page_its_count_and_the_status_counts_filter_identically():
+    """If the count used a different clause from the page, 'N deliveries' would stop
+    describing the list under it — the whole reason counting moved server-side."""
+    from app.routers.meta import _WHERE, COUNT_EVENTS, LIST_EVENTS, STATUS_COUNTS
+
+    for q in (LIST_EVENTS, COUNT_EVENTS, STATUS_COUNTS):
+        assert _WHERE in str(q)
+    assert "LIMIT :limit OFFSET :offset" in str(LIST_EVENTS)
+
+
+def test_list_filters_blank_means_no_constraint():
+    from app.routers.meta import UNASSIGNED, _filters
+
+    p = _filters("", "Noida Q3", None, "  ", None, UNASSIGNED)
+    assert p["status"] is None and p["adset"] is None and p["ad"] is None
+    assert p["campaign"] == "Noida Q3", "values pass through exactly — they match exactly"
+    assert p["owner"] == UNASSIGNED and p["unassigned"] == UNASSIGNED
+
+
+def test_the_popup_form_includes_deliveries_merged_into_the_lead():
+    """A Meta arrival merged into a MagicBricks/WhatsApp lead keeps its key only in
+    merged_origin_keys — matching the lead's own key alone hides that form."""
+    from app.routers.meta import LEAD_FORM
+
+    sql = str(LEAD_FORM)
+    assert "l.origin_key = e.origin_key" in sql
+    assert "ANY(l.merged_origin_keys)" in sql
+
+
 def test_every_delivery_records_which_lead_it_landed_on():
     """Without this the join above has nothing to join on."""
     assert "origin_key = :origin_key" in str(meta_leads.MARK_EVENT)
@@ -362,3 +391,80 @@ async def test_a_graph_failure_is_recorded_not_raised(monkeypatch):
 
     assert await meta_leads.process_value({"leadgen_id": "L3"}, {}) == "failed"
     assert "graph is down" in _marked(calls)["error_message"]
+
+
+# ── every form submission is visible in the lead's history ──────────────────────
+
+def test_a_submission_that_reaches_a_lead_is_logged_with_its_answers():
+    import inspect
+
+    src = inspect.getsource(meta_leads._stamp_and_log)
+    assert 'action="meta_form_submitted"' in src
+    assert '"answers": answers' in src and '"new_lead": new_lead' in src
+    assert '"submitted_at"' in src
+
+
+def test_the_log_commits_with_the_attribution_it_describes():
+    """One transaction: an entry for a delivery whose stamp rolled back would describe
+    something that never happened."""
+    import inspect
+
+    src = inspect.getsource(meta_leads._stamp_and_log)
+    assert src.count("engine.begin()") == 1
+    assert src.index("STAMP_LEAD") < src.index("activity.record")
+
+
+def test_a_meta_retry_cannot_log_the_same_submission_twice():
+    """The duplicate branch returns before the stamp-and-log call is ever reached."""
+    import inspect
+
+    src = inspect.getsource(meta_leads.process_value)
+    assert src.index('return "duplicate"') < src.index("_stamp_and_log(")
+
+
+def test_a_delivery_with_no_lead_writes_no_entry():
+    """No phone means no lead, so there is nothing for an entry to belong to — that
+    delivery shows as failed on the Meta Leads page instead."""
+    import inspect
+
+    src = inspect.getsource(meta_leads.process_value)
+    stamp = src.index("_stamp_and_log(")
+    assert "if origin_key:" in src[:stamp]
+
+
+# ── one lead per buyer across sources ───────────────────────────────────────────
+
+async def _stamp_args(monkeypatch, *, existed: bool, new: int) -> dict:
+    """Run process_value and return what it handed _stamp_and_log."""
+    calls, seen = [], {}
+    _stub(monkeypatch, calls, field_data=[{"name": "phone_number", "values": ["9999799588"]}])
+
+    async def fake_ingest(rows, actor):
+        return {"received": 1, "valid": 1, "new": new, "city_fixed": 0}
+
+    async def fake_exists(origin_key):
+        return existed
+
+    async def fake_stamp(lid, origin_key, answers, lead, new_lead, merged):
+        seen.update(new_lead=new_lead, merged=merged)
+
+    monkeypatch.setattr(meta_leads, "ingest_meta_rows", fake_ingest)
+    monkeypatch.setattr(meta_leads, "_lead_exists", fake_exists)
+    monkeypatch.setattr(meta_leads, "_stamp_and_log", fake_stamp)
+    assert await meta_leads.process_value({"leadgen_id": "L9"}, {}) == "success"
+    return seen
+
+
+async def test_a_new_buyer_is_a_new_lead(monkeypatch):
+    assert await _stamp_args(monkeypatch, existed=False, new=1) == {"new_lead": True, "merged": False}
+
+
+async def test_the_same_form_again_counts_as_a_repeat(monkeypatch):
+    """merged=False → the activity trigger counts it and resets the stage."""
+    assert await _stamp_args(monkeypatch, existed=True, new=0) == {"new_lead": False, "merged": False}
+
+
+async def test_meta_as_a_new_source_is_not_counted_twice(monkeypatch):
+    """No meta lead before, and ingest created none: the leads trigger merged it into
+    another source's lead and already logged `lead_repeat` — this row must say merged."""
+    assert await _stamp_args(monkeypatch, existed=False, new=0) == {"new_lead": False, "merged": True}

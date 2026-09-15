@@ -87,9 +87,25 @@ def start_scheduler(interval_minutes: int) -> None:
         max_instances=1,
         id="bonvoice_call_sync",
     )
+    # Round-robin owner for every lead that arrived without one. A sweep rather than
+    # inline at ingest, because the Apps Script INSERTs into `leads` directly over
+    # Neon's HTTP endpoint and never runs any Python — reading the table catches it.
+    from ..services.lead_assign import run_assignment_sweep
+
+    assign_min = max(1, get_settings().LEAD_ASSIGN_INTERVAL_MINUTES)
+    _scheduler.add_job(
+        locked_job("lead_assign", run_assignment_sweep, max(60, assign_min * 60 - 30)),
+        "interval",
+        minutes=assign_min,
+        kwargs={"trigger": "scheduler"},
+        coalesce=True,
+        max_instances=1,
+        id="lead_assign",
+    )
     _scheduler.start()
     log.info("inventory sync every %d min; leads ingest every %d min; visit status every %d min; "
-             "bonvoice call log every %d min", inv_min, leads_min, vis_min, call_min)
+             "bonvoice call log every %d min; lead assignment every %d min",
+             inv_min, leads_min, vis_min, call_min, assign_min)
 
 
 def stop_scheduler() -> None:

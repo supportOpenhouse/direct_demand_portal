@@ -32,8 +32,8 @@ export function CallButton({ leadId, disabled }: { leadId: string; disabled?: bo
         e.stopPropagation();  // rows navigate on click
         call.mutate(leadId, {
           onSuccess: (d) =>
-            toast(`Ringing your phone (${d.rm_phone_masked}) — pick up to connect`, "blue", "📞"),
-          onError: (err: any) => toast(err.message, "gold", "⚠"),
+            toast(`Ringing your phone (${d.rm_phone_masked}) — pick up to connect`, "blue"),
+          onError: (err: any) => toast(err.message, "gold"),
         });
       }}
     >

@@ -13,6 +13,8 @@ import {
 import RecordingPlayer from "../components/RecordingPlayer";
 import { useToast } from "../components/Toast";
 import { CampaignFeedRow, CampaignRow, DialerField, RuleNode } from "../lib/api";
+import { SkeletonRows } from "../components/Skeleton";
+import { LeadLink } from "../components/LeadModal";
 
 const PAGE = 50;
 
@@ -147,10 +149,10 @@ export default function DialerPrevious() {
     activeId && action.mutate({ id: activeId, action: a }, {
       // The server refuses a resume that would double-book an RM (409) — surface
       // that reason rather than leaving the button looking broken.
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onError: (e: any) => toast(e.message, "gold"),
     });
 
-  if (campaigns.isLoading) return <div className="card dl-empty" style={{ padding: 28 }}>Loading campaigns…</div>;
+  if (campaigns.isLoading) return <div className="card"><SkeletonRows rows={5} /></div>;
   if (campaigns.isError) {
     return <div className="card dl-empty" style={{ padding: 28 }}>
       {(campaigns.error as Error).message === "admin only"
@@ -355,27 +357,27 @@ export default function DialerPrevious() {
                   </div></td></tr>
                 ) : rows.map((r) => (
                   <tr key={`${r.call_id}-${r.leg}`}>
-                    <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "'Spline Sans Mono'" }}>
+                    <td style={{ fontSize: 12, whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
                       {formatDateTime(r.start_at) || "—"}
                     </td>
                     <td style={{ fontSize: 12.5 }}>
                       {r.lead_id
-                        ? <Link className="lead-link" to={`/leads/${r.lead_id}`}>{r.lead_name || "View lead"}</Link>
+                        ? <LeadLink className="lead-link" id={r.lead_id}>{r.lead_name || "View lead"}</LeadLink>
                         : <span style={{ color: "var(--muted)" }}>—</span>}
                     </td>
-                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'", whiteSpace: "nowrap" }}>
+                    <td style={{ fontSize: 12, fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
                       {r.source_number || "—"} → {r.destination_number || "—"}
                     </td>
                     <td style={{ fontSize: 12.5 }}>
                       <span className="cfg-chip" style={{
                         background: r.answered ? "var(--emerald-soft)" : "var(--slate-soft)",
-                        color: r.answered ? "#06694b" : "var(--slate)",
+                        color: r.answered ? "var(--emerald-deep)" : "var(--slate)",
                       }}>
                         {r.answered ? "connected" : "not connected"}
                       </span>{" "}
                       <span style={{ color: "var(--muted)", fontSize: 11.5 }}>{r.status || r.agent_status || ""}</span>
                     </td>
-                    <td style={{ fontSize: 12, fontFamily: "'Spline Sans Mono'" }}>
+                    <td style={{ fontSize: 12, fontFamily: "var(--font-mono)" }}>
                       {callDuration(r.start_at, r.end_at)}
                     </td>
                     <td>

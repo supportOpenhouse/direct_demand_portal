@@ -10,7 +10,7 @@
    the previous hangup lands, and a modal thrown up at that moment would be fighting a
    live call. */
 import { useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { LiveCallLead } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
@@ -19,6 +19,8 @@ import { useCallResult, useMyCalls } from "../lib/queries";
 import { useEventStream } from "../lib/useEventStream";
 import { MissReasonModal } from "../components/CallConnected";
 import { useToast } from "../components/Toast";
+import { IconArrowUpRight, IconCheck, IconWarn, IconX } from "../components/icons";
+import { useOpenLead } from "../components/LeadModal";
 
 const istTime = (iso?: string | null) =>
   iso
@@ -33,7 +35,7 @@ const details = (l: LiveCallLead) =>
   [l.society, l.city, l.configuration, l.budget].filter(Boolean).join(" · ");
 
 function NowCalling({ lead }: { lead: LiveCallLead | null }) {
-  const nav = useNavigate();
+  const openLead = useOpenLead();
   if (!lead) {
     return (
       <div className="lc-card lc-idle">
@@ -46,7 +48,7 @@ function NowCalling({ lead }: { lead: LiveCallLead | null }) {
   }
   return (
     <div className="lc-card lc-live">
-      <div className="lc-eyebrow lc-pulse">● Now calling</div>
+      <div className="lc-eyebrow lc-pulse"><i className="lc-dot" /> Now calling</div>
       <h2 className="lc-name">{lead.name || "Unnamed lead"}</h2>
       {lead.phone && <div className="lc-phone">{lead.phone}</div>}
       <div className="lc-details">{details(lead)}</div>
@@ -58,9 +60,10 @@ function NowCalling({ lead }: { lead: LiveCallLead | null }) {
             : `never reached${lead.miss_count ? ` · ${lead.miss_count} misses` : ""}`}
         </span>
       </div>
-      <button className="btn ghost" onClick={() => nav(`/leads/${lead.lead_id}`,
-        { state: { from: "live-calls" } })}>
-        Open lead ↗
+      {/* The popup closes straight back to the queue, which is what the old
+          "← Live Calls" back-link existed to compensate for. */}
+      <button className="btn ghost" onClick={() => openLead(lead.lead_id)}>
+        Open lead <IconArrowUpRight />
       </button>
     </div>
   );
@@ -92,7 +95,7 @@ function Upcoming({ items, shared }: { items: LiveCallLead[]; shared: boolean })
 }
 
 function CompletedRow({ lead }: { lead: LiveCallLead }) {
-  const nav = useNavigate();
+  const openLead = useOpenLead();
   const toast = useToast();
   const m = useCallResult();
   const [asking, setAsking] = useState(false);
@@ -103,7 +106,7 @@ function CompletedRow({ lead }: { lead: LiveCallLead }) {
         <span className="lc-qname">{lead.name || "Unnamed lead"}</span>
         <span className="lc-muted">{istTime(lead.dialed_at)}</span>
         <span className={lead.call_result === "connected" ? "lc-ok" : "lc-miss"}>
-          {lead.call_result === "connected" ? "✓ connected" : "✕ not reached"}
+          {lead.call_result === "connected" ? <><IconCheck /> connected</> : <><IconX /> not reached</>}
         </span>
       </li>
     );
@@ -115,8 +118,8 @@ function CompletedRow({ lead }: { lead: LiveCallLead }) {
     m.mutate(
       { id: lead.lead_id, connected: true, queueItemId: lead.id },
       {
-        onSuccess: () => nav(`/leads/${lead.lead_id}`, { state: { from: "live-calls" } }),
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onSuccess: () => openLead(lead.lead_id),
+        onError: (e: any) => toast(e.message, "gold"),
       },
     );
 
@@ -124,7 +127,7 @@ function CompletedRow({ lead }: { lead: LiveCallLead }) {
     <li className="lc-pending">
       <span className="lc-qname">{lead.name || "Unnamed lead"}</span>
       <span className="lc-muted">{istTime(lead.dialed_at)}</span>
-      <span className="lc-badge">⚠ needs result</span>
+      <span className="lc-badge"><IconWarn /> needs result</span>
       <span className="cc">
         <span className="cc-q">Connected?</span>
         <button className="cc-btn yes" disabled={m.isPending} onClick={yes}>Yes</button>

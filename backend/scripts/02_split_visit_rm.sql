@@ -9,7 +9,7 @@
 -- ahead of the code and rolled back by simply ignoring the new columns. Drop `rm`
 -- in a later cleanup, once nothing reads it.
 --
---   psql "$DATABASE_URL" -f backend/scripts/split_visit_rm.sql
+--   psql "$DATABASE_URL" -f backend/scripts/02_split_visit_rm.sql
 --
 -- Idempotent: the columns are guarded, and the back-fill only touches NULLs, so
 -- re-running never overwrites a value someone has since changed by hand.

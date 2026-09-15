@@ -1,12 +1,13 @@
-import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Outlet, useLocation } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import { LeadModalProvider } from "./components/LeadModal";
 
 const COLLAPSE_KEY = "dd_sidebar_collapsed";
 
 /* A reload keeps you where you are. There used to be an effect here that read the
-   Navigation Timing type and redirected to the Dashboard on F5 — deliberate, but it
+   Navigation Timing type and redirected to Home on F5 — deliberate, but it
    threw away the page you were on (and, on a filtered list, the reason you reloaded).
    The URL already carries the route, so the default browser behaviour is correct. */
 export default function App() {
@@ -17,15 +18,42 @@ export default function App() {
     return !v;
   });
 
+  /* Direction from path depth: deeper enters from the right, shallower from the
+     left, same depth just fades. Keyed on pathname so the animation actually
+     re-runs — React reuses the node otherwise and nothing plays. */
+  const { pathname } = useLocation();
+
+  /* Supply-side pages carry the orange accent. It goes on <html> rather than on a
+     page wrapper because the SIDEBAR has to change with it — the accent says which
+     side of the business you are on, and the nav is where that reads first.
+     Cleaned up on unmount so a route outside this shell can't inherit it. */
+  const supplySide = pathname.startsWith("/inventory") || pathname.startsWith("/supply");
+  useEffect(() => {
+    const root = document.documentElement;
+    if (supplySide) root.setAttribute("data-accent", "orange");
+    else root.removeAttribute("data-accent");
+    return () => root.removeAttribute("data-accent");
+  }, [supplySide]);
+
+  const prev = useRef(pathname);
+  const depth = (s: string) => s.split("/").filter(Boolean).length;
+  const dir = depth(pathname) > depth(prev.current) ? " fwd"
+            : depth(pathname) < depth(prev.current) ? " back" : "";
+  prev.current = pathname;
+
   return (
-    <div className={"app" + (collapsed ? " collapsed" : "")}>
-      <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
-      <main className="main">
-        <Topbar />
-        <div className="view">
-          <Outlet />
-        </div>
-      </main>
-    </div>
+    <LeadModalProvider>
+      <div className={"app" + (collapsed ? " collapsed" : "")}>
+        <Sidebar collapsed={collapsed} onToggle={toggleSidebar} />
+        <main className="main">
+          <Topbar />
+          <div className="view">
+            <div className={"page-anim" + dir} key={pathname}>
+              <Outlet />
+            </div>
+          </div>
+        </main>
+      </div>
+    </LeadModalProvider>
   );
 }

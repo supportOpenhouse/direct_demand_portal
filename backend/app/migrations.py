@@ -30,6 +30,10 @@ _ID_DEFAULT_TABLES = [
 _ADD_COLUMNS = [
     ("leads", "received_at", "TIMESTAMPTZ"),
     ("users", "assignment_name", "TEXT"),
+    # Cities an RM takes new leads for — drives the hourly auto-assignment sweep.
+    # NOT NULL DEFAULT '{}' so every existing RM starts covering nothing specific
+    # rather than NULL, which `= ANY(...)` would silently never match.
+    ("users", "city", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
     ("users", "active", "BOOLEAN NOT NULL DEFAULT true"),
     ("users", "smid", "INTEGER"),
     ("meta_leads", "city", "TEXT"),
@@ -47,6 +51,16 @@ _ADD_COLUMNS = [
     # UNIQUE, so a given leadgen_id is processed once and can stamp at most one lead;
     # add a partial unique index here if that ever stops being true.
     ("leads", "meta_lead_id", "TEXT"),
+    # One lead per buyer across sources (scripts/07_lead_sources.sql). `sources` is every
+    # source the phone arrived from, `merged_origin_keys` the other-source keys folded
+    # into this lead (so a sheet re-sync can't re-merge them), `count_leads_repeat` the
+    # arrivals beyond the first. The merging itself is a DB trigger, not boot code.
+    ("leads", "sources", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
+    ("leads", "merged_origin_keys", "TEXT[] NOT NULL DEFAULT '{}'::text[]"),
+    ("leads", "count_leads_repeat", "INTEGER NOT NULL DEFAULT 0"),
+    # entered-current-stage time; filled + kept current by scripts/10_stage_changed_at.sql.
+    # NO default on purpose — DEFAULT now() would stamp every existing lead with today.
+    ("leads", "stage_changed_at", "TIMESTAMPTZ"),
     # create_all() builds meta_lead_events whole on a fresh database; this is only for
     # the window where the table shipped before origin_key was added to it.
     ("meta_lead_events", "origin_key", "TEXT"),
@@ -205,22 +219,20 @@ async def run_migrations(engine) -> None:
             # (see docs/superpowers/specs/2026-07-29-lead-stage-model-design.md).
             # Idempotent: after one run nothing matches, so re-running is a no-op.
             #   contacted + visit_planned  → qualified   (these ARE the qualified leads)
-            #   new with an open callback  → call_not_received / follow_up, split on
-            #                                whether we ever reached them. Without this
-            #                                they'd land back on New — they're in
-            #                                Follow-up today.
-            #   lost/future_prospect/timepass → rejected (declared in code, zero rows)
+            #   lost/timepass → rejected (declared in code, zero rows)
+            #   The old "new with an open callback → call_not_received / follow_up" fold
+            #   was REMOVED 15 Sep: it runs on every boot, and a lead that arrives again
+            #   is deliberately put back in `new` (07_lead_sources.sql). One local startup
+            #   silently reverted 54 of those resets with no activity entry.
+            #   future_prospect is NOT folded any more — it was revived as a real stage
+            #   on 14 Sep. This block runs on EVERY boot, so leaving it in the list
+            #   would silently rewrite every future prospect to rejected on the next
+            #   deploy, after the feature had already passed testing.
             await conn.execute(text(
                 "UPDATE leads SET stage = 'qualified' WHERE stage IN ('contacted','visit_planned')"))
             await conn.execute(text(
-                "UPDATE leads SET stage = 'call_not_received' "
-                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND NOT ever_connected"))
-            await conn.execute(text(
-                "UPDATE leads SET stage = 'follow_up' "
-                "WHERE stage = 'new' AND follow_up_at IS NOT NULL AND ever_connected"))
-            await conn.execute(text(
                 "UPDATE leads SET stage = 'rejected' "
-                "WHERE stage IN ('lost','future_prospect','timepass')"))
+                "WHERE stage IN ('lost','timepass')"))
 
             # tag became nullable when assignment arrived — a contact can have an
             # owner before anyone classifies it

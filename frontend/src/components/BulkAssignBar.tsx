@@ -22,34 +22,34 @@ export function BulkAssignBar(
 
   const apply = (assigned_to: string | null) => {
     bulk.mutate({ ids, assigned_to }, {
-      onSuccess: (r) => { toast(`${r.updated} leads ${assigned_to ? "→ " + assigned_to : "unassigned"}`, "green", "✓"); onDone(); },
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onSuccess: (r) => { toast(`${r.updated} leads ${assigned_to ? "→ " + assigned_to : "unassigned"}`, "green"); onDone(); },
+      onError: (e: any) => toast(e.message, "gold"),
     });
   };
 
   return (
     <div style={{
       position: "sticky", top: 0, zIndex: 20, display: "flex", alignItems: "center", gap: 12,
-      background: "var(--ink)", color: "#fff", padding: "10px 16px", borderRadius: 11,
+      background: "var(--brand)", color: "var(--on-brand)", padding: "10px 16px", borderRadius: 11,
       boxShadow: "var(--shadow-lg)", marginBottom: 12,
     }}>
       <b style={{ fontSize: 13.5 }}>{ids.length} selected</b>
       <span style={{ fontSize: 11.5, opacity: .62 }}>of {total}</span>
       <SelectFirst total={total} onPick={onSelectFirst} btnClass="btn sm"
-        style={{ background: "rgba(255,255,255,.16)", color: "#fff" }} />
+        style={{ background: "var(--on-accent-2)", color: "var(--on-accent)" }} />
       <div style={{ flex: 1 }} />
       <select
         value={pick}
         disabled={bulk.isPending}
         onChange={(e) => { const v = e.target.value; setPick(""); if (v) apply(v); }}
-        style={{ border: 0, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, background: "#fff", color: "var(--ink)" }}
+        style={{ border: 0, borderRadius: 8, padding: "7px 10px", fontSize: 12.5, fontWeight: 600, background: "var(--panel)", color: "var(--ink)" }}
       >
         <option value="">Reassign to…</option>
         {(data?.items ?? []).map((a) => <option key={a.email} value={a.name}>{a.name}</option>)}
       </select>
-      <button className="btn sm" style={{ background: "rgba(255,255,255,.16)", color: "#fff" }}
+      <button className="btn sm" style={{ background: "var(--on-accent-2)", color: "var(--on-accent)" }}
         disabled={bulk.isPending} onClick={() => apply(null)}>Unassign</button>
-      <button className="btn sm" style={{ background: "rgba(255,255,255,.16)", color: "#fff" }}
+      <button className="btn sm" style={{ background: "var(--on-accent-2)", color: "var(--on-accent)" }}
         onClick={onDone}>Clear</button>
     </div>
   );

@@ -137,6 +137,23 @@ async def societies_in_city(city: str) -> list[str]:
     return sorted(out)
 
 
+async def all_society_names() -> list[str]:
+    """Every society in master_societies, unique case-insensitively, sorted.
+
+    Backs the Society filter on every lead list. The option list is the master table
+    rather than whatever values happen to sit on leads, so a society with no leads in
+    view is still something you can filter to and see "0" for.
+    """
+    rows = await _load()
+    seen, out = set(), []
+    for r in rows:
+        s = (r.get("society_name") or "").strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return sorted(out, key=str.lower)
+
+
 async def societies_in_locality(loc: str) -> list[str]:
     rows = await _load()
     ll = (loc or "").strip().lower()

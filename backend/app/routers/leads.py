@@ -2,14 +2,14 @@ from datetime import date, datetime, timedelta, timezone
 from math import ceil
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user, is_calling_rm
 from ..db import neon_engine
-from ..models import LeadConfirmedData, LeadNote, Visit
+from ..models import Lead, LeadConfirmedData, LeadNote, Visit
 from ..services import activity
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
@@ -28,14 +28,23 @@ router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 # equality on it, so a lead lives on exactly one page and can never fall between them.
 # (The previous model derived pages from confirmed/follow_up_at/qualified_at/crm_visits
 # and needed a catch-all clause to stop worked leads vanishing entirely.)
+# Re-opening the same lead inside this window is not a new view. Long enough that
+# working one lead is one row, short enough that coming back tomorrow is a new one.
+VIEW_DEDUPE_MIN = 30
+
 STAGES = ("new", "call_not_received", "follow_up", "qualified",
-          "visit_scheduled", "revisit_scheduled", "won", "rejected", "rnr")
+          "visit_scheduled", "revisit_scheduled", "won", "future_prospect", "rejected", "rnr")
 
-# stages a lead never moves back out of on its own
-_TERMINAL = "('won','rejected','rnr')"
+# stages a lead never moves back out of on its own. future_prospect is parked, not
+# lost — but like rnr it lives on the Rejected page, so a re-submitted qualify form or
+# a saved callback must not silently pull it back into the funnel. Bringing one back
+# is a deliberate act, done with the manual stage setter.
+_TERMINAL = "('won','future_prospect','rejected','rnr')"
 
-# segment → SQL predicate. One page per stage, except Rejected which also holds RNR
-# (10 missed calls, never reached) — those keep stage='rnr' and show an RNR badge.
+# segment → SQL predicate. One page per stage, except Rejected, which also holds two
+# stages that have no page of their own and are badged on it instead:
+#   rnr             — 10 missed calls, never reached
+#   future_prospect — not buying now, worth coming back to
 SEGMENTS = {
     "new": "stage = 'new'",
     "call_not_received": "stage = 'call_not_received'",
@@ -46,7 +55,7 @@ SEGMENTS = {
     "pipeline": "stage = 'visit_scheduled'",
     "revisit": "stage = 'revisit_scheduled'",
     "converted": "stage = 'won'",
-    "rejected": "stage IN ('rejected','rnr')",
+    "rejected": "stage IN ('rejected','rnr','future_prospect')",
 }
 
 
@@ -68,6 +77,9 @@ def _lead_row(r) -> dict:
         "id": str(r["id"]),
         "source_category": r["source_category"],
         "source": r["source"],
+        "sources": list(r.get("sources") or []),
+        "count_leads_repeat": r.get("count_leads_repeat") or 0,
+        "stage_changed_at": r["stage_changed_at"].isoformat() if r.get("stage_changed_at") else None,
         "name": r["name"],
         "phone": r["phone"],
         "email": r["email"],
@@ -110,6 +122,9 @@ def _lead_row(r) -> dict:
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
         "note_count": int(r.get("note_count") or 0) + len(remarks),
         "is_test": r["is_test"],
+        # drives the "Meta form" filter on every lead list; it was never serialised,
+        # so that filter read "Yes (0)" while 265 leads had a form
+        "meta_lead_id": r.get("meta_lead_id"),
     }
 
 
@@ -731,6 +746,156 @@ async def reject_lead(lead_id: UUID, payload: RejectPayload,
     return {"status": "ok"}
 
 
+class NewLead(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    phone: str = Field(min_length=1, max_length=40)
+    city: str | None = Field(default=None, max_length=100)
+    society: str | None = Field(default=None, max_length=200)
+    budget_band: str | None = Field(default=None, max_length=100)
+    configuration: str | None = Field(default=None, max_length=100)
+    source_remarks: str | None = Field(default=None, max_length=2000)
+
+
+@router.post("/leads")
+async def create_lead(payload: NewLead, user: dict = Depends(current_user)):
+    """A lead added by hand — the topbar's "Add lead".
+
+    Owner, by who adds it: an RM keeps it; anyone else (admin) hands it to the same
+    `pick_rm` the hourly sweep uses — an RM covering the city, else the least-loaded RM
+    today — but now, so a lead added on purpose doesn't sit unowned for up to an hour.
+
+    Identity is `manual:<phone10>`. A number that is already a lead is NOT duplicated:
+    under another source the leads_merge_source trigger folds this arrival in
+    (lead_repeat, count, stage) and skips the insert; under `manual:` it is the same
+    hand-add twice. Either way nothing is created and nobody is reassigned — the
+    response points at the lead that already exists.
+    """
+    from ..services.lead_assign import covered_cities, pick_rm
+    from ..services.leads_sync import LEAD_ID_BY_KEY, TAT_HOURS, display_phone, norm_phone
+
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    phone10 = norm_phone(payload.phone)
+    if not phone10 or len(phone10) != 10:
+        raise HTTPException(status_code=422, detail="phone must be a 10-digit number")
+
+    def clean(v: str | None) -> str | None:
+        return (v or "").strip() or None
+
+    city = clean(payload.city)
+    key = f"manual:{phone10}"
+    now = datetime.now(timezone.utc)
+    async with engine.begin() as conn:
+        if is_calling_rm(user.get("role")):
+            owner, how = clean(user.get("assignment_name") or user.get("name")), "added_by_rm"
+        else:
+            owner, how = await pick_rm(conn, city, await covered_cities(conn)), "auto_round_robin"
+
+        inserted = (await conn.execute(
+            pg_insert(Lead).values(
+                origin_key=key, source_category="manual", source="manual",
+                name=payload.name.strip(), phone=display_phone(phone10),
+                city=city, society=clean(payload.society),
+                budget_band=clean(payload.budget_band),
+                configuration=clean(payload.configuration),
+                source_remarks=clean(payload.source_remarks),
+                assigned_to=owner, assigned_at=now if owner else None,
+                received_at=now, tat_deadline=now + timedelta(hours=TAT_HOURS),
+                source_meta={"created_from": "add_lead", "created_by": user.get("email")},
+            ).on_conflict_do_nothing(index_elements=["origin_key"]).returning(Lead.id)
+        )).first()
+        if inserted is None:
+            # already a lead: its own `manual:` key, or merged into another source's
+            # lead by the trigger — LEAD_ID_BY_KEY resolves both
+            existing = (await conn.execute(LEAD_ID_BY_KEY, {"ok": key})).first()
+            return {"status": "exists", "created": False,
+                    "lead_id": str(existing[0]) if existing else None}
+
+        lead_id = inserted[0]
+        # `lead_created` comes from the leads_lead_created DB trigger (actor from
+        # source_meta.created_by, set above); only the assignment is logged here.
+        if owner:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="assigned", field="assigned_to", before=None, after=owner,
+                metadata={"source": how, "city": city}))
+    return {"status": "ok", "created": True, "lead_id": str(lead_id), "assigned_to": owner}
+
+
+class StagePayload(BaseModel):
+    stage: str
+
+
+@router.post("/leads/{lead_id}/stage")
+async def set_stage(lead_id: UUID, payload: StagePayload,
+                    user: dict = Depends(current_user)):
+    """Move a lead to ANY stage.
+
+    Every other stage write in this file is a forward-only CASE, so a form
+    re-submitted on a lead that has moved on is a no-op. That guard is what keeps
+    the funnel honest, and it is also why a lead put in the wrong stage could not
+    be put back. This endpoint is the deliberate exception: it sets the stage
+    outright, in either direction, and is the only one that can.
+
+    It is logged like any other stage move, with the real before/after from
+    RETURNING rather than from what the client thought the stage was — and a
+    no-op (same stage) is not logged at all, or the Reports counts inflate.
+    """
+    if payload.stage not in STAGES:
+        raise HTTPException(status_code=422, detail={"fields": ["stage"]})
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        res = await conn.execute(text(
+            "UPDATE leads SET stage=:s WHERE id=:id "
+            "RETURNING (SELECT stage FROM leads WHERE id=:id) AS before"),
+            {"s": payload.stage, "id": lead_id})
+        row = res.first()
+        if row is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        before = row[0]
+        if before != payload.stage:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="stage_change", field="stage", before=before, after=payload.stage,
+                metadata={"manual": True}))
+    return {"status": "ok", "before": before, "after": payload.stage}
+
+
+@router.post("/leads/{lead_id}/viewed", status_code=204)
+async def record_lead_viewed(lead_id: UUID, user: dict = Depends(current_user)):
+    """Log that someone opened this lead.
+
+    Opening a lead is by far the highest-frequency action in the app, so this is
+    DEDUPED: re-opening the same lead as the same person within VIEW_DEDUPE_MIN
+    minutes writes nothing. Without that, flicking through a list would put a row
+    per click into the same table the Reports page reads, and the signal ("who
+    looked at this lead, roughly when") would be buried under the noise.
+
+    204 and never an error: a view is a side note, and a lead page that fails to
+    open because its telemetry failed would be a bad trade.
+    """
+    engine = neon_engine()
+    if engine is None:
+        return Response(status_code=204)
+    email = (user or {}).get("email")
+    async with engine.begin() as conn:
+        recent = (await conn.execute(text(
+            "SELECT 1 FROM activity_log "
+            "WHERE entity_type = 'lead' AND entity_id = :id AND action = 'lead_viewed' "
+            "  AND actor_email IS NOT DISTINCT FROM :email "
+            "  AND created_at > now() - make_interval(mins => :mins) "
+            "LIMIT 1"),
+            {"id": str(lead_id), "email": email, "mins": VIEW_DEDUPE_MIN})).first()
+        if recent is None:
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="lead_viewed"))
+    return Response(status_code=204)
+
+
 @router.post("/leads/sync")
 async def sync_leads():
     result = await run_leads_sync(trigger="manual")
@@ -753,7 +918,8 @@ class SourceDataPatch(BaseModel):
 
 
 @router.patch("/leads/{lead_id}/source-data")
-async def patch_source_data(lead_id: UUID, payload: SourceDataPatch):
+async def patch_source_data(lead_id: UUID, payload: SourceDataPatch,
+                            user: dict = Depends(current_user)):
     sets, params = [], {"id": lead_id}
     for field in ("city", "society", "configuration", "budget_band", "plan_to_buy", "source_remarks"):
         val = getattr(payload, field)
@@ -765,10 +931,23 @@ async def patch_source_data(lead_id: UUID, payload: SourceDataPatch):
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    touched = [f for f in params if f != "id"]
     async with engine.begin() as conn:
-        res = await conn.execute(text(f"UPDATE leads SET {', '.join(sets)} WHERE id = :id"), params)
-        if res.rowcount == 0:
+        # RETURNING the OLD values via a subselect — a pre-statement snapshot, so the
+        # diff can't be wrong the way a separate SELECT racing another writer can.
+        before_cols = ", ".join(f"(SELECT {f} FROM leads WHERE id = :id) AS old_{f}" for f in touched)
+        res = await conn.execute(
+            text(f"UPDATE leads SET {', '.join(sets)} WHERE id = :id RETURNING {before_cols}"), params)
+        row = res.first()
+        if row is None:
             raise HTTPException(status_code=404, detail="lead not found")
+        before = {f: row[i] for i, f in enumerate(touched)}
+        after = {f: params[f] for f in touched}
+        # One row per field that ACTUALLY changed — re-saving the form unchanged is
+        # not an edit, and logging it would bury the real ones.
+        await activity.record(conn, activity.changes_between(
+            activity.Actor.of(user), "lead", lead_id, before, after,
+            metadata={"via": "source_data"}))
     return {"status": "ok"}
 
 
@@ -1027,3 +1206,10 @@ async def societies_by_city(city: str = Query(...)):
     """All societies in a city — backs the city→society cascade on the WhatsApp
     create-lead modal."""
     return {"items": await societies_in_city(city)}
+
+
+@router.get("/societies/all")
+async def societies_all():
+    """Every master society name — the Society filter's option list on every lead page."""
+    from ..services.societies import all_society_names  # local: siblings import eagerly, this is new
+    return {"items": await all_society_names()}

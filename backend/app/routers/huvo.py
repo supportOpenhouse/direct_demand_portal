@@ -71,7 +71,7 @@ _MATCH_LEAD = text("""
     SELECT id FROM leads
      WHERE phone IS NOT NULL
        AND right(regexp_replace(phone, '[^0-9]', '', 'g'), 10) = :p
-     ORDER BY (stage IN ('won','rejected','rnr')), created_at DESC
+     ORDER BY (stage IN ('won','future_prospect','rejected','rnr')), created_at DESC
      LIMIT 1
 """)
 

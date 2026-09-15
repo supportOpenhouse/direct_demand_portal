@@ -14,7 +14,7 @@ from sqlalchemy import (
     TIMESTAMP,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -269,6 +269,17 @@ class Lead(Base):
     # into meta_lead_events, where the campaign/ad set/ad attribution lives. Null for
     # every lead that arrived by sheet, which is all of them before 10 Sep.
     meta_lead_id: Mapped[str | None] = mapped_column(Text)
+    # Every source this phone arrived from, first one first; `source` stays the first.
+    # Filled and extended by the leads_merge_source trigger (scripts/07_lead_sources.sql).
+    sources: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
+    # other-source origin_keys merged into this lead — lets a re-sync of them be skipped
+    merged_origin_keys: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}")
+    # arrivals beyond the first (new source, or a repeat Meta form); kept by trigger
+    count_leads_repeat: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # when the lead entered its CURRENT stage — kept by the leads_stage_changed_at trigger
+    # (scripts/10_stage_changed_at.sql). NULL = moved before stage logging existed.
+    stage_changed_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
 
     # when the lead came in (source date for listing; ingest time for meta)
     received_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
@@ -345,7 +356,7 @@ class Visit(Base):
     )
     trip_date: Mapped[str | None] = mapped_column(Date)
     # legacy single field — kept populated until nothing reads it (see
-    # scripts/split_visit_rm.sql). Its value was always the lead's own RM.
+    # scripts/02_split_visit_rm.sql). Its value was always the lead's own RM.
     rm: Mapped[str | None] = mapped_column(Text)
     lead_rm: Mapped[str | None] = mapped_column(Text)          # who owns the lead
     # who actually goes; defaults to lead_rm. Their smid is what the Openhouse
@@ -358,6 +369,28 @@ class Visit(Base):
     route_source: Mapped[str | None] = mapped_column(Text)  # 'google' | 'est'
     stops: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
     created_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AppVisitData(Base):
+    """Openhouse Core's own record of a visit we booked, fetched by visit id from
+    GET /api/v1/oh/crm/visits/?ids=… (services/app_visit_data.py).
+
+    Stored VERBATIM in `data` on purpose: what it will be used for isn't decided yet,
+    and a raw copy can be projected into columns later without re-fetching. Keyed and
+    foreign-keyed on crm_visits.visit_id, so it joins straight onto our own visit row.
+    `found = false` = Core listed the id in `missingIds`; the last good `data` is kept."""
+
+    __tablename__ = "app_visit_data"
+
+    visit_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("crm_visits.visit_id", ondelete="CASCADE"), primary_key=True
+    )
+    found: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    crm_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))  # Core's updatedAt
+    fetched_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
@@ -414,6 +447,12 @@ class User(Base):
     # the name as it appears in the sheet's "Assigned to" column (defaults to the
     # user's first name); maps this user to their leads
     assignment_name: Mapped[str | None] = mapped_column(Text)
+    # Cities this RM takes new leads for, e.g. {Gurgaon,Noida}. Drives auto-assignment:
+    # a lead whose city is covered goes to a covering RM, anything else to any RM.
+    # An EMPTY array means "covers nothing specific" — such an RM still receives
+    # uncovered-city leads, they are just never the city-specific choice.
+    city: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}")
     # mobile number — click-to-call rings this handset first, then dials the lead
     phone: Mapped[str | None] = mapped_column(Text)
     # Openhouse Core SalesManager.id — used as sales_manager_id when booking visits.

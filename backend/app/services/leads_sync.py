@@ -374,6 +374,16 @@ SYNC_CITY = text("""
 """)
 
 
+# The lead an origin_key belongs to: its own row, or the lead it was merged into when
+# the phone already existed under another source (leads_merge_source trigger).
+LEAD_ID_BY_KEY = text("""
+    SELECT id FROM leads
+     WHERE origin_key = :ok OR merged_origin_keys @> ARRAY[CAST(:ok AS text)]
+     ORDER BY (origin_key = :ok) DESC
+     LIMIT 1
+""")
+
+
 async def _insert_only(conn, model, rows: list[dict], conflict_col: str) -> int:
     """Bulk INSERT ... ON CONFLICT DO NOTHING. Returns count of rows that landed.
     Chunked to stay under the bind-parameter cap; the caller's transaction spans every

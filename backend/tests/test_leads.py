@@ -381,3 +381,104 @@ def test_a_pushed_row_stores_a_clean_pin():
 
     spine, _ = build_meta([normalise_pushed(dict(NOIDA_ROW, zip_code="z:201305"))])
     assert spine[0]["zip_code"] == "201305"
+
+
+# --- manual stage change -----------------------------------------------------
+
+def test_add_lead_owner_is_the_rm_or_the_round_robin_pick():
+    """An RM keeps a lead they add; anyone else's goes to the sweep's own pick_rm —
+    reused, not re-implemented, so hand-added and swept leads balance as one pool."""
+    body = _body_of("create_lead")
+    assert "is_calling_rm(" in body
+    assert "pick_rm(" in body and "covered_cities(" in body
+
+
+def test_add_lead_never_duplicates_or_reassigns_an_existing_number():
+    """An existing number returns the lead it already is, before anything is logged."""
+    body = _body_of("create_lead")
+    assert "on_conflict_do_nothing" in body and ".returning(" in body
+    assert "LEAD_ID_BY_KEY" in body  # also finds a lead a merged key was folded into
+    assert body.index("if inserted is None") < body.index("activity.record")
+
+
+def _body_of(fn_name: str) -> str:
+    """Source of a leads-router function with its docstring removed.
+
+    These functions document the SQL they write, so a naive substring assertion
+    matches the prose instead of the code and passes (or fails) for the wrong
+    reason."""
+    import ast
+    import inspect
+    import textwrap
+    from app.routers import leads as mod
+    tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(mod, fn_name))))
+    fn = tree.body[0]
+    if (fn.body and isinstance(fn.body[0], ast.Expr)
+            and isinstance(fn.body[0].value, ast.Constant)
+            and isinstance(fn.body[0].value.value, str)):
+        fn.body = fn.body[1:]
+    return ast.unparse(fn)
+
+# Tests never touch a DB here, so these assert the RULES the endpoint's SQL
+# encodes — the pattern test_wa_assign.py established.
+
+def test_manual_stage_endpoint_accepts_only_known_stages():
+    """A free-text stage would put a lead on no page at all: every list is a plain
+    equality on `stage`, so an unknown value is invisible everywhere."""
+    from app.routers.leads import STAGES
+    assert "qualified" in STAGES and "rejected" in STAGES and "rnr" in STAGES
+    assert "future_prospect" in STAGES
+    for bogus in ("Qualified", "closed", "", "won ", "visit"):
+        assert bogus not in STAGES
+
+
+def test_manual_stage_is_the_only_unguarded_stage_write():
+    """Every other stage write is a forward-only CASE. This one is deliberately a
+    plain SET — that is what lets a mis-staged lead be put back, and it is the
+    only place in the file allowed to do it."""
+    body = _body_of("set_stage")
+    assert "UPDATE leads SET stage=:s" in body
+    # The docstring EXPLAINS the forward-only CASE it deliberately isn't, so assert
+    # on the code with the docstring stripped — otherwise this fails on its own prose.
+    assert "CASE" not in body, "the manual setter must not re-introduce the forward-only guard"
+
+
+def test_manual_stage_reads_before_from_returning_and_skips_no_ops():
+    """The before-value comes from a subselect in RETURNING (a pre-statement
+    snapshot), not a second SELECT that would race another writer — and a move to
+    the stage a lead is already in is not logged, or the Reports counts inflate."""
+    body = _body_of("set_stage")
+    assert "RETURNING (SELECT stage FROM leads WHERE id=:id)" in body
+    assert "if before != payload.stage:" in body
+    assert "action='stage_change'" in body
+
+
+# --- lead view telemetry -----------------------------------------------------
+
+def test_lead_viewed_is_deduped_and_never_fails_the_page():
+    """Opening a lead is the highest-frequency action in the app.
+
+    Undeduped it would put a row per click into the same table the Reports page
+    reads. And a lead that refuses to open because its telemetry failed would be a
+    worse bug than a missing log line — hence 204 with no error path."""
+    body = _body_of("record_lead_viewed")
+    assert "action='lead_viewed'" in body
+    # the dedupe predicate, per actor, on a window
+    assert "actor_email IS NOT DISTINCT FROM :email" in body, "dedupe must be per actor"
+    assert "make_interval(mins => :mins)" in body
+    assert "if recent is None:" in body
+    assert "raise" not in body, "a view must never fail the request"
+
+
+def test_lead_viewed_dedupe_window_is_a_named_constant():
+    from app.routers.leads import VIEW_DEDUPE_MIN
+    assert isinstance(VIEW_DEDUPE_MIN, int) and VIEW_DEDUPE_MIN > 0
+
+
+def test_source_data_edits_log_one_row_per_changed_field():
+    """`changes_between` only emits fields that actually changed — re-saving the
+    form unchanged is not an edit, and logging it would bury the real ones."""
+    body = _body_of("patch_source_data")
+    assert "activity.changes_between" in body
+    # before-values come from RETURNING, not a racing second SELECT
+    assert "RETURNING" in body and "SELECT {f} FROM leads WHERE id = :id" in body

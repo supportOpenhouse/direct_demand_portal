@@ -2,6 +2,7 @@
    the full thread (newest first), fetched lazily only when opened. */
 import { useState } from "react";
 import { useLeadNotes, formatDateTime } from "../lib/queries";
+import { IconChevronDown, IconChevronUp } from "./icons";
 
 export function NotesCell({ leadId, latest, count }: { leadId: string; latest: string | null; count: number }) {
   const [open, setOpen] = useState(false);
@@ -18,7 +19,7 @@ export function NotesCell({ leadId, latest, count }: { leadId: string; latest: s
         <>
           <div className="note-latest" title={latest}>{latest}</div>
           {count > 1 && (
-            <button className="note-toggle" onClick={() => setOpen(true)}>▾ {count} notes</button>
+            <button className="note-toggle" onClick={() => setOpen(true)}><IconChevronDown /> {count} notes</button>
           )}
         </>
       ) : (
@@ -36,7 +37,7 @@ export function NotesCell({ leadId, latest, count }: { leadId: string; latest: s
               </div>
             ))
           )}
-          <button className="note-toggle" onClick={() => setOpen(false)}>▴ hide</button>
+          <button className="note-toggle" onClick={() => setOpen(false)}><IconChevronUp /> hide</button>
         </div>
       )}
     </div>

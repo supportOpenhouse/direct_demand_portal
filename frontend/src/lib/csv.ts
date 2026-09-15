@@ -2,7 +2,7 @@
    (the filtered + sorted rows the page passes in), so filters/search/sort carry
    through. No backend needed. */
 import { Lead } from "./api";
-import { srcLabel, stageLabel } from "./leads";
+import { sourcesLabel, stageLabel } from "./leads";
 
 const fmt = (iso: string | null): string =>
   iso ? new Date(iso).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -17,7 +17,8 @@ const COLUMNS: { header: string; get: (l: Lead) => unknown }[] = [
   { header: "Name", get: (l) => l.name },
   { header: "Phone", get: (l) => l.phone },
   { header: "Email", get: (l) => l.email },
-  { header: "Source", get: (l) => srcLabel(l.source) },
+  { header: "Source", get: (l) => sourcesLabel(l) },
+  { header: "Arrivals", get: (l) => (l.count_leads_repeat ?? 0) + 1 },
   { header: "City", get: (l) => l.city },
   { header: "Society", get: (l) => l.society },
   { header: "Configuration", get: (l) => l.configuration },

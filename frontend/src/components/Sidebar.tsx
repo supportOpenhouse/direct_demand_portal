@@ -1,34 +1,36 @@
 /* 1:1 port of the prototype's <aside class="sidebar"> markup. */
+import { useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useAuth } from "./AuthContext";
 import { useDevUserList } from "../lib/queries";
 import { isDevBuild } from "../lib/api";
-import { useLeadCounts } from "../lib/queries";
+import { useAppSettings, useIncomingCalls, useLeadCounts, useMyCalls, useWaLatest } from "../lib/queries";
+import { isCallingRm } from "../lib/roles";
+import { readWaSeenAt } from "../lib/whatsapp";
+import { markCallsSeen, readCallsSeenAt } from "../lib/calls";
 import {
-  OpenhouseLogo,
-  IconDashboard,
+  IconBox,
+  IconCheckCircle,
+  IconFunnel,
+  IconHome,
+  IconHomeNav,
+  IconHuvo,
+  IconLiveCall,
+  IconMeta,
   IconPlus,
   IconQualified,
-  IconFunnel,
-  IconCheckCircle,
-  IconHome,
-  IconBox,
-  IconSettings,
   IconReject,
+  IconSettings,
+  OpenhouseLogo,
+  WhatsAppIcon,
 } from "./icons";
+import { NewBadge } from "./StageChip";
+import { useWaAllowed } from "../lib/wa";
 
 /* Bar chart — the report is a table of per-person numbers. */
 const IconReport = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 3v18h18" /><path d="M7 15v3M12 10v8M17 6v12" />
-  </svg>
-);
-
-/* Meta's double loop, drawn as two arcs — the same mark the platform uses, at the
-   stroke weight the rest of this rail is drawn at. */
-const IconMeta = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M3 15c0-4 2-7 4.2-7 2.6 0 3.7 3 4.8 5s2.2 5 4.8 5c2.2 0 4.2-3 4.2-7s-2-7-4.2-7c-2.6 0-3.7 3-4.8 5s-2.2 5-4.8 5C5 14 3 11 3 7" />
   </svg>
 );
 
@@ -103,8 +105,14 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <div className="logo">
           <OpenhouseLogo />
         </div>
-        <img className="brand-logo" src="/direct_demand_logo.png"
+        {/* Two files, not one filtered file. The lockup is #000000 ink + #2563EA
+            "DIRECT DEMAND", and no filter chain lands that blue on the dark-mode
+            brand — invert+hue-rotate produced ~#65A3FF. The dark variant is the
+            same artwork with the ink remapped to white and the blue to #07b6d4. */}
+        <img className="brand-logo light-only" src="/direct_demand_logo.png"
              alt="Openhouse Direct Demand" />
+        <img className="brand-logo dark-only" src="/direct_demand_logo_dark.png"
+             alt="" aria-hidden="true" />
       </div>
       <button
         className="nav-collapse"
@@ -119,11 +127,9 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
       </button>
       <nav id="nav">
         <div className="nav-label">Workspace</div>
-        <NavLink to="/" end className={navClass} title="Dashboard">
-          <IconDashboard /> <span className="nav-t">Dashboard</span>
+        <NavLink to="/" end className={navClass} title="Home">
+          <IconHomeNav /> <span className="nav-t">Home</span>
         </NavLink>
-        {/* Live Calls sits in the Topbar next to WhatsApp — it's glanced at mid-call,
-            not navigated to from a list. */}
         <NavLink to="/leads/new" className={navClass} title="New Leads">
           <IconPlus /> <span className="nav-t">New Leads</span> <NewCount />
         </NavLink>
@@ -150,6 +156,11 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/leads/rejected" className={navClass} title="Rejected Leads">
           <IconReject /> <span className="nav-t">Rejected Leads</span> <Pct seg="rejected" />
         </NavLink>
+        {/* Both were topbar buttons. They're pages, so they belong in the nav — and
+            at the END of Workspace: neither is a stage of the funnel above, so
+            sitting among the stage pages made the sequence read wrong. */}
+        <LiveCallsNav />
+        <WhatsAppNav />
         <div className="nav-label">Discovery</div>
         <NavLink to="/inventory" className={navClass} title="Live Inventory">
           <IconHome /> <span className="nav-t">Live Inventory</span>
@@ -179,15 +190,12 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         )}
         {/* Not admin-gated any more: RMs get the same page scoped to their own
             handset, so it's their record of who they spoke to. */}
-        <NavLink to="/call-log" className={navClass} title="Bonvoice Call Log">
-          <img src="/bonvoice_icon.png" alt="" className="nav-img" />
-          <span className="nav-t">Bonvoice Call Log</span>
-        </NavLink>
+        <CallLogNav />
         {/* Its sibling: same shape of page, different provider. Bonvoice logs the
             telephony leg, Huvo logs what was said on it. */}
         {isAdmin && (
           <NavLink to="/huvo-calls" className={navClass} title="Huvo Call Log">
-            <img src="/huvo_icon.png" alt="" className="nav-img" />
+            <IconHuvo />
             <span className="nav-t">Huvo Call Log</span>
           </NavLink>
         )}
@@ -211,10 +219,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           </NavLink>
         )}
         {/* Last in the section: the one entry nobody navigates to as part of the
-            day's work. */}
-        <NavLink to="/settings" className={navClass} title="Settings & Access">
-          <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
-        </NavLink>
+            day's work. Admin-only in the nav — the page itself already refuses a
+            non-admin, so this just stops advertising a door that won't open. */}
+        {isAdmin && (
+          <NavLink to="/settings" className={navClass} title="Settings & Access">
+            <IconSettings /> <span className="nav-t">Settings &amp; Access</span>
+          </NavLink>
+        )}
       </nav>
       {/* no spacer — #nav is flex:1 and pushes the chip down on its own */}
       <UserChip />
@@ -255,44 +266,104 @@ function DevViewAs({ current, onPick, busy }: {
   );
 }
 
+/* RMs only. Admins run campaigns, they don't take the calls, so this would be
+   permanently dead chrome for them. Note the consequence: an admin who IS in a
+   campaign's RM pool gets rung with no way to reach this page or mark the result. */
+function LiveCallsNav() {
+  // `!enabled` keeps the gate biting while impersonating.
+  // test_rm counts: a test RM takes real calls and has to mark the results.
+  const { enabled, user } = useAuth();
+  const isRm = enabled && isCallingRm(user?.role);
+  // Hook order can't depend on a condition, so always call it and gate on `isRm`.
+  const { data } = useMyCalls(true, isRm);   // the page owns polling; this reads cache
+  if (!isRm) return null;
+
+  const live = !!data?.now_calling;
+  const unmarked = (data?.completed || []).filter((c) => !c.call_result).length;
+  return (
+    <NavLink to="/live-calls" className={navClass} title="Live Calls">
+      <IconLiveCall /> <span className="nav-t">Live Calls</span>
+      {live ? <span className="badge">LIVE</span>
+        : unmarked > 0 ? <span className="badge gold">{unmarked}</span> : null}
+    </NavLink>
+  );
+}
+
+/* Admins always; RMs only when an admin has enabled WhatsApp for all RMs or for
+   this specific person. */
+function WhatsAppNav() {
+  const { pathname } = useLocation();
+  const allowed = useWaAllowed();
+
+  // "Unseen" = an inbound message newer than the last time this browser opened the
+  // WhatsApp page. Per-browser via localStorage rather than a read-receipt table —
+  // one person watching the inbox is the actual use case here.
+  const { data: latest } = useWaLatest(allowed);
+  const unseen = !!latest?.last_inbound_at && +new Date(latest.last_inbound_at) > readWaSeenAt()
+    && pathname !== "/chat";
+  if (!allowed) return null;
+  return (
+    <NavLink to="/chat" className={navClass} title="WhatsApp">
+      <WhatsAppIcon /> <span className="nav-t">WhatsApp</span>
+      {unseen && <NewBadge size={18} />}
+    </NavLink>
+  );
+}
+
+/* Was a bell in the topbar. It only ever linked here, so the count rides the nav
+   item instead of duplicating the destination as a second control. RMs only — the
+   count is of calls to THIS person's handset. */
+function CallLogNav() {
+  const { enabled, user } = useAuth();
+  const isRm = enabled && isCallingRm(user?.role);
+  // Held in state so opening the page clears the badge immediately rather than
+  // after the next poll — the acknowledgement should feel instant.
+  const [seenAt, setSeenAt] = useState<string | null>(() => readCallsSeenAt());
+  const { data } = useIncomingCalls(seenAt, isRm);
+  const unseen = isRm ? (data?.unseen ?? 0) : 0;
+
+  const acknowledge = () => {
+    if (!isRm) return;
+    // Marked at the newest call we know of, not at "now": a call landing between the
+    // last poll and this click would otherwise be silently marked as seen.
+    const at = data?.last_incoming_at || new Date().toISOString();
+    markCallsSeen(at);
+    setSeenAt(at);
+  };
+
+  return (
+    <NavLink to="/call-log" className={navClass} onClick={acknowledge}
+             title={unseen ? `${unseen} incoming call${unseen === 1 ? "" : "s"}` : "Bonvoice Call Log"}>
+      <img src="/bonvoice_icon.png" alt="" className="nav-img" />
+      <span className="nav-t">Bonvoice Call Log</span>
+      {unseen > 0 && <span className="badge">{unseen > 9 ? "9+" : unseen}</span>}
+    </NavLink>
+  );
+}
+
 function UserChip() {
-  const { enabled, user, logout, devUser, viewAs, loading } = useAuth();
+  const { user, devUser, viewAs, loading } = useAuth();
   const switcher = isDevBuild
     ? <DevViewAs current={devUser} onPick={viewAs} busy={!!devUser && loading} />
     : null;
-  if (enabled && user) {
-    const init = (user.name || user.email).split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase();
-    return (
-      <>
-      <div className="user" onClick={logout} title="Sign out">
-        {user.picture ? (
-          <img className="av" src={user.picture} alt="" style={{ objectFit: "cover" }} />
-        ) : (
-          <div className="av">{init}</div>
-        )}
-        <div style={{ minWidth: 0 }}>
-          <div className="un" style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {user.name || user.email}
-          </div>
-          <div className="ur">Sign out</div>
-        </div>
-        <span className="role-chip" style={{ textTransform: "capitalize" }}>{user.role}</span>
-      </div>
-      {switcher}
-      </>
-    );
-  }
+
+  const init = user ? (user.name || user.email).split(" ").map((x) => x[0]).slice(0, 2).join("").toUpperCase() : "AD";
+
+  /* Identity only — name and role. Signing out lives on the profile page it links
+     to, not here: the rail is navigation, and a destructive action sitting in it
+     is one mis-click from ending someone's session mid-shift. */
   return (
     <>
-    <div className="user">
-      <div className="av">AD</div>
-      <div>
-        <div className="un">Admin</div>
-        <div className="ur">Openhouse Direct</div>
-      </div>
-      <span className="role-chip">Admin</span>
-    </div>
-    {switcher}
+      <NavLink to="/profile" className={({ isActive }) => "user" + (isActive ? " active" : "")} title="Your profile">
+        {user?.picture
+          ? <img className="av" src={user.picture} alt="" style={{ objectFit: "cover" }} />
+          : <div className="av">{init}</div>}
+        <div style={{ minWidth: 0 }}>
+          <div className="un">{user ? (user.name || user.email) : "Admin"}</div>
+          <div className="ur">{user?.role || "Admin"}</div>
+        </div>
+      </NavLink>
+      {switcher}
     </>
   );
 }

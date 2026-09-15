@@ -182,7 +182,7 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     # Leads). Forward-only: terminal / already-in-pipeline leads are kept.
                     moved = (await conn.execute(text(
                         "UPDATE leads SET stage = CASE "
-                        "WHEN stage IN ('won','rejected','rnr','revisit_scheduled') THEN stage "
+                        "WHEN stage IN ('won','future_prospect','rejected','rnr','revisit_scheduled') THEN stage "
                         "WHEN stage = 'visit_scheduled' THEN 'revisit_scheduled' "
                         "ELSE 'visit_scheduled' END WHERE id = :id "
                         "RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"),

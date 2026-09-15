@@ -4,8 +4,10 @@
 import { useState } from "react";
 import { WaMessage } from "../lib/api";
 import { useSendWa, formatDateTime } from "../lib/queries";
+import { IconClip } from "./icons";
+import { waWindowOpen } from "../lib/wa";
 
-export const WINDOW_MS = 24 * 60 * 60 * 1000;
+
 
 /* Gupshup hosts inbound media behind a link that expires (urlExpiry). Past that the
    file is gone — we store the link, not the bytes — so say so rather than render a
@@ -35,7 +37,7 @@ function Media({ m }: { m: WaMessage }) {
   }
   return (
     <a href={m.media_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12.5 }}>
-      📎 {m.media_name || m.msg_type}
+      <IconClip /> {m.media_name || m.msg_type}
     </a>
   );
 }
@@ -47,7 +49,7 @@ export function Bubble({ m }: { m: WaMessage }) {
       <div
         style={{
           maxWidth: "72%", padding: "8px 11px", borderRadius: 12, fontSize: 13, lineHeight: 1.45,
-          background: out ? "#d6f5e0" : "var(--panel-2)", color: "var(--ink)",
+          background: out ? "var(--wa-green-soft)" : "var(--panel-2)", color: "var(--ink)",
           borderBottomRightRadius: out ? 3 : 12, borderBottomLeftRadius: out ? 12 : 3,
           wordBreak: "break-word",
         }}
@@ -81,7 +83,7 @@ export default function WaThread({ phone, messages, lastInboundAt, sendEnabled }
   const send = useSendWa();
   const [draft, setDraft] = useState("");
 
-  const windowOpen = lastInboundAt != null && Date.now() - lastInboundAt < WINDOW_MS;
+  const windowOpen = waWindowOpen(lastInboundAt);
   const blocked = !sendEnabled
     ? "Sending isn’t configured yet — GUPSHUP_SOURCE_NUMBER and GUPSHUP_APP_NAME are missing."
     : !windowOpen

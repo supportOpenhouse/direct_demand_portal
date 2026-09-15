@@ -9,6 +9,7 @@ import { formatPrice, useBookingConfig } from "../lib/queries";
 import { api } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { SLOTS, next7Days, isSlotDisabled, maskMobile, DayOption } from "../lib/slots";
+import { IconCheck, IconPhoneMobile, IconWarn, IconX } from "../components/icons";
 
 export interface BookUnit {
   homeId: string | number;
@@ -98,7 +99,7 @@ export function BookVisitsDrawer({
         setResults(res.results.map((r) => ({ homeId: r.home_id, ok: r.ok, visitId: r.visit_id, reason: r.error })));
         setStep(2);
       })
-      .catch((e) => toast(e instanceof Error ? e.message : "Booking failed — try again", "gold", "⚠")) // stay on review
+      .catch((e) => toast(e instanceof Error ? e.message : "Booking failed — try again", "gold")) // stay on review
       .finally(() => setBooking(false));
   };
 
@@ -111,17 +112,17 @@ export function BookVisitsDrawer({
         {/* header + beta banner */}
         <div className="bv-head">
           <div>
-            <div className="bv-title">📲 Book Visits</div>
+            <div className="bv-title"><IconPhoneMobile /> Book Visits</div>
             <div className="bv-beta">Beta · authorized users only · <b>books on the live Openhouse app</b></div>
           </div>
-          <button className="bv-x" onClick={onClose} aria-label="Close">✕</button>
+          <button className="bv-x" onClick={onClose} aria-label="Close"><IconX /></button>
         </div>
 
         {/* progress */}
         <div className="bv-steps">
           {STEPS.map((s, i) => (
             <div key={s} className={"bv-step" + (i === step ? " active" : "") + (i < step ? " done" : "")}>
-              <span className="bv-step-dot">{i < step ? "✓" : i + 1}</span>
+              <span className="bv-step-dot">{i < step ? <IconCheck /> : i + 1}</span>
               <span className="bv-step-label">{s}</span>
               {i < STEPS.length - 1 && <span className="bv-step-line" />}
             </div>
@@ -136,13 +137,13 @@ export function BookVisitsDrawer({
 
               {/* access gate */}
               {cfg.data && !cfg.data.configured && (
-                <div className="bv-danger">⚠ Visit booking isn't configured on the server yet.</div>
+                <div className="bv-danger"><IconWarn /> Visit booking isn't configured on the server yet.</div>
               )}
               {cfg.data && cfg.data.configured && !cfg.data.smid && (
-                <div className="bv-danger"><b>⚠ You're not set up to book.</b> Ask an admin to add your Openhouse SMID in Settings.</div>
+                <div className="bv-danger"><b><IconWarn /> You're not set up to book.</b> Ask an admin to add your Openhouse SMID in Settings.</div>
               )}
               {rmMissingSmid && (
-                <div className="bv-danger"><b>⚠ {rmAccompanying} has no Openhouse SMID.</b> The visit is booked under the accompanying RM, so pick one with an SMID (or ask an admin to add theirs).</div>
+                <div className="bv-danger"><b><IconWarn /> {rmAccompanying} has no Openhouse SMID.</b> The visit is booked under the accompanying RM, so pick one with an SMID (or ask an admin to add theirs).</div>
               )}
 
               {/* Channel Partner — derived per unit city (Gurgaon → CP 708, Noida/Ghaziabad → CP 1367) */}
@@ -153,7 +154,7 @@ export function BookVisitsDrawer({
                   return (
                     <div key={c} className="bv-cp-fixed" style={{ marginBottom: 6 }}>
                       <span><b>{cp ? cp.label : c}</b> {cp ? <span className="bv-cp-code">CP #{cp.cp_id}</span> : <span className="bv-warn-text">no CP configured — can't book</span>}</span>
-                      <span className="bv-fixed-tag">{cp ? "Fixed" : "⚠"}</span>
+                      <span className="bv-fixed-tag">{cp ? "Fixed" : <IconWarn />}</span>
                     </div>
                   );
                 })}
@@ -236,7 +237,7 @@ export function BookVisitsDrawer({
           {step === 1 && (
             <>
               <div className="bv-danger">
-                <b>⚠ This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the Openhouse app and
+                <b><IconWarn /> This is final.</b> On confirm, {units.length} visit{units.length !== 1 ? "s are" : " is"} created on the Openhouse app and
                 <b> cannot be edited or undone</b>. The buyer &amp; CP are notified immediately.
               </div>
               <div className="bv-sec-label">
@@ -254,7 +255,7 @@ export function BookVisitsDrawer({
                     <span>Location</span><b>{[unit.locality, unit.city].filter(Boolean).join(", ") || "—"}</b>
                     <span>Config · price</span><b>{unit.configuration || "—"} · {formatPrice(unit.priceLacs, unit.priceText)}</b>
                     <span>Buyer</span><b>{buyer.name || "—"} · {maskMobile(buyer.mobile)}</b>
-                    <span>CP</span><b>{(() => { const cp = cpFor(unit.city); return cp ? `${cp.label} · CP #${cp.cp_id}` : `${unit.city || "—"} · ⚠ no CP`; })()}</b>
+                    <span>CP</span><b>{(() => { const cp = cpFor(unit.city); return cp ? `${cp.label} · CP #${cp.cp_id}` : `${unit.city || "—"} · no CP`; })()}</b>
                     <span>When</span><b>{date.isToday ? "Today" : date.dow} {date.dayNum} {date.month} · {slot}</b>
                     <span>Source</span><b>{cfg.data?.default_source === "direct" ? "Direct" : (cfg.data?.default_source || "Direct")}</b>
                   </div>
@@ -273,7 +274,7 @@ export function BookVisitsDrawer({
                 const u = units.find((x) => String(x.homeId) === String(r.homeId))!;
                 return (
                   <div key={String(r.homeId)} className={"bv-result " + (r.ok ? "ok" : "fail")}>
-                    <span className="bv-result-ico">{r.ok ? "✓" : "✗"}</span>
+                    <span className="bv-result-ico">{r.ok ? <IconCheck /> : <IconX />}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="bv-result-name">{u?.name || u?.society || `Home #${r.homeId}`}</div>
                       <div className="bv-result-sub">{r.ok ? `Visit #${r.visitId} scheduled · ${slot}` : r.reason}</div>
@@ -301,7 +302,7 @@ export function BookVisitsDrawer({
             </>
           )}
           {step === 2 && (
-            <button className="bv-cta" onClick={() => { toast("Closed booking preview", "gold", "📲"); onClose(); }}>Done</button>
+            <button className="bv-cta" onClick={() => { toast("Closed booking preview", "gold"); onClose(); }}>Done</button>
           )}
         </div>
       </aside>

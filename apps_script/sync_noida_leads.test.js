@@ -13,7 +13,11 @@
 const fs = require('fs');
 const path = require('path');
 
-let FETCHES = 0, FAIL_ON = -1, SHEET = null;
+let FETCHES = 0, FAIL_ON = -1, SHEET = null, LAST_ROWS = null;
+// The run now covers two tabs. Tests 1-4 exercise the Noida sheet (SHEET); the
+// Gurgaon tab defaults to a header-only sheet, which pushes nothing.
+const NOIDA = 'Noida Leads 10 Sep Onwards';
+let GURGAON = null;
 
 function makeSheet(grid) {
   return {
@@ -35,7 +39,10 @@ function makeSheet(grid) {
 }
 
 const host = {
-  SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => SHEET }), flush: () => {} },
+  SpreadsheetApp: {
+    getActiveSpreadsheet: () => ({ getSheetByName: n => (n === NOIDA ? SHEET : GURGAON) }),
+    flush: () => {},
+  },
   PropertiesService: {
     getScriptProperties: () => ({ getProperty: () => 'postgresql://u:p@h.neon.tech/neondb' }),
   },
@@ -48,6 +55,7 @@ const host = {
       // working if a second statement is ever added back.
       const body = JSON.parse(opts.payload);
       const stmts = body.queries || [body];
+      LAST_ROWS = JSON.parse(stmts[0].params[0]);   // what the last batch actually sent
       const counts = stmts.map(q => ({ rowCount: JSON.parse(q.params[0]).length }));
       return {
         getResponseCode: () => 200,
@@ -75,6 +83,7 @@ const H = ['where_do_you_currently_live?', 'where_are_you_looking_to_buy_a_home?
 const row = (phone, name) =>
   ['Delhi', 'Greater Noida West', '₹1 cr', '3BHK', 'This Saturday', 'a@b.com', name, phone, '110092'];
 const marks = () => SHEET.grid.slice(1).map(r => r[9]);
+GURGAON = makeSheet([H.concat(['Society_Name'])]);   // present, no rows
 
 console.log('\n1. fresh sheet — marker column created; pushed TRUE, unpushable FALSE');
 SHEET = makeSheet([H.slice(), row('9876543210', 'A'), row('', 'no phone'), row('9876500002', 'C')]);
@@ -111,6 +120,28 @@ let threw = false;
 try { ND_runSync(); } catch (e) { threw = true; }
 eq(threw, true, 'the run fails loudly rather than reporting success');
 eq(marks().filter(v => v === true).length, 200, 'exactly batch 1 is TRUE; 50 will retry');
+
+console.log('\n5. Gurgaon sheet — city forced, Society_Name → society, own tag, same key');
+SHEET = makeSheet([H.slice()]);                      // Noida: nothing to push
+// row() answers "Greater Noida West" for where they're looking — the sheet must win
+GURGAON = makeSheet([H.concat(['Society_Name']), row('9811100001', 'G').concat(['DLF Crest'])]);
+FETCHES = 0; FAIL_ON = -1;
+ND_runSync();
+eq(GURGAON.grid[0][10], 'pushed', 'marker column lands right after Society_Name');
+eq(GURGAON.grid[1][10], true, 'the row is marked TRUE');
+const g = LAST_ROWS[0];
+eq([g.city, g.society, g.source_meta.created_from, g.origin_key],
+   ['Gurgaon', 'DLF Crest', 'apps_script:gurgaon_leads', 'meta:9811100001'],
+   'city Gurgaon despite the answer, society kept, gurgaon tag, the usual meta: key');
+
+console.log('\n6. a missing tab fails the run — without blocking the other tab');
+SHEET = makeSheet([H.slice(), row('9876500099', 'N')]);
+GURGAON = null;
+FETCHES = 0;
+let named = false;
+try { ND_runSync(); } catch (e) { named = /Gurgaon Leads 10 Sep Onwards/.test(e.message); }
+eq(named, true, 'the run throws, naming the missing sheet');
+eq(marks(), [true], 'the Noida sheet was still pushed and marked');
 
 console.log(fails ? `\n${fails} FAILED\n` : '\nall passed\n');
 process.exit(fails ? 1 : 0);

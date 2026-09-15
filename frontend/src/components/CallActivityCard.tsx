@@ -39,12 +39,12 @@ export default function CallActivityCard({ leadId }: { leadId: string }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <span className="cfg-chip" style={{
                 background: c.answered ? "var(--emerald-soft)" : "var(--slate-soft)",
-                color: c.answered ? "#06694b" : "var(--slate)",
+                color: c.answered ? "var(--emerald-deep)" : "var(--slate)",
               }}>
                 {c.answered ? "connected" : "not connected"}
               </span>
               <span style={{ fontSize: 12, color: "var(--ink-2)" }}>{formatDateTime(c.start_at) || "—"}</span>
-              <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "'Spline Sans Mono'", marginLeft: "auto" }}>
+              <span style={{ fontSize: 12, color: "var(--muted)", fontFamily: "var(--font-mono)", marginLeft: "auto" }}>
                 <RecordingLink url={c.recording_url}>{callDuration(c.start_at, c.end_at)}</RecordingLink>
               </span>
             </div>

@@ -5,6 +5,7 @@ import { useAppSettings, useSetAppSetting, useUsers, useUserMutations } from "..
 import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
+import { IconEdit, IconX } from "../components/icons";
 
 const ROLES = [
   { v: "admin", label: "Admin", desc: "All leads · manage users & source data" },
@@ -28,14 +29,14 @@ function PrivacyPanel() {
         onSuccess: () => {
           toast(on ? "Lead numbers are visible again — reloading…"
                    : "Lead numbers hidden in tables — reloading…",
-                on ? "blue" : "green", on ? "👁" : "🙈");
+                on ? "blue" : "green");
           // Hard reload rather than a cache invalidation. This flag decides whether
           // PII is on screen, so every list has to be rebuilt from scratch — a stale
           // render left anywhere is the exact failure the setting exists to prevent.
           // Delayed so the toast is readable before the page goes.
           setTimeout(() => window.location.reload(), 900);
         },
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onError: (e: any) => toast(e.message, "gold"),
       },
     );
 
@@ -86,15 +87,15 @@ function WhatsAppAccessPanel() {
     set.mutate(
       { key: "wa_show_all_rms", value: !showAll },
       {
-        onSuccess: () => toast(showAll ? "WhatsApp hidden from all RMs" : "WhatsApp shown to all RMs", showAll ? "blue" : "green", "💬"),
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onSuccess: () => toast(showAll ? "WhatsApp hidden from all RMs" : "WhatsApp shown to all RMs", showAll ? "blue" : "green"),
+        onError: (e: any) => toast(e.message, "gold"),
       },
     );
 
   const toggleUser = (rawEmail: string) => {
     const e = rawEmail.toLowerCase();
     const next = allowed.includes(e) ? allowed.filter((x) => x !== e) : [...allowed, e];
-    set.mutate({ key: "wa_allowed_emails", value: next }, { onError: (er: any) => toast(er.message, "gold", "⚠") });
+    set.mutate({ key: "wa_allowed_emails", value: next }, { onError: (er: any) => toast(er.message, "gold") });
   };
 
   return (
@@ -163,7 +164,7 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
 
   const submit = () => {
     if (!email.trim() || !name.trim()) {
-      toast("Email and name are required", "gold", "⚠");
+      toast("Email and name are required", "gold");
       return;
     }
     create.mutate(
@@ -171,10 +172,10 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
         phone: phone.trim() || null },
       {
         onSuccess: () => {
-          toast(`${name} added`, "green", "✓");
+          toast(`${name} added`, "green");
           onClose();
         },
-        onError: (e: any) => toast(e.message, "gold", "⚠"),
+        onError: (e: any) => toast(e.message, "gold"),
       }
     );
   };
@@ -184,7 +185,7 @@ function AddUserForm({ onClose }: { onClose: () => void }) {
       <div className="modal">
         <div className="mh">
           <h3>Add a user</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="note" style={{ marginBottom: 16 }}>
@@ -242,13 +243,13 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
 
   const submit = () => {
     if (!name.trim()) {
-      toast("Name is required", "gold", "⚠");
+      toast("Name is required", "gold");
       return;
     }
     update.mutate(
       { id: u.id, patch: { name: name.trim(), role, smid: smid.trim() ? Number(smid) : null,
         phone: phone.trim() || null } },
-      { onSuccess: () => { toast("User updated", "green", "✓"); onClose(); }, onError: (e: any) => toast(e.message, "gold", "⚠") }
+      { onSuccess: () => { toast("User updated", "green"); onClose(); }, onError: (e: any) => toast(e.message, "gold") }
     );
   };
 
@@ -257,7 +258,7 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
       <div className="modal">
         <div className="mh">
           <h3>Edit {u.name || u.email}</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="field"><label>Email</label><input value={u.email} disabled /></div>
@@ -299,31 +300,31 @@ function ReassignModal({ u, action, candidates, onClose }: {
   const verb = action === "disable" ? "Disable" : "Remove";
 
   const doAction = (onDone: () => void) => {
-    const opts = { onSuccess: onDone, onError: (e: any) => toast(e.message, "gold", "⚠") };
+    const opts = { onSuccess: onDone, onError: (e: any) => toast(e.message, "gold") };
     if (action === "disable") update.mutate({ id: u.id, patch: { active: false } }, opts);
     else remove.mutate(u.id, opts);
   };
 
   const reassignThen = () => {
-    if (!to) { toast("Pick a user to reassign to", "gold", "⚠"); return; }
+    if (!to) { toast("Pick a user to reassign to", "gold"); return; }
     const target = candidates.find((c) => c.id === to);
     reassign.mutate({ id: u.id, toUserId: to }, {
       onSuccess: (r) => doAction(() => {
-        toast(`${r.moved} lead${r.moved === 1 ? "" : "s"} → ${target?.name} · ${u.name} ${action === "disable" ? "disabled" : "removed"}`, "green", "✓");
+        toast(`${r.moved} lead${r.moved === 1 ? "" : "s"} → ${target?.name} · ${u.name} ${action === "disable" ? "disabled" : "removed"}`, "green");
         onClose();
       }),
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onError: (e: any) => toast(e.message, "gold"),
     });
   };
 
-  const skip = () => doAction(() => { toast(`${u.name} ${action === "disable" ? "disabled" : "removed"} · leads left as-is`, "blue", "✓"); onClose(); });
+  const skip = () => doAction(() => { toast(`${u.name} ${action === "disable" ? "disabled" : "removed"} · leads left as-is`, "blue"); onClose(); });
 
   return (
     <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="mh">
           <h3>{verb} {u.name || u.email}</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="note" style={{ marginBottom: 16 }}>
@@ -366,23 +367,23 @@ function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
       {u.picture ? (
         <img className="av" src={u.picture} alt="" style={{ width: 36, height: 36, borderRadius: 9, objectFit: "cover" }} />
       ) : (
-        <div className="av" style={{ width: 36, height: 36, borderRadius: 9, background: "linear-gradient(135deg,#e4e9f1,#d3dbe8)", display: "grid", placeItems: "center", fontWeight: 700, color: "var(--ink-2)", fontSize: 12 }}>
+        <div className="av" style={{ width: 36, height: 36, borderRadius: 9, background: "linear-gradient(135deg,var(--line),var(--line-3))", display: "grid", placeItems: "center", fontWeight: 700, color: "var(--ink-2)", fontSize: 12 }}>
           {initials(u.name, u.email)}
         </div>
       )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 13.5 }}>
-          {u.name || "—"} {!u.active && <span className="bucket-tag" style={{ background: "var(--coral-soft)", color: "var(--coral)", borderColor: "#f3c6cd" }}>disabled</span>}
+          {u.name || "—"} {!u.active && <span className="bucket-tag" style={{ background: "var(--coral-soft)", color: "var(--coral)", borderColor: "var(--coral-soft-2)" }}>disabled</span>}
         </div>
         <div className="ph" style={{ fontSize: 11.5 }}>{u.email}</div>
       </div>
       <div style={{ textAlign: "center", minWidth: 86 }}>
-        <div style={{ fontFamily: "'Bricolage Grotesque'", fontWeight: 800, fontSize: 17, lineHeight: 1 }}>{u.matched_leads}</div>
+        <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 17, lineHeight: 1 }}>{u.matched_leads}</div>
         <div style={{ fontSize: 10.5, color: "var(--muted)" }}>leads · {u.maps_to}</div>
       </div>
       <select
         value={u.role}
-        onChange={(e) => update.mutate({ id: u.id, patch: { role: e.target.value } }, { onSuccess: () => toast("Role updated", "green", "✓") })}
+        onChange={(e) => update.mutate({ id: u.id, patch: { role: e.target.value } }, { onSuccess: () => toast("Role updated", "green") })}
         style={{ border: "1px solid var(--line)", borderRadius: 8, padding: "5px 8px", fontSize: 12, fontWeight: 600, background: "var(--panel-2)" }}
       >
         {ROLES.map((r) => <option key={r.v} value={r.v}>{roleLabel(r.v)}</option>)}
@@ -393,10 +394,10 @@ function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
           if (u.active && u.matched_leads > 0) setReassignFor("disable");
           else update.mutate({ id: u.id, patch: { active: !u.active } });
         }} />
-      <button className="btn ghost sm" onClick={() => setEditing(true)}>✎ Edit</button>
+      <button className="btn ghost sm" onClick={() => setEditing(true)}><IconEdit /> Edit</button>
       <button className="btn ghost sm" onClick={() => {
         if (u.matched_leads > 0) setReassignFor("remove");
-        else if (confirm(`Remove ${u.name || u.email}?`)) remove.mutate(u.id, { onSuccess: () => toast("User removed", "blue", "✓") });
+        else if (confirm(`Remove ${u.name || u.email}?`)) remove.mutate(u.id, { onSuccess: () => toast("User removed", "blue") });
       }}>Remove</button>
       {editing && <EditUserForm u={u} onClose={() => setEditing(false)} />}
       {reassignFor && <ReassignModal u={u} action={reassignFor} candidates={candidates} onClose={() => setReassignFor(null)} />}
@@ -423,10 +424,10 @@ export default function Settings() {
     setLoggingOut(true);
     try {
       await api.forceLogoutAll();
-      toast("All users signed out — redirecting to sign-in…", "green", "✓");
+      toast("All users signed out — redirecting to sign-in…", "green");
       setTimeout(logout, 1200);
     } catch (e: any) {
-      toast(e.message, "gold", "⚠");
+      toast(e.message, "gold");
       setLoggingOut(false);
     }
   };
@@ -448,7 +449,7 @@ export default function Settings() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {enabled && (
               <button className="btn ghost" onClick={forceLogout} disabled={loggingOut}
-                style={{ color: "var(--coral)", borderColor: "#f3c6cd" }} title="Invalidate every active session">
+                style={{ color: "var(--coral)", borderColor: "var(--coral-soft-2)" }} title="Invalidate every active session">
                 {loggingOut ? "Signing out…" : "⎋ Force logout all"}
               </button>
             )}

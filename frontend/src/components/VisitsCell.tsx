@@ -3,6 +3,7 @@
    collapses to the latest and cascades open to show every visit, fetched on expand. */
 import { useState } from "react";
 import { useLeadCrmVisits } from "../lib/queries";
+import { IconChevronDown, IconChevronUp } from "./icons";
 
 // the booked-visit state IS the lead's stage once a visit exists, so it renders as a
 // stage chip in the Stage column rather than a separate one
@@ -32,7 +33,7 @@ export function VisitsCell({
           {/* accompanying RM (the lead's own RM is the Assigned-to column) */}
           {rm && <div className="vc-date" style={{ color: "var(--muted)" }}>with {rm}</div>}
           {count > 1 && (
-            <button className="note-toggle" onClick={() => setOpen(true)}>▾ all {count} visits</button>
+            <button className="note-toggle" onClick={() => setOpen(true)}><IconChevronDown /> all {count} visits</button>
           )}
         </>
       ) : (
@@ -53,7 +54,7 @@ export function VisitsCell({
               </div>
             ))
           )}
-          <button className="note-toggle" onClick={() => setOpen(false)}>▴ hide</button>
+          <button className="note-toggle" onClick={() => setOpen(false)}><IconChevronUp /> hide</button>
         </div>
       )}
     </div>

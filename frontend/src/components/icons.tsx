@@ -4,18 +4,25 @@ export const OpenhouseLogo = () => (
   <svg viewBox="0 0 190 188" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Openhouse">
     <path
       d="M79.5801 124.831C79.5801 122.469 81.9388 120.807 84.2094 121.569L108.648 129.771C110.065 130.247 111.018 131.559 111.018 133.033V174.825C111.018 176.229 110.152 177.493 108.83 178.019L84.3918 187.746C82.091 188.661 79.5801 186.994 79.5801 184.551V124.831Z"
-      fill="#FF6B2B"
+      fill="var(--oh-mark)"
     />
     <path
       fillRule="evenodd"
       clipRule="evenodd"
       d="M189.614 94.4359C189.614 131.293 168.528 163.219 137.774 178.777C132.092 181.651 126.08 183.967 119.809 185.652V117.435C119.809 103.952 108.894 93.0228 95.4285 93.0228C81.9635 93.0228 71.0476 103.952 71.0476 117.435V185.721C64.7793 184.055 58.7673 181.76 53.083 178.906C22.1898 163.396 0.984863 131.396 0.984863 94.4359C0.984863 42.2806 43.2114 0 95.3001 0C147.389 0 189.614 42.2806 189.614 94.4359ZM171.649 94.4359C171.649 120.904 158.207 144.253 137.774 157.978V117.435C137.774 94.018 118.815 75.0349 95.4285 75.0349C86.3282 75.0349 77.8985 77.9092 70.9953 82.8005V21.9429C78.6298 19.3778 86.8028 17.9879 95.3001 17.9879C137.467 17.9879 171.649 52.2146 171.649 94.4359ZM53.1582 30.6778C32.5424 44.3665 18.9499 67.8117 18.9499 94.4359C18.9499 121.014 32.5046 144.448 53.083 158.149V117.435C53.083 116.579 53.1083 115.729 53.1582 114.886V30.6778Z"
-      fill="#FFFFFF"
+      fill="var(--sidebar-fg-strong)"
     />
   </svg>
 );
 
-const stroke = { fill: "none", stroke: "currentColor" } as const;
+/* A default SIZE as well as the stroke.
+
+   These SVGs carry only a viewBox, so an icon dropped somewhere CSS doesn't size
+   (a bare <span>, a <th>) renders at the SVG default and blows up — the Huvo Call
+   Log's "interested" star filled its whole row. 1em makes a loose icon scale with
+   the text it sits in, and every existing `svg{width:…}` rule still wins, because
+   CSS beats a presentation attribute. */
+const stroke = { fill: "none", stroke: "currentColor", width: "1em", height: "1em" } as const;
 
 export const IconDashboard = () => (
   <svg viewBox="0 0 24 24" {...stroke}>
@@ -50,6 +57,15 @@ export const IconCheckCircle = () => (
   <svg viewBox="0 0 24 24" {...stroke}>
     <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
     <polyline points="22 4 12 14.01 9 11.01" />
+  </svg>
+);
+
+/* Direct Inventory's house, stroke-for-stroke — the Home nav item used a grid of
+   squares, which reads as "dashboard", not "home". */
+export const IconHomeNav = () => (
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2"
+       strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 10.5 12 3l9 7.5" /><path d="M5 9.5V21h14V9.5" /><path d="M9.5 21v-6h5v6" />
   </svg>
 );
 
@@ -105,20 +121,95 @@ export const IconSearch = () => (
 );
 
 export const IconBell = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
     <path d="M13.7 21a2 2 0 0 1-3.4 0" />
   </svg>
 );
 
 export const IconPlusBold = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M12 5v14M5 12h14" />
   </svg>
 );
 
 export const WhatsAppIcon = () => (
-  <svg viewBox="0 0 24 24" fill="currentColor">
+  <svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.885-9.885 9.885M20.52 3.449C18.24 1.245 15.24 0 12.045 0 5.463 0 .104 5.359.101 11.945c0 2.096.547 4.142 1.588 5.945L0 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.582 0 11.94-5.359 11.943-11.945a11.821 11.821 0 00-3.416-8.4z" />
   </svg>
 );
+
+
+/* ── react-icons (Lucide) ────────────────────────────────────────────────────
+   Lucide matches the stroke weight the hand-drawn SVGs above were cut at, so the
+   two sets sit together without looking mismatched. Re-exported under IconX names
+   on purpose: this file is the ONLY place that knows which icon pack we use. */
+export {
+  LuX as IconX,
+  LuPencil as IconEdit,
+  LuChevronDown as IconChevronDown,
+  LuChevronUp as IconChevronUp,
+  LuArrowRight as IconArrowRight,
+  LuArrowUp as IconArrowUp,
+  LuArrowDown as IconArrowDown,
+  LuArrowUpRight as IconArrowUpRight,
+  LuTriangleAlert as IconWarn,
+  LuCheck as IconCheck,
+  LuCircleCheck as IconCheckCircleFilled,
+  LuImage as IconImage,
+  LuShare2 as IconShare,
+  LuCalendar as IconCalendar,
+  LuSmartphone as IconPhoneMobile,
+  LuMapPin as IconPin,
+  LuConstruction as IconConstruction,
+  LuPartyPopper as IconParty,
+  LuEye as IconEye,
+  LuEyeOff as IconEyeOff,
+  LuDownload as IconDownload,
+  LuCircle as IconDot,
+  LuSparkles as IconSparkles,
+  LuUsers as IconUsers,
+  LuChartBar as IconChart,
+  LuTrendingUp as IconTrend,
+  LuMegaphone as IconMegaphone,
+  LuBuilding2 as IconCity,
+  LuCompass as IconCompass,
+  LuInfo as IconInfo,
+  LuLogOut as IconLogout,
+  LuSun as IconSun,
+  LuMoon as IconMoon,
+  LuUser as IconUser,
+  LuFilter as IconFilter,
+  LuRotateCw as IconRefresh,
+  LuInfinity as IconMeta,
+  LuClock as IconClock,
+  LuTable as IconTable,
+  LuMessageCircle as IconWhatsApp,
+  LuPhoneCall as IconLiveCall,
+  LuCopy as IconCopy,
+  LuPackage as IconPackage,
+  LuPaperclip as IconClip,
+  LuMap as IconMap,
+  LuPhone as IconPhone,
+  LuChevronRight as IconChevronRight,
+} from "react-icons/lu";
+
+/* Huvo's mark — a bowtie. Replaces huvo_icon.png, which was a PNG with a grey
+   baked in and had to be mask-painted to follow the rail.
+
+   `currentColor` rather than the source's #A3ADC2 default: in the nav it inherits
+   the item's colour (muted → hover → brand when active) and is correct in dark
+   mode, which a fixed grey is not. */
+export function IconHuvo({ size = 17, color = "currentColor", ...props }: {
+  size?: number; color?: string;
+} & React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg width={size} height={size * 0.8} viewBox="0 0 100 80" fill="none"
+         xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path
+        d="M8 0 H18 C32 0 44 30 50 40 C56 30 68 0 82 0 H92 Q100 0 100 8 V72 Q100 80 92 80 H82 C68 80 56 50 50 40 C44 50 32 80 18 80 H8 Q0 80 0 72 V8 Q0 0 8 0 Z"
+        fill={color}
+      />
+    </svg>
+  );
+}

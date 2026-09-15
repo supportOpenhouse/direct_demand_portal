@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import Inventory from "./pages/Inventory";
 import Supply from "./pages/Supply";
-import Dashboard from "./pages/Dashboard";
+import Home from "./pages/Home";
 import NewLeads from "./pages/NewLeads";
 import Followup from "./pages/Followup";
 import LeadsSegment from "./pages/LeadsSegment";
@@ -22,10 +22,12 @@ import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
 import LiveCalls from "./pages/LiveCalls";
 import Stub from "./pages/Stub";
+import Profile from "./pages/Profile";
 import MobileApp, { MOBILE_NAV, MobileLeads } from "./MobileApp";
 import { ToastProvider } from "./components/Toast";
 import { SearchProvider } from "./components/SearchContext";
 import { AuthProvider } from "./components/AuthContext";
+import { ThemeProvider } from "./components/ThemeContext";
 import "./styles/app.css";
 
 /* Which route table to build. The two views are different component trees, not a
@@ -41,7 +43,7 @@ const mobileRoutes = [
     path: "/",
     element: <MobileApp />,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
       ...MOBILE_NAV.filter((n) => n.seg).map((n) => ({
         path: n.to.slice(1),
         element: <MobileLeads segment={n.seg!} />,
@@ -49,7 +51,8 @@ const mobileRoutes = [
       // the real lead page — same edits, same saves, one column
       { path: "leads/:id", element: <LeadDetail mobile /> },
       { path: "inventory", element: <Inventory /> },
-      // everything the mobile view doesn't carry lands back on the dashboard
+      { path: "profile", element: <Profile /> },
+      // everything the mobile view doesn't carry lands back on Home
       { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
@@ -60,7 +63,7 @@ const desktopRoutes = [
     path: "/",
     element: <App />,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
       // RM-facing half of the dialer — not under /dialer, which is admin-only
       { path: "live-calls", element: <LiveCalls /> },
       { path: "leads/new", element: <NewLeads /> },
@@ -81,6 +84,7 @@ const desktopRoutes = [
       { path: "reminders", element: <Stub title="Reminders" /> },
       { path: "inventory", element: <Inventory /> },
       { path: "supply", element: <Supply /> },
+      { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
       { path: "reports", element: <Reports /> },
@@ -102,13 +106,15 @@ const queryClient = new QueryClient();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SearchProvider>
-          <ToastProvider>
-            <RouterProvider router={router} />
-          </ToastProvider>
-        </SearchProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <SearchProvider>
+            <ToastProvider>
+              <RouterProvider router={router} />
+            </ToastProvider>
+          </SearchProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>
 );

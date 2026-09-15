@@ -2,6 +2,7 @@
    - AutocompleteChips: multi-value (Q4 societies / Q5 localities)
    - AutocompleteInput: single value (source-card society) */
 import { useEffect, useRef, useState } from "react";
+import { IconX } from "./icons";
 
 export function AutocompleteInput({
   value,
@@ -132,7 +133,7 @@ export function AutocompleteChips({
           {value.map((v) => (
             <span key={v} className="bucket-tag" style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
               {v}
-              <span style={{ cursor: "pointer" }} onClick={() => onChange(value.filter((x) => x !== v))}>✕</span>
+              <span style={{ cursor: "pointer" }} onClick={() => onChange(value.filter((x) => x !== v))}><IconX /></span>
             </span>
           ))}
         </div>

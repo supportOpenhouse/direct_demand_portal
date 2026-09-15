@@ -20,8 +20,8 @@ export function AssignControl({ leadId, assignedTo, compact }: { leadId: string;
   const pick = (name: string | null) => {
     setOpen(false);
     assign.mutate({ id: leadId, assigned_to: name }, {
-      onSuccess: () => toast(name ? `Assigned to ${name}` : "Unassigned", "green", "✓"),
-      onError: (e: any) => toast(e.message, "gold", "⚠"),
+      onSuccess: () => toast(name ? `Assigned to ${name}` : "Unassigned", "green"),
+      onError: (e: any) => toast(e.message, "gold"),
     });
   };
 

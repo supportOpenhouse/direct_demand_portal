@@ -32,7 +32,7 @@ export default function WaLeadCard({ phone }: { phone: string | null }) {
         display: "flex", alignItems: "center", gap: 8,
         borderBottom: "1px solid var(--line)", paddingBottom: 9, marginBottom: 11,
       }}>
-        <span style={{ width: 16, height: 16, color: "#25b15a", display: "inline-flex" }}>
+        <span style={{ width: 16, height: 16, color: "var(--wa-green-2)", display: "inline-flex" }}>
           <WhatsAppIcon />
         </span>
         <b style={{ fontSize: 14 }}>WhatsApp</b>

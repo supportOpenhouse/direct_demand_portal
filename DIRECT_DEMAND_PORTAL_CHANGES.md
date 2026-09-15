@@ -144,7 +144,7 @@ Changing the stage list is not a local change. `stage` is referenced in:
 
 - `backend/app/migrations.py` runs at **every boot** and is **additive only** (`ADD COLUMN IF NOT EXISTS`). New columns go here.
 - Anything that changes existing rows goes in `backend/scripts/*.sql` and is run **by hand** against Neon.
-- There is a precedent to copy exactly: `backend/scripts/migrate_stages.sql`. It creates a backup table before overwriting, wraps the work in `BEGIN`, prints before-and-after counts, and is idempotent so a second run changes nothing. It also documents its own rollback:
+- There is a precedent to copy exactly: `backend/scripts/01_migrate_stages.sql`. It creates a backup table before overwriting, wraps the work in `BEGIN`, prints before-and-after counts, and is idempotent so a second run changes nothing. It also documents its own rollback:
 
 ```sql
 CREATE TABLE IF NOT EXISTS leads_stage_backup AS SELECT id, stage FROM leads;
@@ -376,7 +376,7 @@ Three options:
 
 > **DOUBT-03 — which option, and what happens to `rnr`?** My recommendation is **A**, plus **C** running quietly behind it. I would not do B. Separately: **does `rnr` (119 leads, never reached after repeated attempts) belong in Active as a filter, or in Inactive as its own thing?** It is currently shown on the Rejected page (`SEGMENTS["rejected"] = "stage IN ('rejected','rnr')"`) but it is not a rejection, it is an unreachable buyer, and some of them are still worth calling. **Please decide.**
 
-> **CAREFUL-06 — this migration is irreversible without the backup.** Follow the `migrate_stages.sql` template exactly: create `leads_stage_backup_v2` first, wrap in `BEGIN`, print before-and-after counts, make it idempotent. Do it in a low-traffic window with the team told in advance.
+> **CAREFUL-06 — this migration is irreversible without the backup.** Follow the `01_migrate_stages.sql` template exactly: create `leads_stage_backup_v2` first, wrap in `BEGIN`, print before-and-after counts, make it idempotent. Do it in a low-traffic window with the team told in advance.
 
 ---
 
@@ -568,7 +568,7 @@ Ship in this order. Each release is independently useful and independently rever
 
 ### 6.2 Rules for R4
 
-1. **MUST** take a stage snapshot into a backup table first, following `migrate_stages.sql` exactly.
+1. **MUST** take a stage snapshot into a backup table first, following `01_migrate_stages.sql` exactly.
 2. **MUST** check every auto-dialer campaign for `stage` conditions and pause anything not `done` (CAREFUL-01).
 3. **MUST** ship the bucket restructure in **one release**, not drip-fed. A half-migrated bucket structure is worse than either state.
 4. **MUST** tell the team the evening before, with a one-page note showing where each old list now lives.

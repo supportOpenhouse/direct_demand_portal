@@ -165,6 +165,17 @@ export interface RmDayLeadRow {
   note: string | null;
 }
 
+/* One Meta delivery's form answers. The field NAMES come from the Instant Form and
+   differ per form and over time, so nothing may assume a fixed set of questions. */
+export interface MetaFormDelivery {
+  meta_lead_id: string;
+  received_at: string | null;
+  // null for a lead from the Lead Ads Testing Tool — it carries no campaign
+  campaign_name: string | null;
+  ad_name: string | null;
+  responses: { question: string; answer: string }[];
+}
+
 export interface ActivityRow {
   id: string;
   created_at: string;
@@ -365,6 +376,15 @@ export interface Lead {
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
   note_count: number;           // total notes + source remarks
   is_test: boolean;
+  // Set on the first Meta webhook delivery that reached this lead; null for sheet-only
+  // Meta leads and every other source. Drives the "Meta form" filter.
+  meta_lead_id: string | null;
+  // Every source this buyer arrived from, first first. Empty until the column is filled.
+  sources: string[];
+  // Arrivals beyond the first — a new source, or the same Meta form again.
+  count_leads_repeat: number;
+  // When it entered its CURRENT stage (DB trigger). null = moved before logging began.
+  stage_changed_at: string | null;
 }
 
 export interface MatchUnit {
@@ -472,6 +492,20 @@ export interface GupshupEvent {
   body: Record<string, any>;
 }
 
+/* A WhatsApp conversation nobody has turned into a lead yet.
+
+   `last_inbound_at` is deliberately raw: whether the 24-hour reply window is still
+   open is decided on the client (`lib/wa.ts`), because the boundary moves with the
+   clock and a server-side verdict is stale the moment it is sent. */
+export interface WaPending {
+  phone: string;
+  name: string | null;
+  tag: WaTag | null;
+  assigned_to: string | null;
+  last_at: string | null;
+  last_inbound_at: string | null;
+}
+
 /* What a WhatsApp number turned out to be, marked by hand from the chat. */
 export type WaTag = "broker" | "buyer" | "seller" | "rejected";
 export const WA_TAGS: WaTag[] = ["broker", "buyer", "seller", "rejected"];
@@ -491,15 +525,6 @@ export interface WaMessage {
   created_at: string;
 }
 
-export interface RMSummaryResp {
-  rm: string;
-  range_label: string;
-  summary: string;
-  model: string;
-  cached: boolean;
-  generated_at: string;
-}
-
 /* One Meta lead-ads webhook delivery, and what became of it.
 
    `responses` is the form as it was answered, in the order it was asked — a form
@@ -509,6 +534,29 @@ export interface MetaLeadResponse {
   question: string;
   answer: string;
 }
+/* A lead added by hand (topbar "Add lead"). Only name and phone are required. */
+export interface NewLead {
+  name: string; phone: string; city: string; society: string;
+  budget_band: string; configuration: string; source_remarks: string;
+}
+
+/* Server-side filters for the Meta Leads page. "" = no constraint. */
+export interface MetaLeadFilters {
+  status: string; campaign: string; adset: string; ad: string; form: string; owner: string;
+}
+export interface MetaLeadsPage {
+  status: string;
+  total: number;        // deliveries matching every filter
+  total_all: number;    // every delivery, unfiltered
+  status_counts: Record<string, number>;  // per status, under the OTHER filters
+  facets: {             // every value each filter can take, over the whole table
+    campaigns: string[]; adsets: string[]; ads: string[]; forms: string[];
+    owners: Record<string, number>; unassigned: number;
+  };
+  items: MetaLeadEvent[];
+  next_offset: number | null;  // null = last page
+}
+
 export interface MetaLeadEvent {
   meta_lead_id: string;
   status: "pending" | "success" | "failed" | "duplicate";
@@ -537,11 +585,22 @@ export interface MetaLeadEvent {
 
 export const api = {
   inventory: () => request<InventoryResponse>("/v1/inventory"),
-  rmSummary: (body: {
-    rm: string; range_label: string; total: number;
-    stages: Record<string, number>; extras: Record<string, number>;
-  }) =>
-    request<RMSummaryResp>("/v1/analytics/rm-summary", { method: "POST", body: JSON.stringify(body) }),
+  /* Moves a lead to ANY stage, in either direction. Every other stage write is a
+     forward-only CASE, so this is the only call that can put a mis-staged lead
+     back. */
+  /* Telemetry only: who opened which lead. Deduped server-side, 204 on success,
+     and deliberately fire-and-forget — see LeadModal. */
+  leadViewed: (id: string) => request<void>(`/v1/leads/${id}/viewed`, { method: "POST" }),
+  /* Add a lead by hand. The OWNER is decided server-side from the caller's role (RM →
+     them, admin → the round-robin pick by city). A number that is already a lead is
+     merged into it instead of duplicated: created=false, lead_id = that lead. */
+  createLead: (body: NewLead) =>
+    request<{ status: string; created: boolean; lead_id: string | null; assigned_to?: string | null }>(
+      "/v1/leads", { method: "POST", body: JSON.stringify(body) }),
+  setLeadStage: (id: string, stage: string) =>
+    request<{ status: string; before: string; after: string }>(`/v1/leads/${id}/stage`, {
+      method: "POST", body: JSON.stringify({ stage }),
+    }),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
   waMessages: (phone?: string) =>
     request<{
@@ -562,8 +621,19 @@ export const api = {
       method: "POST", body: JSON.stringify({ phone, tag }),
     }),
   waLatest: () => request<{ last_inbound_at: string | null }>("/v1/gupshup/latest"),
-  metaLeads: () =>
-    request<{ status: string; count: number; items: MetaLeadEvent[] }>("/v1/meta/leads"),
+  /* Conversations that never became a lead. One row per thread, four columns — not
+     /gupshup/messages, which carries every message body and is polled every 5s. */
+  waPending: () => request<{ items: WaPending[] }>("/v1/gupshup/pending"),
+  metaLeads: (f: MetaLeadFilters, offset: number) => {
+    const q = new URLSearchParams({ offset: String(offset) });
+    for (const [k, v] of Object.entries(f)) if (v) q.set(k, v);
+    return request<MetaLeadsPage>(`/v1/meta/leads?${q}`);
+  },
+  /* The Instant Form answers behind ONE lead, for the lead popup. Not the admin
+     delivery log above — this is the lead's own source data and any RM who can open
+     the lead can read it. Newest delivery first; a repeat submitter has more than one. */
+  leadMetaForm: (leadId: string) =>
+    request<{ items: MetaFormDelivery[] }>(`/v1/meta/lead/${leadId}/form`),
   /* Bulk: names are resolved server-side, so the client only sends which
      conversations to convert. Already-lead contacts are skipped, not duplicated.
      `assign` copies each conversation's RM onto its lead (assigning an unowned thread
@@ -714,6 +784,7 @@ export const api = {
   localitiesByMicromarket: (mm: string) => request<{ items: string[] }>(`/v1/localities/by-micromarket?micro_market=${encodeURIComponent(mm)}`),
   societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
   societiesByCity: (city: string) => request<{ items: string[] }>(`/v1/societies/by-city?city=${encodeURIComponent(city)}`),
+  societiesAll: () => request<{ items: string[] }>("/v1/societies/all"),
   saveVisit: (id: string, plan: VisitPlan) =>
     request<{ status: string }>(`/v1/leads/${id}/visits`, { method: "POST", body: JSON.stringify(plan) }),
   // Openhouse app visit booking

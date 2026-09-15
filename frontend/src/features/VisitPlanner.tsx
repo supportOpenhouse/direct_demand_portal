@@ -12,6 +12,8 @@ import { useToast } from "../components/Toast";
 import { optimizeRoute, estimateLeg, pathKm, fmtMin, Pt } from "../lib/geo";
 import { loadGoogleMaps, getCurrentLocation, openInMaps, MAPS_API_KEY } from "../lib/maps";
 import { BookVisitsDrawer, BookUnit } from "./BookVisitsDrawer";
+import { IconArrowUpRight, IconCalendar, IconCheck, IconCompass, IconMap, IconPhoneMobile, IconPin, IconWarn, IconX } from "../components/icons";
+import { NewBadge } from "../components/StageChip";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -86,7 +88,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     getCurrentLocation().then((loc) => {
       setStart(loc);
       setLocating(false);
-      if (!loc) toast("📍 Allow location permission to optimize the route — then retry", "gold", "📍");
+      if (!loc) toast("Allow location permission to optimize the route — then retry", "gold");
     });
   };
   useEffect(() => { locate(); }, []);
@@ -109,11 +111,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
         });
         dirRenderer.current = new g.maps.DirectionsRenderer({
           map: mapObj.current, suppressMarkers: true,
-          polylineOptions: { strokeColor: "#2563eb", strokeWeight: 5, strokeOpacity: 0.85 },
+          polylineOptions: { strokeColor: "#2563eb", strokeWeight: 5, strokeOpacity: 0.85 }, // theme-exempt: Maps canvas, var() not resolved
         });
         draw();
       })
-      .catch((e) => toast(e.message, "gold", "⚠"));
+      .catch((e) => toast(e.message, "gold"));
   }, [mapEl.current]);
 
   // redraw whenever stops or start change
@@ -129,15 +131,17 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     if (start) {
       markers.current.push(new g.maps.Marker({
         position: start, map: mapObj.current, title: "You (start)",
+        /* theme-exempt:start — Maps paints these itself; CSS variables never reach it. */
         label: { text: "A", color: "#fff", fontWeight: "700" },
         icon: { path: g.maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#059669", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
+        /* theme-exempt:end */
       }));
       bounds.extend(start);
     }
     mapStops.forEach((s, i) => {
       markers.current.push(new g.maps.Marker({
         position: { lat: s.lat!, lng: s.lng! }, map: mapObj.current,
-        label: { text: String(i + 1), color: "#fff", fontWeight: "700" }, title: `Visit ${i + 1} · ${s.name}`,
+        label: { text: String(i + 1), color: "#fff", fontWeight: "700" }, title: `Visit ${i + 1} · ${s.name}`, // theme-exempt: Maps canvas
       }));
       bounds.extend({ lat: s.lat!, lng: s.lng! });
     });
@@ -179,18 +183,18 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
   };
 
   const optimize = () => {
-    if (!start) { toast("📍 Allow location permission to optimize the route from your location", "gold", "📍"); return; }
-    if (stops.length < 2) { toast("Add 2+ stops to optimize", "gold", "⚠"); return; }
+    if (!start) { toast("Allow location permission to optimize the route from your location", "gold"); return; }
+    if (stops.length < 2) { toast("Add 2+ stops to optimize", "gold"); return; }
     const before = pathKm(start, stops as Pt[]);
     const ordered = optimizeRoute(start, stops as (InventoryItem & Pt)[]);
     setStopIds(ordered.map((u) => u.id));
     const after = pathKm(start, ordered as Pt[]);
     const saved = +(before - after).toFixed(1);
-    toast(saved > 0.1 ? `Optimized · saved ~${saved} km` : "Already the shortest route", "green", "🧭");
+    toast(saved > 0.1 ? `Optimized · saved ~${saved} km` : "Already the shortest route", "green");
   };
 
   const save = () => {
-    if (!stops.length) { toast("Add at least one property", "gold", "⚠"); return; }
+    if (!stops.length) { toast("Add at least one property", "gold"); return; }
     setSaving(true);
     api.saveVisit(leadId, {
       trip_date: tripDate, lead_rm: leadRm, rm_accompanying: rmAccompanying || leadRm, start_lat: start?.lat ?? null, start_lng: start?.lng ?? null,
@@ -198,13 +202,13 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
       stops: stops.map((s) => ({ inventory_id: s.id, name: s.name, society: s.society, locality: s.locality, price_text: s.price_text, lat: s.lat, lng: s.lng })),
     })
       .then(() => {
-        toast(`${stops.length}-stop visit plan saved`, "green", "✓");
+        toast(`${stops.length}-stop visit plan saved`, "green");
         qc.invalidateQueries({ queryKey: ["lead", leadId] });
         qc.invalidateQueries({ queryKey: ["leads"] });
         qc.invalidateQueries({ queryKey: ["visit", leadId] });
         setSavedPlan(true); // don't close — reveal the "Book on Openhouse" section
       })
-      .catch((e) => toast(e.message, "gold", "⚠"))
+      .catch((e) => toast(e.message, "gold"))
       .finally(() => setSaving(false));
   };
 
@@ -227,8 +231,8 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal wide">
         <div className="mh">
-          <h3>📅 Plan site visits · {leadName}</h3>
-          <div className="icon-btn" onClick={onClose}>✕</div>
+          <h3><IconCalendar /> Plan site visits · {leadName}</h3>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
           <div className="note" style={{ marginBottom: 12 }}>
@@ -238,8 +242,8 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
           </div>
           {!locating && !start && (
             <div className="mand-flag show" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
-              <span>⚠ Location permission is off — allow it in your browser to optimize the route from your location.</span>
-              <button className="btn ghost sm" onClick={locate}>📍 Allow / retry</button>
+              <span><IconWarn /> Location permission is off — allow it in your browser to optimize the route from your location.</span>
+              <button className="btn ghost sm" onClick={locate}><IconPin /> Allow / retry</button>
             </div>
           )}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
@@ -282,10 +286,10 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                     <div key={p.id} className={"pick-row" + (added ? " added" : "")}>
                       <div style={{ minWidth: 0 }}>
                         <div className="pk-n">{p.name}</div>
-                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}{!hasGeo(p) && <span className="no-geo" title="No map location yet — can be visited, but not plotted or routed"> · 📍 no map location</span>}</div>
+                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}{!hasGeo(p) && <span className="no-geo" title="No map location yet — can be visited, but not plotted or routed"> ·  no map location</span>}</div>
                       </div>
                       <button className={"btn sm pk-add " + (added ? "ghost" : "primary")} disabled={added} onClick={() => add(p.id)}>
-                        {added ? "Added ✓" : "+ Add"}
+                        {added ? <><IconCheck /> Added</> : "+ Add"}
                       </button>
                     </div>
                   );
@@ -297,7 +301,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
               <div className="plan-lbl">
                 <span>Itinerary</span>
                 <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <button className="btn green sm opt-btn" disabled={stops.length < 2 || !start} onClick={optimize}>🧭 Optimize route</button>
+                  <button className="btn green sm opt-btn" disabled={stops.length < 2 || !start} onClick={optimize}><IconCompass /> Optimize route</button>
                   <span>{stops.length} stop{stops.length !== 1 ? "s" : ""}</span>
                 </span>
               </div>
@@ -312,11 +316,11 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                       {leg && <div className="leg"><span className="lp" />{leg.km} km · {fmtMin(leg.min)} {legLabel || "(est.)"}</div>}
                       <div className="itin-stop">
                         <div className="num">{i + 1}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}{!hasGeo(p) && <span className="no-geo"> · 📍 not on map</span>}</div></div>
+                        <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}{!hasGeo(p) && <span className="no-geo"> ·  not on map</span>}</div></div>
                         <div className="ops">
                           <button title="Up" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
                           <button title="Down" onClick={() => move(i, 1)} disabled={i === stops.length - 1}>↓</button>
-                          <button title="Remove" onClick={() => remove(i)}>✕</button>
+                          <button title="Remove" onClick={() => remove(i)}><IconX /></button>
                         </div>
                       </div>
                     </div>
@@ -332,7 +336,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
               )}
               {stops.length >= 1 && (
                 <div className="route-est" style={total.source === "google" ? { color: "var(--emerald)" } : undefined}>
-                  {total.source === "google" ? "✓ Live Google driving route" : "⚠ Straight-line estimate × road factor"}
+                  {total.source === "google" ? <><IconCheck /> Live Google driving route</> : <><IconWarn /> Straight-line estimate × road factor</>}
                 </div>
               )}
             </div>
@@ -341,7 +345,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
           <div className="plan-map" ref={mapEl}>
             {!MAPS_API_KEY && (
               <div className="map-empty">
-                <div style={{ fontSize: 22 }}>🗺️</div>
+                <div style={{ fontSize: 22 }}><IconMap /></div>
                 <div><b>Map needs a key.</b> Set <code>VITE_MAPS_API_KEY</code> to enable the live map &amp; route.</div>
                 <div style={{ fontSize: 11 }}>The itinerary and distance estimates work without it.</div>
               </div>
@@ -351,7 +355,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
           {savedPlan && (
             <div className="bv-unlock" ref={unlockEl}>
               <div className="bv-unlock-head">
-                <span className="bv-unlock-tick">✓</span>
+                <span className="bv-unlock-tick"><IconCheck /></span>
                 <div>
                   <div className="bv-unlock-title">Plan saved · ready to book on the Openhouse app</div>
                   <div className="bv-unlock-sub">Book these {stops.length} visit{stops.length !== 1 ? "s" : ""} for a Channel Partner — single or bulk, in one guided flow.</div>
@@ -364,7 +368,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                 </div>
                 {bookUnits.map((u) => (
                   <div key={String(u.homeId)} className="bv-ug-row">
-                    <span className="bv-ug-name">{u.name || u.society || "—"}{u.isNew && <span className="bv-newtag">NEW</span>}</span>
+                    <span className="bv-ug-name">{u.name || u.society || "—"}{u.isNew && <NewBadge size={16} style={{ marginLeft: 6 }} />}</span>
                     <span className="bv-ug-home">#{u.homeId}</span>
                     <span>{[u.locality, u.city].filter(Boolean).join(", ") || "—"}</span>
                     <span>{u.configuration || "—"}</span>
@@ -374,14 +378,14 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
                 ))}
               </div>
               <button className="btn orange bv-unlock-cta" onClick={() => setBooking(true)}>
-                📲 Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on Openhouse app
+                <IconPhoneMobile /> Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on Openhouse app
               </button>
             </div>
           )}
         </div>
         <div className="mf">
           <button className="btn ghost" onClick={onClose}>{savedPlan ? "Close" : "Cancel"}</button>
-          <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}>↗ Open in Google Maps</button>
+          <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}><IconArrowUpRight /> Open in Google Maps</button>
           {!savedPlan && (
             <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
           )}

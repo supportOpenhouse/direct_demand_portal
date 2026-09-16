@@ -3,8 +3,10 @@ import ReactDOM from "react-dom/client";
 import { createBrowserRouter, Navigate, RouterProvider } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
-import Inventory from "./pages/Inventory";
-import Supply from "./pages/Supply";
+// Live Inventory + Supply Pipeline are hidden (see the routes below). Kept commented so
+// the pages drop out of the bundle too, rather than shipping unreachable code.
+// import Inventory from "./pages/Inventory";
+// import Supply from "./pages/Supply";
 import Home from "./pages/Home";
 import NewLeads from "./pages/NewLeads";
 import Followup from "./pages/Followup";
@@ -50,7 +52,8 @@ const mobileRoutes = [
       })),
       // the real lead page — same edits, same saves, one column
       { path: "leads/:id", element: <LeadDetail mobile /> },
-      { path: "inventory", element: <Inventory /> },
+      // hidden 15 Sep with the Discovery nav group — uncomment to bring it back
+      // { path: "inventory", element: <Inventory /> },
       { path: "profile", element: <Profile /> },
       // everything the mobile view doesn't carry lands back on Home
       { path: "*", element: <Navigate to="/" replace /> },
@@ -82,8 +85,10 @@ const desktopRoutes = [
       { path: "dialer/schedule", element: <Dialer /> },
       { path: "dialer/previous", element: <DialerPrevious /> },
       { path: "reminders", element: <Stub title="Reminders" /> },
-      { path: "inventory", element: <Inventory /> },
-      { path: "supply", element: <Supply /> },
+      // hidden 15 Sep with the Discovery nav group — uncomment (with the imports at the
+      // top) to bring both back; the pages themselves were not touched
+      // { path: "inventory", element: <Inventory /> },
+      // { path: "supply", element: <Supply /> },
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },
@@ -95,6 +100,10 @@ const desktopRoutes = [
       { path: "chat", element: <Chat /> },
       // admin-only: the page itself refuses a non-admin, and so does the endpoint
       { path: "meta-leads", element: <MetaLeads /> },
+      // Anything unmatched lands on Home, as the mobile routes already did. Added when
+      // /inventory and /supply were hidden: without it an old bookmark to either one
+      // renders React Router's error screen instead of the app.
+      { path: "*", element: <Navigate to="/" replace /> },
     ],
   },
 ];

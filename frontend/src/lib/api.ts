@@ -374,6 +374,8 @@ export interface Lead {
   visit_count: number;          // visits booked on the Openhouse app
   latest_note: string | null;   // newest note/remark, for the inline notes column
   latest_note_at: string | null; // timestamp of the newest manual note (for sorting)
+  // newest activity_log entry for this lead — any event, not just notes
+  latest_activity_at: string | null;
   note_count: number;           // total notes + source remarks
   is_test: boolean;
   // Set on the first Meta webhook delivery that reached this lead; null for sheet-only
@@ -852,6 +854,11 @@ export const api = {
   reassignUserLeads: (id: string, toUserId: string) =>
     request<{ status: string; moved: number }>(`/v1/users/${id}/reassign`, { method: "POST", body: JSON.stringify({ to_user_id: toUserId }) }),
   forceLogoutAll: () => request<{ status: string }>("/v1/sessions/logout-all", { method: "POST" }),
+  /* Run the hourly round-robin now (admin). Bounded per call — `pending` says how many
+     are still waiting, so a big backlog takes more than one run. */
+  assignSweep: (limit = 500) =>
+    request<{ status: string; assigned: number; pending: number; by_rm: Record<string, number> }>(
+      `/v1/leads/assign-sweep?limit=${limit}`, { method: "POST" }),
   // auto-dialer (admin)
   dialerFields: () => request<DialerFields>("/v1/dialer/fields"),
   dialerPreview: (rules: RuleNode, strategy: string, rms: string[]) =>

@@ -1,6 +1,6 @@
 /* New Leads — 1:1 with the prototype's tplNewLeads(), wired to GET /v1/leads?segment=new.
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
-import { formatDate, useAllSocieties, useAssignees, useLeadCounts, useLeads, useSyncLeads } from "../lib/queries";
+import { formatDate, formatDateTime, useAllSocieties, useAssignees, useLeadCounts, useLeads, useSyncLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { isNewToday, leadMatchesQuery, newFirst, planClass, sourcesLabel } from "../lib/leads";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -91,6 +91,7 @@ export default function NewLeads() {
     date: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     assigned: (l) => l.assigned_to,
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
+    activity: (l) => (l.latest_activity_at ? Date.parse(l.latest_activity_at) : null),
   });
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -179,14 +180,15 @@ export default function NewLeads() {
               <SortTh label="Created On" sortKey="date" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Latest activity" sortKey="activity" activeKey={sortKey} dir={dir} onSort={onSort} />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonTable rows={8} cols={10 + (selectMode ? 1 : 0)} />
+              <SkeletonTable rows={8} cols={11 + (selectMode ? 1 : 0)} />
             ) : list.length === 0 ? (
               <tr>
-                <td colSpan={10 + (selectMode ? 1 : 0)}>
+                <td colSpan={11 + (selectMode ? 1 : 0)}>
                   <div className="empty" style={{ padding: 24 }}>
                     {all.length === 0 ? "No new leads right now." : "No leads match the search / filters."}
                   </div>
@@ -223,6 +225,9 @@ export default function NewLeads() {
                   <td className="cell-tight" style={{ fontSize: 12.5, fontFamily: "var(--font-mono)" }}>{formatDate(l.received_at)}</td>
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
                   <td onClick={(e) => e.stopPropagation()}><NotesCell leadId={l.id} latest={l.latest_note} count={l.note_count} /></td>
+                  <td className="cell-tight" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                    {l.latest_activity_at ? formatDateTime(l.latest_activity_at) : "—"}
+                  </td>
                 </tr>
               ))
             )}

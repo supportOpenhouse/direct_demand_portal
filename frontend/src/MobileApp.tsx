@@ -33,7 +33,8 @@ export const MOBILE_NAV = [
   { to: "/leads/pipeline", label: "Pipeline Leads", seg: "pipeline", icon: IconFunnel },
   { to: "/leads/converted", label: "Converted Leads", seg: "converted", icon: IconCheckCircle },
   { to: "/leads/rejected", label: "Rejected Leads", seg: "rejected", icon: IconReject },
-  { to: "/inventory", label: "Live Inventory", icon: IconHome },
+  // hidden 15 Sep with the desktop Discovery group — uncomment to bring it back
+  // { to: "/inventory", label: "Live Inventory", icon: IconHome },
 ];
 
 /* Signing out drops the session — never on a single mis-tap in a drawer. */

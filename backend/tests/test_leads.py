@@ -385,6 +385,19 @@ def test_a_pushed_row_stores_a_clean_pin():
 
 # --- manual stage change -----------------------------------------------------
 
+def test_force_assign_reuses_the_hourly_sweep():
+    """A second implementation would balance differently from the cron, and the two
+    would drift — the manual button must be the same sweep, admin-only and bounded."""
+    import inspect
+
+    from app.routers import leads as mod
+
+    src = inspect.getsource(mod.assign_unassigned)
+    assert "run_assignment_sweep(" in src
+    assert "require_admin" in src
+    assert "le=2000" in src, "unbounded, a big backlog would run past the request timeout"
+
+
 def test_add_lead_owner_is_the_rm_or_the_round_robin_pick():
     """An RM keeps a lead they add; anyone else's goes to the sweep's own pick_rm —
     reused, not re-implemented, so hand-added and swept leads balance as one pool."""

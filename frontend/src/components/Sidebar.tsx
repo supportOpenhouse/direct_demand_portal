@@ -161,6 +161,10 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
             sitting among the stage pages made the sequence read wrong. */}
         <LiveCallsNav />
         <WhatsAppNav />
+        {/* Discovery — Live Inventory + Supply Pipeline, hidden 15 Sep on request.
+            Commented out, not deleted: the pages, their CSS and the poster are all
+            untouched, so restoring is uncommenting this block and the routes in
+            main.tsx. The whole section label goes too — those two were all it held.
         <div className="nav-label">Discovery</div>
         <NavLink to="/inventory" className={navClass} title="Live Inventory">
           <IconHome /> <span className="nav-t">Live Inventory</span>
@@ -168,6 +172,7 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/supply" className={navClass} title="Supply Pipeline">
           <IconBox /> <span className="nav-t">Supply Pipeline</span>
         </NavLink>
+        */}
         <div className="nav-label">Admin</div>
         {isAdmin && (
           <>

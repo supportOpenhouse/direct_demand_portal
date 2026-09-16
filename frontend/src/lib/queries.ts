@@ -496,6 +496,18 @@ export function useConfirmLead(id: string) {
   });
 }
 
+export function useAssignSweep() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (limit?: number) => api.assignSweep(limit),
+    // ownership changed on up to `limit` leads — every list and the sidebar counts move
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
 export function useCreateLead() {
   const qc = useQueryClient();
   return useMutation({

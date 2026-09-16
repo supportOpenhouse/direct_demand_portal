@@ -2,7 +2,7 @@
    table (Lead · Source · Stage · TAT · Society · Assigned · Visits). Same component
    for all three segments, switched by the `segment` prop. */
 import { useState } from "react";
-import { formatDate, useAllSocieties, useAssignees, useLeads, useMarkHot } from "../lib/queries";
+import { formatDate, formatDateTime, useAllSocieties, useAssignees, useLeads, useMarkHot } from "../lib/queries";
 import { Lead } from "../lib/api";
 import { isNewToday, leadMatchesQuery, newFirst, sourcesLabel, stageLabel } from "../lib/leads";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -110,6 +110,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     rejected: (l) => (l.rejected_at ? Date.parse(l.rejected_at) : null),
     created: (l) => (l.received_at ? Date.parse(l.received_at) : null),
     notes: (l) => (l.latest_note_at ? Date.parse(l.latest_note_at) : null),
+    activity: (l) => (l.latest_activity_at ? Date.parse(l.latest_activity_at) : null),
     visit: (l) => l.visit_status,
   });
   // NEW-badge leads on top, the chosen sort within each group
@@ -181,14 +182,15 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
               )}
               <SortTh label="Notes" sortKey="notes" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Latest activity" sortKey="activity" activeKey={sortKey} dir={dir} onSort={onSort} />
               <th></th>
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonTable rows={8} cols={6 + (selectMode ? 1 : 0) + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)} />
+              <SkeletonTable rows={8} cols={7 + (selectMode ? 1 : 0) + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)} />
             ) : list.length === 0 ? (
-              <tr><td colSpan={6 + (selectMode ? 1 : 0) + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={7 + (selectMode ? 1 : 0) + (isPipeline ? 1 : 0) + (rejected ? 4 : showStage ? 2 : 1)}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? `No ${NOUN[segment]} yet.` : "No leads match the search / filters."}
               </div></td></tr>
             ) : (
@@ -249,6 +251,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   )}
                   <td onClick={(e) => e.stopPropagation()}><NotesCell leadId={l.id} latest={l.latest_note} count={l.note_count} /></td>
                   <td onClick={(e) => e.stopPropagation()}><AssignControl leadId={l.id} assignedTo={l.assigned_to} /></td>
+                  <td className="cell-tight" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                    {l.latest_activity_at ? formatDateTime(l.latest_activity_at) : "—"}
+                  </td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {!rejected && (
                       <button className="btn ghost sm" title="Plan site visits"

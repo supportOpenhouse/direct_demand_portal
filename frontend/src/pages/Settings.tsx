@@ -1,7 +1,7 @@
 /* Settings & Access — user management. Only people added here can sign in, and
    each maps to their leads via the sheet's "Assigned to" name. */
 import { useState } from "react";
-import { useAppSettings, useSetAppSetting, useUsers, useUserMutations } from "../lib/queries";
+import { useAppSettings, useAssignSweep, useSetAppSetting, useUsers, useUserMutations } from "../lib/queries";
 import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
@@ -405,6 +405,51 @@ function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
   );
 }
 
+/* Run the round-robin on demand instead of waiting for the hour.
+
+   Same sweep, same rules (city an RM covers → a covering RM, else the RM with the
+   fewest leads today), so this can't hand out leads differently from the automatic run.
+   Bounded per click, which is why the result line says how many are still waiting. */
+function AssignLeadsPanel() {
+  const sweep = useAssignSweep();
+  const toast = useToast();
+  const [last, setLast] = useState<{ assigned: number; pending: number } | null>(null);
+
+  const run = () =>
+    sweep.mutate(undefined, {
+      onSuccess: (r) => {
+        setLast({ assigned: r.assigned, pending: r.pending });
+        toast(r.assigned
+          ? `Assigned ${r.assigned} lead${r.assigned === 1 ? "" : "s"}`
+          : "Nothing to assign — every lead already has an RM", "green");
+      },
+      onError: (e: any) => toast(e.message, "gold"),
+    });
+
+  return (
+    <div className="card panel-pad" style={{ marginTop: 16 }}>
+      <div className="section-head">
+        <div>
+          <div className="panel-title" style={{ marginBottom: 2 }}>Lead assignment</div>
+          <p className="sec-sub" style={{ margin: 0 }}>
+            Hands leads with no RM to one who covers their city, or to whoever has taken the
+            fewest today. Runs hourly on its own; this does it now, up to 500 at a time.
+          </p>
+        </div>
+        <button className="btn green" onClick={run} disabled={sweep.isPending}>
+          {sweep.isPending ? "Assigning…" : "Assign unassigned leads"}
+        </button>
+      </div>
+      {last && (
+        <p className="sec-sub" style={{ margin: 0 }}>
+          Assigned <b>{last.assigned}</b> · <b>{last.pending}</b> still unassigned
+          {last.pending > 0 ? " — run it again to continue." : "."}
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function Settings() {
   const { enabled, user, logout } = useAuth();
   const { data, isLoading } = useUsers();
@@ -464,6 +509,7 @@ export default function Settings() {
           data.items.map((u) => <UserRow key={u.id} u={u} allUsers={data.items} />)
         )}
       </div>
+      <AssignLeadsPanel />
       <PrivacyPanel />
       <WhatsAppAccessPanel />
       {adding && <AddUserForm onClose={() => setAdding(false)} />}

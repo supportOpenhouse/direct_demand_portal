@@ -4,7 +4,7 @@
    exactly one of them and there has never been a single place to see the whole book.
    This is that place — read-only triage, not a replacement for the worklists. */
 import { useMemo, useState } from "react";
-import { useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
+import { formatDateTime, useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
 import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, newFirst, segHue, sourcesLabel, stageLabel } from "../lib/leads";
 import { matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras, sourceMatches, sourceOptions } from "../lib/leadFilters";
@@ -66,6 +66,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     society: (l) => l.society,
     assigned: (l) => l.assigned_to,
     created: (l) => (l.received_at ? Date.parse(l.received_at) : null),
+    activity: (l) => (l.latest_activity_at ? Date.parse(l.latest_activity_at) : null),
   });
 
   // NEW-badge leads on top, the chosen sort within each group
@@ -141,13 +142,14 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
               <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
               <SortTh label="Received" sortKey="created" activeKey={sortKey} dir={dir} onSort={onSort} />
+              <SortTh label="Latest activity" sortKey="activity" activeKey={sortKey} dir={dir} onSort={onSort} />
             </tr>
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonTable rows={10} cols={8} />
+              <SkeletonTable rows={10} cols={9} />
             ) : list.length === 0 ? (
-              <tr><td colSpan={8}><div className="empty" style={{ padding: 30 }}>
+              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
                 {all.length === 0 ? "No leads yet." : "No leads match the filters."}
               </div></td></tr>
             ) : (
@@ -172,6 +174,9 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
                   <td>{l.assigned_to || <span style={{ color: "var(--muted)" }}>Unassigned</span>}</td>
                   <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 12 }}>
                     {l.received_at ? new Date(l.received_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—"}
+                  </td>
+                  <td className="cell-tight" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
+                    {l.latest_activity_at ? formatDateTime(l.latest_activity_at) : "—"}
                   </td>
                 </tr>
               ))

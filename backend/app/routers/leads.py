@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..core.auth import assignment_aliases, current_user, is_calling_rm
+from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
 from ..db import neon_engine
 from ..models import Lead, LeadConfirmedData, LeadNote, Visit
 from ..services import activity
@@ -120,6 +120,9 @@ def _lead_row(r) -> dict:
         "visit_count": int(r.get("visit_count") or 0),
         "latest_note": r.get("latest_note_body") or (remarks[-1] if remarks else None),
         "latest_note_at": r["latest_note_at"].isoformat() if r.get("latest_note_at") else None,
+        # only on the list query; the single-lead read has its own history card
+        "latest_activity_at": (r["latest_activity_at"].isoformat()
+                               if r.get("latest_activity_at") else None),
         "note_count": int(r.get("note_count") or 0) + len(remarks),
         "is_test": r["is_test"],
         # drives the "Meta form" filter on every lead list; it was never serialised,
@@ -173,7 +176,12 @@ async def list_leads(segment: str = Query("new"), user: dict = Depends(current_u
                     "(SELECT selected_date FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_sel_date, "
                     "(SELECT society FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_society, "
                     "(SELECT rm_accompanying FROM crm_visits WHERE lead_id = leads.id ORDER BY created_at DESC LIMIT 1) AS visit_rm, "
-                    "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count "
+                    "(SELECT count(*) FROM crm_visits WHERE lead_id = leads.id) AS visit_count, "
+                    # newest thing that happened to this lead, whatever it was — the
+                    # ix_activity_entity index (entity_type, entity_id, created_at DESC)
+                    # is exactly this lookup. entity_id is TEXT, so cast the uuid to it.
+                    "(SELECT max(created_at) FROM activity_log a "
+                    "  WHERE a.entity_type = 'lead' AND a.entity_id = leads.id::text) AS latest_activity_at "
                     f"FROM leads WHERE {predicate} ORDER BY is_test DESC, {order}"
                 ),
                 params,
@@ -894,6 +902,28 @@ async def record_lead_viewed(lead_id: UUID, user: dict = Depends(current_user)):
                 activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
                 action="lead_viewed"))
     return Response(status_code=204)
+
+
+@router.post("/leads/assign-sweep")
+async def assign_unassigned(
+    limit: int = Query(default=500, ge=1, le=2000),
+    _: dict = Depends(require_admin),
+):
+    """Assign unassigned leads NOW — the Settings page's "Assign unassigned leads".
+
+    Calls the SAME sweep the hourly job does, deliberately: a manual run that picked its
+    own RM would balance differently from the automatic one, and the two would drift.
+    So the rules are unchanged — a city an RM covers goes to a covering RM, anything
+    else to the least-loaded RM today, one lead at a time.
+
+    Bounded (500 by default, mirroring SWEEP_LIMIT) because each pick is its own round
+    trip: the loop is what stops the whole backlog landing on whoever is lowest right
+    now. The response says how many are still waiting, so a bigger backlog is cleared by
+    running it again rather than by one request that might time out.
+    """
+    from ..services.lead_assign import run_assignment_sweep
+
+    return await run_assignment_sweep(trigger="manual", limit=limit)
 
 
 @router.post("/leads/sync")

@@ -2,7 +2,7 @@
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useRejectLead, useSetFollowup, useSetLeadStage } from "../lib/queries";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
 import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -17,7 +17,6 @@ import {
   IconHome,
   IconStar,
   IconWarn,
-  IconX,
   IconClock,
   IconMeta,
 } from "../components/icons";
@@ -35,53 +34,10 @@ const PLANS = ["Within 30 days", "1–3 months", "3–6 months", "Just exploring
 const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
 
 // (re-add Broker/Budget/Location here later — backend accepts them too)
-const REJECT_REASONS = ["Requirement Mismatch", "No Requirement"];
-
-function RejectModal({ id, name, onClose }: { id: string; name: string | null; onClose: () => void }) {
-  const reject = useRejectLead(id);
-  const toast = useToast();
-  const [reason, setReason] = useState(REJECT_REASONS[0]);
-  const [notes, setNotes] = useState("");
-  const [err, setErr] = useState(false);
-
-  const submit = () => {
-    if (!reason || !notes.trim()) { setErr(true); return; }
-    reject.mutate({ reason, notes: notes.trim() }, {
-      onSuccess: () => { toast("Lead rejected", "blue"); onClose(); },
-      onError: (e: any) => toast(e.message, "gold"),
-    });
-  };
-
-  return (
-    <div className="overlay show" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal">
-        <div className="mh"><h3>Reject {name}</h3><div className="icon-btn" onClick={onClose}><IconX /></div></div>
-        <div className="mb">
-          <div className={"field" + (err && !reason ? " invalid" : "")}>
-            <label>Reason for rejection <span className="req">*</span></label>
-            <select value={reason} onChange={(e) => setReason(e.target.value)}>
-              <option value="">Select…</option>
-              {REJECT_REASONS.map((r) => <option key={r}>{r}</option>)}
-            </select>
-          </div>
-          {reason && (
-            <div className={"field" + (err && !notes.trim() ? " invalid" : "")} style={{ marginBottom: 0 }}>
-              <label>Notes <span className="req">*</span></label>
-              <textarea rows={3} value={notes} placeholder="Why is this lead being rejected?" onChange={(e) => setNotes(e.target.value)} />
-            </div>
-          )}
-          {err && (!reason || !notes.trim()) && <div className="mand-flag show"><IconWarn /> A reason and notes are required.</div>}
-        </div>
-        <div className="mf">
-          <button className="btn ghost" onClick={onClose}>Cancel</button>
-          <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }} onClick={submit} disabled={reject.isPending}>
-            {reject.isPending ? "Rejecting…" : "Reject lead"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+/* The reject form (reason + notes) was removed on 15 Sep with the card's Reject button:
+   the confirm card keeps a single Save. Rejecting is now the Status card's stage picker,
+   which records NO reason — restore this modal if the Rejected page's reason filter and
+   `leads.reject_reason` are wanted again. */
 
 /* Stage, changeable to anything.
 
@@ -385,11 +341,12 @@ function NotesThread({ id }: { id: string }) {
   );
 }
 
-/* The single follow-up input for the lead — its value is shared with the confirm form
-   below (mandatory there). Starts EMPTY on every open so the RM enters a fresh callback
-   for this call; the previously-stored time (`current`) is shown for reference and is kept
-   in the DB until a new one is saved. "Save & move" sets a plain callback (no qualify). */
-function FollowupWidget({ id, value, onChange, invalid, current }: { id: string; value: string; onChange: (v: string) => void; invalid: boolean; current: string | null }) {
+/* The lead's only follow-up control. Since 15 Sep the confirm form below saves answers
+   ONLY, so a callback is set here or not at all — hence no required marker and no
+   `invalid` prop from that form. Starts EMPTY on every open so the RM enters a fresh
+   callback for this call; the previously-stored time (`current`) is shown for reference
+   and kept in the DB until a new one is saved. "Save & move" sets a plain callback. */
+function FollowupWidget({ id, value, onChange, current }: { id: string; value: string; onChange: (v: string) => void; current: string | null }) {
   const nav = useNavigate();
   const toast = useToast();
   const set = useSetFollowup(id);
@@ -404,7 +361,7 @@ function FollowupWidget({ id, value, onChange, invalid, current }: { id: string;
     <div className="card panel-pad">
       <div className="panel-title">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="13" r="8" /><path d="M12 9v4l2 2M9 2h6" /></svg>{" "}
-        Schedule a follow-up <span style={{ color: "var(--coral)" }}>*</span>
+        Schedule a follow-up
       </div>
       {current && (
         <div className="fu-current">
@@ -412,8 +369,7 @@ function FollowupWidget({ id, value, onChange, invalid, current }: { id: string;
         </div>
       )}
       <div className="fu-row">
-        <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)}
-          style={invalid ? { borderColor: "var(--coral)" } : undefined} />
+        <input type="datetime-local" value={value} onChange={(e) => onChange(e.target.value)} />
         {/* Short label so the datetime beside it stays readable in a half-width
             card; the full sentence lives in the tooltip. */}
         <button className="btn green sm" onClick={save} disabled={set.isPending}
@@ -516,7 +472,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
   const formInPair = hasMetaForm && lead?.source === "meta" && mergedSources.length === 0;
   const confirm = useConfirmLead(id);
   const [planner, setPlanner] = useState(false);
-  const [rejecting, setRejecting] = useState(false);
 
   const [purpose, setPurpose] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
@@ -600,14 +555,13 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
 
-  // Pipeline leads (a visit is booked) are past qualification — re-qualifying or forcing a
-  // callback makes no sense there, so they get a single plain Save instead of the two buttons.
+  // a visit is booked — the card above shows it, and SavedVisitCard reads it
   const isPipeline = lead.stage === "visit_scheduled" || (lead.visit_count ?? 0) > 0;
 
-  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office, followup: !followUp };
-  // the follow-up is only required when we're qualifying / setting a callback, not for a Pipeline save
+  // the follow-up is NOT among these: this form no longer sets one (the Follow-up card
+  // beside it owns that), so the only required fields are the starred answers
+  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office };
   const reqInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
-  const anyInvalid = reqInvalid || invalid.followup;
 
   const basePayload = () => ({
     purpose,
@@ -624,26 +578,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
     remark: remark || null,
   });
 
-  // qualify=true → Qualified; qualify=false → save details + follow-up only (stays in Follow-up)
-  const save = (qualify: boolean) => {
-    if (anyInvalid) {
-      setShowErr(true);
-      toast("Fill the required (*) fields, including a follow-up", "gold");
-      return;
-    }
-    confirm.mutate(
-      { ...basePayload(), follow_up_at: new Date(followUp).toISOString(), qualify },
-      {
-        onSuccess: () => {
-          if (qualify) toast("Lead confirmed & qualified", "green");
-          else { toast("Details saved · follow-up set", "green"); nav("/leads/followup"); }
-        },
-        onError: (e) => toast(e.message, "gold"),
-      }
-    );
-  };
-
-  // Pipeline: persist the requirement details only — no callback, no stage/qualify change
+  // The only save this form has: persist the answers — no callback, no stage change.
   const saveOnly = () => {
     if (reqInvalid) {
       setShowErr(true);
@@ -716,7 +651,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
       </div>
       )}
       {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} leadPhone={lead.phone} onClose={() => setPlanner(false)} />}
-      {rejecting && <RejectModal id={id} name={lead.name} onClose={() => setRejecting(false)} />}
 
       <div className={mobile ? "m-detail" : "detail-grid"}>
         <div className="dcol">
@@ -728,7 +662,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
           */}
           <div className="expand-pair">
             <StatusCard lead={lead} />
-            <FollowupWidget id={id} value={followUp} onChange={setFollowUp} invalid={showErr && !isPipeline && invalid.followup} current={lead.follow_up_at} />
+            <FollowupWidget id={id} value={followUp} onChange={setFollowUp} current={lead.follow_up_at} />
           </div>
 
           <div className="expand-pair">
@@ -842,32 +776,19 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
               <textarea rows={2} value={remark} placeholder="Anything notable from the call" onChange={(e) => setRemark(e.target.value)} />
             </div>
 
-            {showErr && (isPipeline ? reqInvalid : anyInvalid) && (
-              <div className="mand-flag show"><IconWarn /> Fill all starred (*) fields{isPipeline ? "." : ", including the follow-up time above."}</div>
+            {showErr && reqInvalid && (
+              <div className="mand-flag show"><IconWarn /> Fill all starred (*) fields.</div>
             )}
+            {/* ONE button (15 Sep). It saves the answers and nothing else — no callback,
+                no stage change. Qualifying and rejecting moved to the Status card's stage
+                picker; note that picking "rejected" there records no reason or notes. */}
             <div className="form-actions">
-              {lead.stage === "rejected" ? (
+              {lead.stage === "rejected" && (
                 <span className="stage lost">Rejected — {lead.reject_reason}</span>
-              ) : (
-                <button className="btn" style={{ background: "var(--coral)", color: "var(--on-accent)" }} onClick={() => setRejecting(true)}>
-                  <IconX /> Reject lead
-                </button>
               )}
-              {isPipeline ? (
-                  // a visit is booked — past qualification, so just save the details
-                <button className="btn green" onClick={saveOnly} disabled={confirm.isPending}>
-                  {confirm.isPending ? "Saving…" : "Save"}
-                </button>
-              ) : (
-                <>
-                  <button className="btn ghost" onClick={() => save(false)} disabled={confirm.isPending} title="Save the call details and set a follow-up — does not qualify the lead">
-                    Save details &amp; set follow-up
-                  </button>
-                  <button className="btn green" onClick={() => save(true)} disabled={confirm.isPending}>
-                    {confirm.isPending ? "Saving…" : lead.confirmed ? "Update & qualify" : "Confirm & qualify"}
-                  </button>
-                </>
-              )}
+              <button className="btn green" onClick={saveOnly} disabled={confirm.isPending}>
+                {confirm.isPending ? "Saving…" : "Save"}
+              </button>
             </div>
           </div>
 

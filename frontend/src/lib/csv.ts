@@ -34,6 +34,7 @@ const COLUMNS: { header: string; get: (l: Lead) => unknown }[] = [
   { header: "Reject notes", get: (l) => l.reject_notes },
   { header: "Notes", get: (l) => l.note_count },
   { header: "Latest note", get: (l) => l.latest_note },
+  { header: "Latest activity at", get: (l) => fmt(l.latest_activity_at) },
 ];
 
 /* Generic writer, so any page with a table on screen can hand over its own headers

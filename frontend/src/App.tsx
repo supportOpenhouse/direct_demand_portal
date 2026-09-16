@@ -27,6 +27,8 @@ export default function App() {
      page wrapper because the SIDEBAR has to change with it — the accent says which
      side of the business you are on, and the nav is where that reads first.
      Cleaned up on unmount so a route outside this shell can't inherit it. */
+  // dormant while those two routes are commented out (main.tsx): nothing matches, so no
+  // page takes the orange accent. Left in place so uncommenting the routes restores it.
   const supplySide = pathname.startsWith("/inventory") || pathname.startsWith("/supply");
   useEffect(() => {
     const root = document.documentElement;

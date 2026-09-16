@@ -19,6 +19,7 @@ import { AssignControl } from "../components/AssignControl";
 import { CallButton } from "../components/CallButton";
 import LeadPhone from "../components/LeadPhone";
 import { VisitPlanner } from "../features/VisitPlanner";
+import ManageVisitsModal from "../features/ManageVisitsModal";
 import { SkeletonTable } from "../components/Skeleton";
 import { IconCalendar, IconStar , IconClock} from "../components/icons";
 import { useFilterValues } from "../components/FilterBar";
@@ -68,7 +69,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const isPipeline = segment === "revisit"; // the Pipeline Leads tab — the only one with ★ hot marking
   // Qualified & Converted drop the Stage column — every row would read the same ("Qualified"/"Won")
   const showStage = !rejected && segment !== "qualified" && segment !== "converted";
-  const bookLabel = segment === "qualified" ? "Book Visit" : hasVisits ? "Book Revisit" : "Visits";
+  /* One control, one name, everywhere. "Book Revisit" claimed the button could only do
+     that, and there was no way to see or change what was already booked — the popup it
+     opens now owns new visit / reschedule / revisit / cancel. */
   const { data, isLoading } = useLeads(segment);
   const rowOpen = useRowOpen();
   // Page-local search and city tab. Local on purpose: a query that outlives the
@@ -85,6 +88,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
   const { source, owner, visitStatus, hotOnly } = f;
   const societies = useAllSocieties();
   const [planner, setPlanner] = useState<Lead | null>(null);
+  const [managing, setManaging] = useState<Lead | null>(null);
 
   const all = data?.items ?? [];
   // `pass(l, skip)` applies every filter except `skip`. Each dropdown's counts are
@@ -256,9 +260,9 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
                   </td>
                   <td style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     {!rejected && (
-                      <button className="btn ghost sm" title="Plan site visits"
-                        onClick={(e) => { e.stopPropagation(); setPlanner(l); }}>
-                        <IconCalendar /> {bookLabel}
+                      <button className="btn ghost sm" title="See and manage this lead's visits"
+                        onClick={(e) => { e.stopPropagation(); setManaging(l); }}>
+                        <IconCalendar /> Manage visits
                       </button>
                     )}
                   </td>
@@ -269,6 +273,16 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
         </table>
         </div>
       </div>
+      {managing && (
+        <ManageVisitsModal
+          leadId={managing.id}
+          leadName={managing.name}
+          /* "+ New visit" books a DIFFERENT property, which is the planner's job —
+             hand off to it and close this, rather than rebuild unit picking here. */
+          onNewVisit={() => { setPlanner(managing); setManaging(null); }}
+          onClose={() => setManaging(null)}
+        />
+      )}
       {planner && (
         <VisitPlanner leadId={planner.id} leadName={planner.name} leadCity={planner.city} leadPhone={planner.phone} onClose={() => setPlanner(null)} />
       )}

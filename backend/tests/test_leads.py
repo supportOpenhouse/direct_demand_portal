@@ -1,7 +1,6 @@
 import re
-from datetime import datetime
 
-from app.routers.leads import IST, MISS_REASONS, _within_calling_hours
+from app.routers.leads import MISS_REASONS
 from app.models import Lead
 from app.services.leads_sync import (
     SYNC_CITY,
@@ -127,34 +126,46 @@ def test_build_listing_keeps_nameless_rows_but_drops_phoneless():
     assert spine[0]["origin_key"] == "listing:9000000000"
 
 
-# --- calling-hours clamp on auto follow-ups ----------------------------------
+# --- a follow-up is only ever set by a person --------------------------------
 
-def _ist(y, mo, d, h, mi=0):
-    return datetime(y, mo, d, h, mi, tzinfo=IST)
+def test_a_missed_call_schedules_nothing():
+    """Auto follow-ups are gone. "+3h because nobody picked up" was the system inventing
+    a commitment on the RM's behalf — it had done so 2,855 times against 251 real ones,
+    which buried the real callbacks. A miss now clears the due time instead: that callback
+    has just been attempted, so leaving it claims an appointment already past."""
+    from app.routers import leads as mod
 
+    src = _body_of("call_result")
+    assert "_within_calling_hours" not in src, "the clamp existed only for auto follow-ups"
+    assert "timedelta(hours=" not in src, "nothing computes a callback delay any more"
 
-def test_auto_followup_inside_calling_hours_is_untouched():
-    # 12:00 + 3h = 15:00 IST — well inside 10:00-19:00
-    assert _within_calling_hours(_ist(2026, 7, 20, 15)).astimezone(IST) == _ist(2026, 7, 20, 15)
-
-
-def test_auto_followup_after_close_rolls_to_next_morning():
-    # missed call at 17:00 → +3h lands at 20:00, past the 19:00 cutoff
-    assert _within_calling_hours(_ist(2026, 7, 20, 20)).astimezone(IST) == _ist(2026, 7, 21, 10)
-    # exactly 19:00 is already outside the window
-    assert _within_calling_hours(_ist(2026, 7, 20, 19)).astimezone(IST) == _ist(2026, 7, 21, 10)
-    # switched-off at 18:30 → +6h crosses midnight; the date must roll with it
-    assert _within_calling_hours(_ist(2026, 7, 21, 0, 30)).astimezone(IST) == _ist(2026, 7, 21, 10)
-
-
-def test_auto_followup_before_open_waits_for_10am():
-    assert _within_calling_hours(_ist(2026, 7, 20, 9, 45)).astimezone(IST) == _ist(2026, 7, 20, 10)
+    sql = str(mod._CALL_RESULT_NO)
+    assert "follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at ELSE NULL END" in sql
+    assert ":due" not in sql
+    assert not hasattr(mod, "_within_calling_hours"), "dead helper left behind"
 
 
-def test_miss_reasons_delays():
-    assert MISS_REASONS["Did Not Pick / Not Reachable"] == 3
-    assert MISS_REASONS["Switched Off"] == 6
-    assert MISS_REASONS["Invalid Number"] is None  # rejected, never re-queued
+def test_miss_reasons_only_say_whether_the_number_is_usable():
+    """The values used to be auto-delay hours. They carry one bit now: reject or not."""
+    assert MISS_REASONS == {
+        "Did Not Pick / Not Reachable": False,
+        "Switched Off": False,
+        "Invalid Number": True,   # unusable → rejected, never re-queued
+    }
+
+
+def test_only_a_person_writes_follow_up_at():
+    """The two remaining writers both take a time a human typed: the callback endpoint and
+    the qualify form. A third one would be an auto follow-up sneaking back in."""
+    import inspect
+
+    from app.routers import leads as mod
+
+    src = inspect.getsource(mod)
+    # every assignment of follow_up_at, minus the two that write NULL or the column itself
+    assigns = set(re.findall(r"follow_up_at\s*=\s*(\S+)", src))
+    assigns -= {"CASE", "NULL", "leads.follow_up_at", "null)", ":t,", ":t"}
+    assert not assigns, f"unexpected follow_up_at writer: {assigns}"
 
 
 # ── sheet formula errors, and the city rewrite ──────────────────────────────────

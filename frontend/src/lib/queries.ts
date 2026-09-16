@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AppSettings, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
+import { api, AppSettings, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -736,3 +736,43 @@ export function formatPrice(priceLacs: number | null, priceText: string | null):
   }
   return priceText || "—";
 }
+
+/* Manage visits — the four single-visit actions. All four change the visit list AND can
+   move the lead's stage (a revisit → revisit_scheduled), so each invalidates the lead
+   caches as well as ["crm-visits", leadId]. `leadId` is passed in rather than derived:
+   the mutation only knows the Openhouse visit id, and the cache is keyed by lead. */
+function useVisitAction<V>(fn: (v: V) => Promise<unknown>, leadId?: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: fn,
+    onSuccess: () => {
+      if (leadId) {
+        qc.invalidateQueries({ queryKey: ["crm-visits", leadId] });
+        qc.invalidateQueries({ queryKey: ["lead", leadId] });
+      }
+      qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });
+    },
+  });
+}
+
+export function useCancelVisit(leadId?: string) {
+  return useVisitAction((visitId: number) => api.cancelVisit(visitId), leadId);
+}
+
+export function useCompleteVisit(leadId?: string) {
+  return useVisitAction(
+    (v: { visitId: number; body: CompleteVisitIn }) => api.completeVisit(v.visitId, v.body), leadId);
+}
+
+export function useRescheduleVisit(leadId?: string) {
+  return useVisitAction(
+    (v: Slotted) => api.rescheduleVisit(v.visitId, v.date, v.time), leadId);
+}
+
+export function useRevisitVisit(leadId?: string) {
+  return useVisitAction(
+    (v: Slotted) => api.revisitVisit(v.visitId, v.date, v.time), leadId);
+}
+
+interface Slotted { visitId: number; date: string; time: string }

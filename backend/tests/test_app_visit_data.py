@@ -1,6 +1,19 @@
 """app_visit_data: the response → rows mapping, against the shape Core really returns."""
+import re
+from datetime import date
+from pathlib import Path
+
 from app.models import Base
-from app.services.app_visit_data import BATCH, rows_from_response
+from app.services.app_visit_data import (
+    BATCH,
+    DATE_COLUMNS,
+    HIDDEN_FIELDS,
+    INT_COLUMNS,
+    SM_COLUMNS,
+    TEXT_COLUMNS,
+    _project,
+    rows_from_response,
+)
 
 REAL_SHAPE = {  # trimmed from a real prod response, 15 Sep
     "visits": [{
@@ -28,6 +41,80 @@ def test_missing_ids_are_flagged_without_touching_data():
 
 def test_batches_stay_within_the_api_limit():
     assert BATCH == 100
+
+
+def test_the_json_is_projected_into_columns():
+    """Typed, not text: a date is a date and a count an int, so the columns can be
+    filtered and sorted without re-parsing the JSON."""
+    row = _project({
+        "status": "completed", "leadStatus": "warm", "selectedDate": "2026-09-14",
+        "visitDate": None, "createdAt": "2026-09-14T11:01:38.781647+00:00",
+        "homeId": "564", "floor": 3, "leadOccurrenceCount": 6, "salesManagerId": "137",
+        "demandSmFeedback": {"closingSignal": "Non-committal"}, "allFeedback": [],
+    })
+    assert row["status"] == "completed" and row["lead_status"] == "warm"
+    assert row["selected_date"] == date(2026, 9, 14)
+    assert row["visit_date"] is None, "a null date stays null, not the string 'None'"
+    assert row["crm_created_at"].year == 2026
+    assert row["home_id"] == 564 and row["floor"] == 3 and row["sales_manager_id"] == 137
+    assert row["sm_closing_signal"] == "Non-committal"
+    assert row["sm_price_discussion"] is None, "a key the feedback object omits"
+    assert row["all_feedback"] == []
+
+
+def test_a_blank_id_is_null_not_a_crash():
+    """Core sends "" for an absent id, not null — seen on staging's salesManagerId.
+    int("") raises, and one such visit would take down the whole batch's upsert."""
+    row = _project({"salesManagerId": "", "homeId": "73", "floor": None})
+    assert row["sales_manager_id"] is None
+    assert row["home_id"] == 73 and row["floor"] is None
+
+
+def test_a_visit_without_sm_feedback_projects_nulls():
+    """demandSmFeedback is null on most visits — that must not blow up the fill."""
+    row = _project({"status": "upcoming", "demandSmFeedback": None})
+    assert all(row[c] is None for c in SM_COLUMNS)
+
+
+def test_the_columns_the_service_fills_are_the_columns_the_model_has():
+    """The SQL, the model and the mapping are three copies of one list. This fails the
+    moment they drift — a column the service fills that the table lacks is an error
+    every refresh, and one the model lacks is invisible to every query."""
+    mapped = set(TEXT_COLUMNS) | set(DATE_COLUMNS) | set(INT_COLUMNS) | set(SM_COLUMNS)
+    mapped |= {"crm_created_at", "all_feedback"}
+    base = {"visit_id", "found", "data", "crm_updated_at", "fetched_at"}
+    model = set(Base.metadata.tables["app_visit_data"].columns.keys())
+    assert mapped | base == model, f"drifted from the model: {mapped ^ (model - base)}"
+
+    sql = (Path(__file__).parents[1] / "scripts" / "15_app_visit_data_columns.sql").read_text()
+    added = set(re.findall(r"ADD COLUMN IF NOT EXISTS\s+(\w+)", sql))
+    assert added == mapped, f"drifted from the SQL: {added ^ mapped}"
+
+
+def test_the_hidden_fields_are_stored_but_never_served():
+    """Five fields stay in the table — it is Core's record — but must not reach the UI.
+    This fails the moment a router starts selecting one, which is the only way they could
+    leak: nothing serves app_visit_data today, so the rule has to outlive the gap between
+    now and whoever builds that view."""
+    table = set(Base.metadata.tables["app_visit_data"].columns.keys())
+    assert HIDDEN_FIELDS <= table, "hiding a field that isn't a column is a typo, not a rule"
+
+    def leaks(src: str) -> set[str]:
+        """Hidden fields named by a source file that serves visit data."""
+        if "app_visit_data" not in src:
+            return set()  # this file doesn't serve visit data at all
+        return {f for f in HIDDEN_FIELDS if re.search(rf"\b{f}\b", src)}
+
+    # the check has teeth — no router serves visit data yet, so without this the loop
+    # below would pass by never running
+    assert leaks("SELECT visit_id, broker_name FROM app_visit_data") == {"broker_name"}
+    assert leaks("SELECT visit_id, broker_name FROM crm_visits") == set(), "other tables are not this rule's business"
+    assert leaks("SELECT visit_id, city FROM app_visit_data") == set()
+
+    routers = Path(__file__).parents[1] / "app" / "routers"
+    for py in routers.rglob("*.py"):
+        assert not leaks(py.read_text()), \
+            f"{py.name} exposes {leaks(py.read_text())}, hidden from the UI on purpose"
 
 
 def test_the_table_joins_to_crm_visits_by_foreign_key():

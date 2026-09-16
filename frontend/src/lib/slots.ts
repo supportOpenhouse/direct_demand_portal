@@ -7,13 +7,18 @@ export interface Slot {
   startHour: number; // 24h
 }
 
+/* ⚠️ Spaced, exactly as the Openhouse app writes them and the CRM API guide documents.
+   Core stores selected_time as free text and compares slots as STRINGS, so "3-5 PM" and
+   "3 - 5 PM" are two different slots to it — booking in the wrong form silently defeats
+   its duplicate-visit check. Mirror of SLOT_VALUES in backend/app/services/crm_booking.py;
+   the backend rejects anything not in that list. */
 export const SLOTS: Slot[] = [
-  { label: "9-11 AM", startHour: 9 },
-  { label: "11-1 PM", startHour: 11 },
-  { label: "1-3 PM", startHour: 13 },
-  { label: "3-5 PM", startHour: 15 },
-  { label: "5-7 PM", startHour: 17 },
-  { label: "7-9 PM", startHour: 19 },
+  { label: "9 - 11 AM", startHour: 9 },
+  { label: "11 - 1 PM", startHour: 11 },
+  { label: "1 - 3 PM", startHour: 13 },
+  { label: "3 - 5 PM", startHour: 15 },
+  { label: "5 - 7 PM", startHour: 17 },
+  { label: "7 - 9 PM", startHour: 19 },
 ];
 
 export interface DayOption {

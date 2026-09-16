@@ -422,32 +422,24 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
 # --- call worklist (New Leads / Follow-up) -----------------------------------
 
 IST = timezone(timedelta(hours=5, minutes=30))
-WORK_START_HOUR, WORK_END_HOUR = 10, 19  # calling hours, IST
 
-# "No" on the worklist → why, and what it costs the lead. Value = auto follow-up
-# delay in hours; None = the number is unusable, so the lead is rejected outright.
+# "No" on the worklist → why, and whether the number is usable at all.
+# True = unusable, so the lead is rejected outright; False = just a miss.
+#
+# ⚠️ A miss NO LONGER schedules a callback. A follow-up is a commitment an RM made to a
+# buyer — "+3h because nobody picked up" was the system inventing one on their behalf, and
+# it did so 2,855 times against 251 real ones, which drowned the Follow-up page in
+# appointments no one had agreed to. Only POST /leads/{id}/followup and the qualify form
+# set follow_up_at now, and both are a person typing a time.
 # Spam guard: a second "No" on the same lead inside this window is rejected outright.
 # Without it, repeated clicks inflate miss_count and can push a lead to RNR in seconds.
 NO_COOLDOWN_HOURS = 2
 
-MISS_REASONS: dict[str, int | None] = {
-    "Did Not Pick / Not Reachable": 3,
-    "Switched Off": 6,
-    "Invalid Number": None,
+MISS_REASONS: dict[str, bool] = {
+    "Did Not Pick / Not Reachable": False,
+    "Switched Off": False,
+    "Invalid Number": True,
 }
-
-
-def _within_calling_hours(dt: datetime) -> datetime:
-    """Clamp an AUTO-computed follow-up into the 10:00–19:00 IST calling window:
-    before 10:00 → same day 10:00, at/after 19:00 → next day 10:00. Manually set
-    follow-ups deliberately bypass this — the RM may book any time the buyer asks for."""
-    local = dt.astimezone(IST)
-    if local.hour < WORK_START_HOUR:
-        local = local.replace(hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
-    elif local.hour >= WORK_END_HOUR:
-        local = (local + timedelta(days=1)).replace(
-            hour=WORK_START_HOUR, minute=0, second=0, microsecond=0)
-    return local.astimezone(timezone.utc)
 
 
 class CallResult(BaseModel):
@@ -519,12 +511,12 @@ _CALL_RESULT_NO = text(f"""
                      WHEN leads.stage IN ('qualified','visit_scheduled','revisit_scheduled','won') THEN leads.stage
                      WHEN NOT leads.ever_connected THEN 'call_not_received'
                      ELSE 'follow_up' END,
-        follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at
-                     WHEN CAST(:reject AS boolean) OR cur.escalate THEN NULL
-                     ELSE CAST(:due AS timestamptz) END,
-        follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since
-                     WHEN CAST(:reject AS boolean) OR cur.escalate THEN NULL
-                     ELSE COALESCE(leads.follow_up_since, now()) END,
+        -- cleared, never auto-set: the callback that was due has now been attempted
+        -- and missed, so leaving a stale time on the lead claims an appointment that
+        -- has already passed. A blocked (spammed) "No" writes every column back to
+        -- itself, so it must keep whatever was there.
+        follow_up_at = CASE WHEN cur.blocked THEN leads.follow_up_at ELSE NULL END,
+        follow_up_since = CASE WHEN cur.blocked THEN leads.follow_up_since ELSE NULL END,
         reject_reason = CASE WHEN cur.blocked THEN leads.reject_reason
                      WHEN CAST(:reject AS boolean) THEN CAST(:reason AS text)
                      WHEN cur.escalate THEN 'RNR'
@@ -549,8 +541,9 @@ _CALL_RESULT_NO = text(f"""
 async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(current_user)):
     """Log a call attempt from the New Leads / Follow-up worklist.
     connected=True  → opens the lead (caller navigates); resets the miss streak.
-    connected=False → reason + notes are both mandatory. Did Not Pick → +3h,
-    Switched Off → +6h (both clamped to calling hours); Invalid Number → Rejected.
+    connected=False → reason + notes are both mandatory; Invalid Number → Rejected.
+    A miss never schedules a callback — it clears any that was due, because that one has
+    now been attempted. Only a person sets a follow-up.
     From Call Not Received / Follow-up / Qualified, 5 consecutive OR 8 total missed
     calls escalate the lead to RNR (Rejected, reason RNR)."""
     engine = neon_engine()
@@ -604,12 +597,10 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
         # every "No" from the worklist, and each extra statement is a full Neon
         # round trip — the branch (RNR vs reschedule) is decided in SQL off the
         # pre-update row so we never need to read it first.
-        reject = MISS_REASONS[payload.reason] is None
-        due = None if reject else _within_calling_hours(
-            datetime.now(timezone.utc) + timedelta(hours=MISS_REASONS[payload.reason]))
+        reject = MISS_REASONS[payload.reason]
         res = await conn.execute(_CALL_RESULT_NO, {
             "nid": uuid4(), "id": lead_id, "note": note, "note_body": note_body, "author": author,
-            "reject": reject, "reason": payload.reason, "due": due,
+            "reject": reject, "reason": payload.reason,
             # a verified campaign row waives the spam window; a manual call never does
             "skip_cooldown": queue_item_id is not None,
         })
@@ -629,8 +620,7 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
                 before=out["miss_count"] - (0 if reject else 1), after=out["miss_count"],
                 metadata={"reason": payload.reason, "notes": note,
                           "stage": out["stage"],
-                          "source": "campaign" if queue_item_id else "worklist",
-                          "follow_up_at": due.isoformat() if due else None}))
+                          "source": "campaign" if queue_item_id else "worklist"}))
 
     if out["blocked"]:
         remaining = (out["retry_at"] - datetime.now(timezone.utc)).total_seconds() / 60
@@ -639,9 +629,10 @@ async def call_result(lead_id: UUID, payload: CallResult, user: dict = Depends(c
                 "moved_to_rnr": False, "rejected": False, "miss_count": out["miss_count"]}
 
     to_rnr = out["stage"] == "rnr"
+    # follow_up_at is always null now — a miss schedules nothing. Kept on the response
+    # so the worklist client doesn't have to branch on its absence.
     return {"status": "ok", "connected": False, "blocked": False, "moved_to_rnr": to_rnr,
-            "rejected": reject, "miss_count": out["miss_count"],
-            "follow_up_at": None if (reject or to_rnr) else due.isoformat()}
+            "rejected": reject, "miss_count": out["miss_count"], "follow_up_at": None}
 
 
 class FollowupPayload(BaseModel):

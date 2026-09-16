@@ -361,7 +361,7 @@ export interface Lead {
   confirmed: boolean;
   qualified_at: string | null;
   follow_up_at: string | null;  // next callback due (UTC); set → lead is in the Follow-up tab
-  follow_up_since: string | null; // when it first entered Follow-up (for "moved here today")
+  follow_up_since: string | null; // when it first entered Follow-up — now only sorts the list
   miss_count: number;           // consecutive not-connected calls (resets on connect)
   miss_total: number;           // lifetime misses (never resets) — 8 total → auto-RNR
   last_no_timestamp: string | null;  // last "No" — drives the 2h spam cooldown
@@ -794,6 +794,16 @@ export const api = {
   bookVisits: (payload: BookRequest) =>
     request<BookResponse>("/v1/visits/book", { method: "POST", body: JSON.stringify(payload) }),
   latestVisit: (id: string) => request<{ plan: VisitPlan | null }>(`/v1/leads/${id}/visits`),
+  // Manage visits — one Openhouse visit at a time. Reschedule keeps the visit id;
+  // revisit returns a NEW one (same buyer, same property).
+  cancelVisit: (visitId: number) =>
+    request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/cancel`, { method: "POST" }),
+  completeVisit: (visitId: number, body: CompleteVisitIn) =>
+    request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/complete`, { method: "POST", body: JSON.stringify(body) }),
+  rescheduleVisit: (visitId: number, selected_date: string, selected_time: string) =>
+    request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/reschedule`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
+  revisitVisit: (visitId: number, selected_date: string, selected_time: string) =>
+    request<{ ok: boolean; visit_id: number; revisit_of: number }>(`/v1/visits/${visitId}/revisit`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),
@@ -983,6 +993,28 @@ export interface CampaignDetail {
   per_rm: Record<string, { live: number; done: number }>;
   feed: CampaignFeedRow[];
 }
+
+/** Completing a visit. `sm_feedback` is the assisted path (the SM filled the form);
+ *  sales_feedback alone is the OTP path. Core picks the path from what's sent. */
+export interface CompleteVisitIn {
+  sales_feedback: string;
+  lead_status?: string;
+  sm_feedback?: Record<string, string>;
+}
+
+/** Lead intent Core accepts on completion. */
+export const VISIT_LEAD_STATUS = ["hot", "warm", "cold", "future_prospect", "dead", "select_status"] as const;
+
+/** The six sm_demand_feedback questions, with the answers the Openhouse app offers.
+ *  Mirror of SM_FEEDBACK_FIELDS in backend/app/services/crm_booking.py. */
+export const SM_FEEDBACK_QUESTIONS: { key: string; label: string; options: string[] }[] = [
+  { key: "time_spent_on_site", label: "Time on site", options: ["Less than 5 min", "5 - 10 min", "10 - 15 min", "15 - 20 min", "20 - 30 min", "30 - 50 min", "50+ min"] },
+  { key: "society_amenity_tour", label: "Amenity tour", options: ["Skipped", "Quick walk-through", "Full amenity tour", "Detailed tour & society enquiry"] },
+  { key: "price_discussion", label: "Price discussed", options: ["No", "Yes"] },
+  { key: "client_queries", label: "Client queries", options: ["No — didn't ask", "Casually asked 1 aspect", "Asked multiple questions", "Deep probing & compared"] },
+  { key: "closing_signal", label: "Closing signal", options: ['Non-committal — "will think about it"', "Asked for brochure / floor plan", "Wants revisit or comparison visit", "Asked about booking / token / timeline"] },
+  { key: "buyer_primary_concern", label: "Primary concern", options: ["Price too high", "Location not preferred", "No concern expressed"] },
+];
 
 /** One visit booked on the Openhouse app. A lead can have many — each its own visit id. */
 export interface CrmVisitRow {

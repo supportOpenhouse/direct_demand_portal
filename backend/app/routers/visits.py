@@ -133,18 +133,28 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
         if smid is None:
             raise HTTPException(status_code=403, detail="Pick an accompanying RM who has an Openhouse SMID before booking.")
 
-    # A revisit can't be booked while a prior visit is still pending — the previous one
-    # must be marked complete (via the ops-sheet sync) first.
+    # A second visit to the SAME home can't be booked while the first is still pending —
+    # that one is a revisit and the earlier visit has to be completed or cancelled first.
+    # A visit to a DIFFERENT property is a normal new visit and is always allowed, which
+    # is what "+ New visit" in Manage Visits relies on.
+    seen_homes: set[int] = set()
     if req.lead_id:
         engine = neon_engine()
         if engine is not None:
+            homes = [v.home_id for v in req.visits]
             async with engine.connect() as conn:
-                pending = (await conn.execute(text(
-                    "SELECT count(*) FROM crm_visits WHERE lead_id = :id AND status = 'upcoming'"),
-                    {"id": req.lead_id})).scalar()
-            if pending:
+                clash = (await conn.execute(text(
+                    "SELECT society FROM crm_visits WHERE lead_id = :id AND status = 'upcoming' "
+                    "AND home_id = ANY(:homes) LIMIT 1"),
+                    {"id": req.lead_id, "homes": homes})).first()
+                # every property this lead has EVER had a visit to — decides revisit below
+                seen_homes = {r[0] for r in (await conn.execute(text(
+                    "SELECT DISTINCT home_id FROM crm_visits WHERE lead_id = :id AND home_id IS NOT NULL"),
+                    {"id": req.lead_id})).all()}
+            if clash:
                 raise HTTPException(status_code=409,
-                    detail="This lead has a visit that isn't marked complete yet — complete it before booking a revisit.")
+                    detail=f"This lead already has an upcoming visit to {clash[0] or 'this property'} — "
+                           "complete or cancel it before booking another one there.")
 
     log.info("book: user=%s smid=%s (accompanying=%s) n=%s date=%s slot=%s",
              user.get("email"), smid, req.rm_accompanying, len(req.visits), req.selected_date, req.selected_time)
@@ -176,17 +186,23 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     await conn.execute(
                         pg_insert(CrmVisit).values(rows).on_conflict_do_nothing(index_elements=["visit_id"])
                     )
-                    # A real booking is the ONLY thing that schedules a visit. The first
-                    # booking → visit_scheduled (Visited Leads). Booking again on a lead
-                    # that's already visited = a revisit → revisit_scheduled (Pipeline
-                    # Leads). Forward-only: terminal / already-in-pipeline leads are kept.
+                    # A real booking is the ONLY thing that schedules a visit.
+                    # ⚠️ A REVISIT is the same buyer returning to the SAME property — not
+                    # simply a lead with more than one visit. A lead touring three
+                    # different societies has three first visits, so it stays
+                    # visit_scheduled; going back to one it has already seen is what
+                    # makes it revisit_scheduled (Pipeline Leads).
+                    is_revisit = any(r["home_id"] in seen_homes for r in rows)
+                    # Forward-only: terminal leads keep their stage, and a lead already in
+                    # the pipeline is never demoted back to visit_scheduled.
                     moved = (await conn.execute(text(
                         "UPDATE leads SET stage = CASE "
-                        "WHEN stage IN ('won','future_prospect','rejected','rnr','revisit_scheduled') THEN stage "
-                        "WHEN stage = 'visit_scheduled' THEN 'revisit_scheduled' "
+                        "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage "
+                        "WHEN :is_revisit THEN 'revisit_scheduled' "
+                        "WHEN stage = 'revisit_scheduled' THEN stage "
                         "ELSE 'visit_scheduled' END WHERE id = :id "
                         "RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"),
-                        {"id": req.lead_id})).first()
+                        {"id": req.lead_id, "is_revisit": is_revisit})).first()
 
                     actor = activity.Actor.of(user)
                     events = [activity.row_for(
@@ -208,3 +224,207 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                 log.exception("failed to persist booked visits (booking itself succeeded)")
 
     return {"booked": booked, "failed": len(results) - booked, "results": results}
+
+
+# --- manage visits: one visit at a time -------------------------------------------
+# Cancel / complete / reschedule / revisit. Each mirrors the Core call into crm_visits
+# so the lead's visit list stays true without waiting for the next sheet sync.
+
+
+class SlotIn(BaseModel):
+    selected_date: str
+    selected_time: str
+
+
+class CompleteIn(BaseModel):
+    sales_feedback: str = ""
+    lead_status: str | None = None
+    # the six sm_demand_feedback keys; blank answers are dropped by the service
+    sm_feedback: dict[str, str] | None = None
+
+
+async def _visit_row(visit_id: int) -> dict | None:
+    """Our crm_visits row for a Core visit id."""
+    engine = neon_engine()
+    if engine is None:
+        return None
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(
+            "SELECT lead_id, home_id, society, city, status, buyer_name, buyer_mobile, "
+            "selected_date, selected_time, smid, rm_accompanying, source "
+            "FROM crm_visits WHERE visit_id = :v"), {"v": visit_id})).mappings().first()
+    return dict(row) if row else None
+
+
+def _require_booking_configured() -> None:
+    if not get_settings().crm_booking_configured:
+        raise HTTPException(status_code=503,
+            detail="Visit booking isn't configured yet (CRM_BOOKING_API_BASE_URL / CRM_API_KEY).")
+
+
+async def _known_visit(visit_id: int) -> dict:
+    _require_booking_configured()
+    row = await _visit_row(visit_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="We have no record of that visit.")
+    return row
+
+
+async def _apply(visit_id: int, sets: str, params: dict, events: list) -> None:
+    """Mirror a Core change into crm_visits and log it. Fail-soft: the Core call already
+    succeeded, and losing our copy must not report the whole action as failed — the sheet
+    sync reconciles it within 30 minutes either way."""
+    try:
+        engine = neon_engine()
+        async with engine.begin() as conn:
+            await conn.execute(text(f"UPDATE crm_visits SET {sets} WHERE visit_id = :v"),
+                               {"v": visit_id, **params})
+            if events:
+                await activity.record(conn, events)
+    except Exception:  # noqa: BLE001
+        log.exception("visit %s: Core updated but our copy didn't", visit_id)
+
+
+@router.post("/visits/{visit_id}/cancel")
+async def cancel(visit_id: int, user: dict = Depends(current_user)):
+    """Cancel an upcoming visit on Core. The lead's stage is left alone — stage moves are
+    forward-only, and a cancelled visit doesn't un-happen the ones before it."""
+    row = await _known_visit(visit_id)
+    from ..services.crm_booking import cancel_visit
+
+    res = await cancel_visit(visit_id)
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+
+    events = []
+    if row["lead_id"]:
+        events.append(activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=row["lead_id"],
+            action="visit_cancelled",
+            metadata={"visit_id": visit_id, "society": row["society"]}))
+    await _apply(visit_id, "status = 'cancelled', synced_at = now()", {}, events)
+    log.info("cancel visit=%s by=%s", visit_id, user.get("email"))
+    return {"ok": True, "visit_id": visit_id, "status": "cancelled"}
+
+
+@router.post("/visits/{visit_id}/complete")
+async def complete(visit_id: int, req: CompleteIn, user: dict = Depends(current_user)):
+    """Mark a visit completed on Core, with the SM's feedback form."""
+    row = await _known_visit(visit_id)
+    from ..services.crm_booking import LEAD_STATUS_VALUES, complete_visit
+
+    if req.lead_status and req.lead_status not in LEAD_STATUS_VALUES:
+        raise HTTPException(status_code=400,
+            detail=f"Invalid lead status. Use one of: {', '.join(LEAD_STATUS_VALUES)}")
+
+    res = await complete_visit(visit_id, req.sales_feedback, req.lead_status, req.sm_feedback)
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+
+    events = []
+    if row["lead_id"]:
+        events.append(activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=row["lead_id"],
+            action="visit_completed",
+            metadata={"visit_id": visit_id, "society": row["society"],
+                      "lead_status": req.lead_status}))
+    # visit_date is Core's — it stamps the day the visit was marked done
+    await _apply(visit_id,
+                 "status = 'completed', sales_feedback = :f, "
+                 "visit_date = coalesce(:d, visit_date), synced_at = now()",
+                 {"f": req.sales_feedback or None,
+                  "d": (res.get("visit") or {}).get("visitDate")}, events)
+    log.info("complete visit=%s lead_status=%s by=%s", visit_id, req.lead_status, user.get("email"))
+    return {"ok": True, "visit_id": visit_id, "status": "completed"}
+
+
+@router.post("/visits/{visit_id}/reschedule")
+async def reschedule(visit_id: int, req: SlotIn, user: dict = Depends(current_user)):
+    """Move an upcoming visit to a new slot. Same visit id, so nothing about the lead's
+    history changes — only when they're going."""
+    row = await _known_visit(visit_id)
+    from ..services.crm_booking import SLOT_VALUES, reschedule_visit
+
+    if req.selected_time not in SLOT_VALUES:
+        raise HTTPException(status_code=400, detail=f"Invalid time slot. Use one of: {', '.join(SLOT_VALUES)}")
+
+    res = await reschedule_visit(visit_id, req.selected_date, req.selected_time)
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+
+    events = []
+    if row["lead_id"]:
+        events.append(activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=row["lead_id"],
+            action="visit_rescheduled",
+            before=f"{row['selected_date']} {row['selected_time']}",
+            after=f"{req.selected_date} {req.selected_time}",
+            metadata={"visit_id": visit_id, "society": row["society"]}))
+    await _apply(visit_id, "selected_date = :d, selected_time = :t, status = 'upcoming', synced_at = now()",
+                 {"d": req.selected_date, "t": req.selected_time}, events)
+    log.info("reschedule visit=%s -> %s %s by=%s", visit_id, req.selected_date, req.selected_time, user.get("email"))
+    return {"ok": True, "visit_id": visit_id, "selected_date": req.selected_date,
+            "selected_time": req.selected_time}
+
+
+@router.post("/visits/{visit_id}/revisit")
+async def revisit(visit_id: int, req: SlotIn, user: dict = Depends(current_user)):
+    """Book the same buyer back into the SAME property — a new visit cloned from this
+    completed one. Core copies the buyer, home, broker and sales manager, and returns a
+    NEW visit id, so this always moves the lead to revisit_scheduled."""
+    row = await _known_visit(visit_id)
+    from ..services.crm_booking import SLOT_VALUES, create_revisit
+
+    if req.selected_time not in SLOT_VALUES:
+        raise HTTPException(status_code=400, detail=f"Invalid time slot. Use one of: {', '.join(SLOT_VALUES)}")
+
+    res = await create_revisit(visit_id, req.selected_date, req.selected_time)
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+    new_id = (res.get("visit") or {}).get("id")
+    if not new_id:
+        raise HTTPException(status_code=502, detail="Openhouse accepted the revisit but returned no visit id.")
+
+    # Same property by definition, so this row is a copy of the original with the new
+    # id and slot. Fail-soft for the same reason as _apply.
+    try:
+        engine = neon_engine()
+        async with engine.begin() as conn:
+            await conn.execute(pg_insert(CrmVisit).values([{
+                "lead_id": row["lead_id"], "visit_id": new_id, "home_id": row["home_id"],
+                "society": row["society"], "city": row["city"],
+                "buyer_name": row["buyer_name"], "buyer_mobile": row["buyer_mobile"],
+                "selected_date": req.selected_date, "selected_time": req.selected_time,
+                "source": row["source"], "smid": row["smid"],
+                "rm_accompanying": row["rm_accompanying"],
+                "status": "upcoming", "booked_by": user.get("email"),
+            }]).on_conflict_do_nothing(index_elements=["visit_id"]))
+
+            events = []
+            if row["lead_id"]:
+                actor = activity.Actor.of(user)
+                events.append(activity.row_for(
+                    actor, entity_type="lead", entity_id=row["lead_id"],
+                    action="visit_booked",
+                    metadata={"visits": 1, "revisit_of": visit_id, "visit_id": new_id,
+                              "society": row["society"]}))
+                moved = (await conn.execute(text(
+                    "UPDATE leads SET stage = CASE "
+                    "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage "
+                    "ELSE 'revisit_scheduled' END WHERE id = :id "
+                    "RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"),
+                    {"id": row["lead_id"]})).first()
+                if moved and moved[0] != moved[1]:
+                    events.append(activity.row_for(
+                        actor, entity_type="lead", entity_id=row["lead_id"],
+                        action="stage_change", field="stage", before=moved[0], after=moved[1],
+                        metadata={"via": "revisit"}))
+            if events:
+                await activity.record(conn, events)
+    except Exception:  # noqa: BLE001
+        log.exception("revisit %s->%s: Core booked it but our copy didn't", visit_id, new_id)
+
+    log.info("revisit visit=%s -> new=%s %s %s by=%s", visit_id, new_id,
+             req.selected_date, req.selected_time, user.get("email"))
+    return {"ok": True, "visit_id": new_id, "revisit_of": visit_id,
+            "selected_date": req.selected_date, "selected_time": req.selected_time}

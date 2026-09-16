@@ -25,6 +25,7 @@ import HuvoCallCard from "../components/HuvoCallCard";
 import { useDebounce } from "../lib/useDebounce";
 import { openInMaps } from "../lib/maps";
 import { VisitPlanner } from "../features/VisitPlanner";
+import ManageVisitsModal from "../features/ManageVisitsModal";
 import { StageChip } from "../components/StageChip";
 
 const PURPOSES = ["Self-use", "Investment"];
@@ -472,6 +473,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
   const formInPair = hasMetaForm && lead?.source === "meta" && mergedSources.length === 0;
   const confirm = useConfirmLead(id);
   const [planner, setPlanner] = useState(false);
+  const [managing, setManaging] = useState(false);
 
   const [purpose, setPurpose] = useState("");
   const [budgetMin, setBudgetMin] = useState("");
@@ -621,7 +623,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             <StageChip stage={lead.stage} />
             <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
               <AssignControl leadId={lead.id} assignedTo={lead.assigned_to} />
-              {!mobile && <button className="btn ghost sm" onClick={() => setPlanner(true)}><IconCalendar /> Plan visits</button>}
+              {!mobile && <button className="btn ghost sm" onClick={() => setManaging(true)}><IconCalendar /> Manage visits</button>}
             </span>
           </div>
           <div className="lead-modal-sub">
@@ -646,9 +648,18 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
         </div>
         <div className="lead-actions">
           {/* the planner is a wide drawer with a map — desktop only */}
-          {!mobile && <button className="btn ghost" onClick={() => setPlanner(true)}><IconCalendar /> Plan visits</button>}
+          {!mobile && <button className="btn ghost" onClick={() => setManaging(true)}><IconCalendar /> Manage visits</button>}
         </div>
       </div>
+      )}
+      {managing && (
+        <ManageVisitsModal
+          leadId={id}
+          leadName={lead.name}
+          /* "+ New visit" is a DIFFERENT property, which is the planner's job */
+          onNewVisit={() => { setManaging(false); setPlanner(true); }}
+          onClose={() => setManaging(false)}
+        />
       )}
       {planner && <VisitPlanner leadId={id} leadName={lead.name} leadCity={lead.city} leadPhone={lead.phone} onClose={() => setPlanner(false)} />}
 

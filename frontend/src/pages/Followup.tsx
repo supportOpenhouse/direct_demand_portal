@@ -76,9 +76,10 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     passExtras(l, f, skip) &&
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
-  /* Default order mirrors the row highlights, most-actionable first:
-       0 green    — moved into Follow-up today
-       1 blue     — follow-up due today
+  /* Most-actionable first. The row tints these used to mirror are gone, but the ORDER
+     still earns its keep — it is what puts today's work at the top:
+       0 moved into Follow-up today
+       1 follow-up due today
        2 overdue  — due before today, latest → oldest (freshest misses first)
        3 upcoming — due later, soonest first
      Picking a column header still overrides all of this. */
@@ -126,14 +127,6 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
       </TopbarSlot>
       <div className="section-head">
         <div>
-          <div style={{ display: "flex", gap: 14, alignItems: "center", fontSize: 11.5, color: "var(--muted)" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 22, height: 12, borderRadius: 3, background: "var(--emerald-soft)", border: "1px solid var(--emerald-soft-2)" }} /> moved here today
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <span style={{ width: 22, height: 12, borderRadius: 3, background: "var(--blue-soft)", border: "1px solid var(--blue-soft-2)" }} /> follow-up due today
-            </span>
-          </div>
         </div>
         </div>
 
@@ -191,12 +184,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
               </div></td></tr>
             ) : (
               pg.slice.map((l) => (
-                <tr
-                  key={l.id}
-                  /* green (arrived in Follow-up today) takes priority over blue (due today) */
-                  {...rowOpen(l.id)}
-                  className={"lead-row" + (isToday(l.follow_up_since) ? " fu-arrived" : isToday(l.follow_up_at) ? " fu-due" : "")}
-                >
+                <tr key={l.id} {...rowOpen(l.id)}>
                   {selectMode && (
                     <td onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={sel.has(l.id)} onChange={() => sel.toggle(l.id)} style={{ accentColor: "var(--emerald)", cursor: "pointer" }} />

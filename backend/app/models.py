@@ -394,6 +394,51 @@ class AppVisitData(Base):
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
+    # `data` projected into columns (scripts/15_app_visit_data_columns.sql). Filled on
+    # every refresh by services/app_visit_data._project — that mapping and this list are
+    # checked against each other by tests/test_app_visit_data.py.
+    status: Mapped[str | None] = mapped_column(Text)
+    lead_status: Mapped[str | None] = mapped_column(Text)
+    source: Mapped[str | None] = mapped_column(Text)
+    city: Mapped[str | None] = mapped_column(Text)
+    society_name: Mapped[str | None] = mapped_column(Text)
+    selected_date: Mapped[str | None] = mapped_column(Date)
+    selected_time: Mapped[str | None] = mapped_column(Text)
+    visit_date: Mapped[str | None] = mapped_column(Date)
+    crm_created_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    buyer_name: Mapped[str | None] = mapped_column(Text)
+    buyer_contact: Mapped[str | None] = mapped_column(Text)
+    buyer_registration_date: Mapped[str | None] = mapped_column(Date)
+    profession: Mapped[str | None] = mapped_column(Text)
+    buyer_feedback: Mapped[str | None] = mapped_column(Text)
+    sales_feedback: Mapped[str | None] = mapped_column(Text)
+    broker_name: Mapped[str | None] = mapped_column(Text)
+    broker_contact: Mapped[str | None] = mapped_column(Text)
+    broker_alt_contact: Mapped[str | None] = mapped_column(Text)
+    cp_code: Mapped[str | None] = mapped_column(Text)
+    company_name: Mapped[str | None] = mapped_column(Text)
+    sales_manager: Mapped[str | None] = mapped_column(Text)
+    sales_manager_id: Mapped[int | None] = mapped_column(Integer)
+    added_by: Mapped[str | None] = mapped_column(Text)
+    first_added_by: Mapped[str | None] = mapped_column(Text)
+    # Core's own home id — the same key crm_visits.home_id holds, NOT inventory_units.id
+    home_id: Mapped[int | None] = mapped_column(Integer)
+    floor: Mapped[int | None] = mapped_column(Integer)
+    furnishing_status: Mapped[str | None] = mapped_column(Text)
+    unit_address_line1: Mapped[str | None] = mapped_column(Text)
+    unit_address_line2: Mapped[str | None] = mapped_column(Text)
+    lead_key: Mapped[str | None] = mapped_column(Text)
+    lead_occurrence_count: Mapped[int | None] = mapped_column(Integer)
+    # demandSmFeedback's six fixed keys, flattened; all null when the SM left no feedback
+    sm_time_spent_on_site: Mapped[str | None] = mapped_column(Text)
+    sm_society_amenity_tour: Mapped[str | None] = mapped_column(Text)
+    sm_price_discussion: Mapped[str | None] = mapped_column(Text)
+    sm_client_queries: Mapped[str | None] = mapped_column(Text)
+    sm_closing_signal: Mapped[str | None] = mapped_column(Text)
+    sm_buyer_primary_concern: Mapped[str | None] = mapped_column(Text)
+    # a list, so it stays JSON
+    all_feedback: Mapped[list | None] = mapped_column(JSONB)
+
 
 class CrmVisit(Base):
     """A visit actually booked on the Openhouse app via POST /v1/visits/book.

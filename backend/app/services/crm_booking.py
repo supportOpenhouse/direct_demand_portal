@@ -26,7 +26,19 @@ BROKER_BY_CITY: dict[str, tuple[int, str]] = {
     "Ghaziabad": (1367, "Ghaziabad"),
 }
 DEFAULT_SOURCE = "direct"
-SLOT_VALUES = ["9-11 AM", "11-1 PM", "1-3 PM", "3-5 PM", "5-7 PM", "7-9 PM"]
+# ⚠️ Core stores selected_time as FREE TEXT and its duplicate-slot check is a plain string
+# compare, so "3-5 PM" and "3 - 5 PM" are two different slots to it. Prod carries both
+# (297 rows unspaced from our own booking, 75 spaced from the Openhouse app). These are
+# the SPACED forms the app and the API guide use — mirror in frontend/src/lib/slots.ts.
+SLOT_VALUES = ["9 - 11 AM", "11 - 1 PM", "1 - 3 PM", "3 - 5 PM", "5 - 7 PM", "7 - 9 PM"]
+
+# PUT /schedule-visits/{id}/ — the completion/cancellation contract.
+LEAD_STATUS_VALUES = ["hot", "warm", "cold", "future_prospect", "dead", "select_status"]
+# the six keys of sm_demand_feedback, in the order the form asks them
+SM_FEEDBACK_FIELDS = [
+    "time_spent_on_site", "society_amenity_tour", "price_discussion",
+    "client_queries", "closing_signal", "buyer_primary_concern",
+]
 
 
 def broker_for_city(city: str | None) -> tuple[int, str] | None:
@@ -178,3 +190,110 @@ async def book_visits(smid: int, selected_date: str, selected_time: str, source:
 
     # preserve the input order
     return [results[u["home_id"]] for u in units if u["home_id"] in results]
+
+
+# --- single-visit operations (manage visits) -------------------------------------
+# Four Core calls, one visit at a time. Each returns {status: ok|error, visit?|detail}
+# and never raises, matching book_visits' contract.
+#
+# ⚠️ PUT /schedule-visits/{id}/ WRITES selected_date/selected_time — it does not check
+# them. Cancelling visit 7595 with selected_date="1999-01-01" moved the visit to 1999
+# (verified on staging). So complete/cancel must echo the visit's CURRENT stored slot
+# back verbatim, never a normalised or remembered one — which is why both read the visit
+# first instead of trusting what the caller passed in.
+
+
+async def fetch_visit(visit_id: int) -> dict:
+    """The visit as Core holds it right now. {status, visit?|detail}."""
+    async with _client() as client:
+        return await _fetch_visit(client, visit_id)
+
+
+async def _fetch_visit(client: httpx.AsyncClient, visit_id: int) -> dict:
+    try:
+        r = await client.get("crm/visits/", params={"ids": str(visit_id)})
+    except httpx.HTTPError as e:
+        log.warning("fetch-visit %s NETWORK %s", visit_id, e)
+        return {"status": "error", "detail": "Couldn't reach the booking service"}
+    if r.status_code >= 400:
+        return {"status": "error", "detail": _err_text(r)}
+    visits = r.json().get("visits") or []
+    if not visits:
+        return {"status": "error", "detail": f"Visit {visit_id} not found on Openhouse"}
+    return {"status": "ok", "visit": visits[0]}
+
+
+async def _put_status(visit_id: int, status: str, extra: dict | None = None) -> dict:
+    """Complete or cancel, echoing the visit's own date/time back. {status, visit?|detail}."""
+    async with _client() as client:
+        got = await _fetch_visit(client, visit_id)
+        if got["status"] == "error":
+            return got
+        v = got["visit"]
+        body = {
+            "selected_date": v.get("selectedDate"),
+            "selected_time": v.get("selectedTime"),
+            "status": status,
+            **(extra or {}),
+        }
+        try:
+            r = await client.put(f"schedule-visits/{visit_id}/", json=body)
+        except httpx.HTTPError as e:
+            log.warning("%s visit=%s NETWORK %s", status, visit_id, e)
+            return {"status": "error", "detail": "Couldn't reach the booking service"}
+    log.info("%s visit=%s -> %s", status, visit_id, r.status_code)
+    if r.status_code >= 400:
+        return {"status": "error", "detail": _err_text(r)}
+    return {"status": "ok", "visit": r.json()}
+
+
+async def cancel_visit(visit_id: int) -> dict:
+    """Cancel an upcoming visit. Core stamps platform='crm'."""
+    return await _put_status(visit_id, "cancelled")
+
+
+async def complete_visit(
+    visit_id: int,
+    sales_feedback: str,
+    lead_status: str | None = None,
+    sm_feedback: dict | None = None,
+) -> dict:
+    """Mark a visit completed. With lead_status + sm_feedback this is the ASSISTED path
+    (the SM filled the form); with sales_feedback alone it's the OTP path. Core picks the
+    path from the payload, so the keys are omitted entirely rather than sent as null."""
+    extra: dict = {"sales_feedback": sales_feedback}
+    if lead_status:
+        extra["lead_status"] = lead_status
+    clean = {k: v for k, v in (sm_feedback or {}).items() if k in SM_FEEDBACK_FIELDS and v}
+    if clean:
+        extra["sm_demand_feedback"] = clean
+    return await _put_status(visit_id, "completed", extra)
+
+
+async def reschedule_visit(visit_id: int, selected_date: str, selected_time: str) -> dict:
+    """Move an UPCOMING visit to a new slot. Same visit id; SM unchanged."""
+    return await _post_slot("crm/reschedule-visits/", visit_id, selected_date, selected_time)
+
+
+async def create_revisit(visit_id: int, selected_date: str, selected_time: str) -> dict:
+    """Clone a COMPLETED visit into a new upcoming one — same buyer, same home, new id.
+    Core copies the original's sales manager."""
+    return await _post_slot("crm/revisit-visits/", visit_id, selected_date, selected_time)
+
+
+async def _post_slot(path: str, visit_id: int, selected_date: str, selected_time: str) -> dict:
+    body = {"visit_id": visit_id, "selected_date": selected_date, "selected_time": selected_time}
+    async with _client() as client:
+        try:
+            r = await client.post(path, json=body)
+        except httpx.HTTPError as e:
+            log.warning("%s visit=%s NETWORK %s", path, visit_id, e)
+            return {"status": "error", "detail": "Couldn't reach the booking service"}
+    log.info("%s visit=%s date=%s slot=%s -> %s", path, visit_id, selected_date, selected_time, r.status_code)
+    if r.status_code == 404 and "html" in r.headers.get("content-type", "").lower():
+        # a route-level 404 (HTML), not "visit not found" (JSON) — this Core build
+        # predates the endpoint. Prod answered exactly this before the release landed.
+        return {"status": "error", "detail": "This isn't available on Openhouse Core yet."}
+    if r.status_code >= 400:
+        return {"status": "error", "detail": _err_text(r)}
+    return {"status": "ok", "visit": r.json()}

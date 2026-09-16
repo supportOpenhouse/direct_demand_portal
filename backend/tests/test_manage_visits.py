@@ -1,0 +1,134 @@
+"""Manage visits: the slot-string contract, the two completion paths, and the rule that
+decides what counts as a revisit. No DB and no network — these assert the rules the code
+encodes, per tests/test_wa_assign.py."""
+import ast
+import inspect
+import re
+from pathlib import Path
+
+from app.routers import visits as visits_router
+from app.services.crm_booking import LEAD_STATUS_VALUES, SLOT_VALUES, SM_FEEDBACK_FIELDS
+
+FRONTEND = Path(__file__).parents[2] / "frontend" / "src"
+
+
+def test_slots_are_the_spaced_form_core_uses():
+    """Core stores selected_time as free text and compares slots as STRINGS, so
+    "3-5 PM" and "3 - 5 PM" are two different slots to it — the unspaced form silently
+    defeats its duplicate-visit check. The API guide and the Openhouse app both space it."""
+    assert SLOT_VALUES == ["9 - 11 AM", "11 - 1 PM", "1 - 3 PM", "3 - 5 PM", "5 - 7 PM", "7 - 9 PM"]
+    assert all(" - " in s for s in SLOT_VALUES), "a slot without spaces is a different slot to Core"
+
+
+def test_the_frontend_sends_exactly_the_slots_the_backend_accepts():
+    """lib/slots.ts is a hand-kept mirror of SLOT_VALUES and the booking endpoints reject
+    anything not in the list — so a drift here is a 400 on every booking, from the only
+    UI that books."""
+    ts = (FRONTEND / "lib" / "slots.ts").read_text()
+    block = ts.split("export const SLOTS", 1)[1].split("];", 1)[0]
+    labels = re.findall(r'label:\s*"([^"]+)"', block)
+    assert labels == SLOT_VALUES, f"slots.ts and crm_booking.py disagree: {labels} vs {SLOT_VALUES}"
+
+
+def test_completion_omits_the_assisted_keys_when_they_are_not_given():
+    """Core picks the OTP vs assisted path from WHICH KEYS are present, so sending
+    lead_status=None / sm_demand_feedback={} would claim a feedback form was filled in
+    when it wasn't."""
+    src = inspect.getsource(__import__("app.services.crm_booking", fromlist=["x"]).complete_visit)
+    assert 'if lead_status:' in src, "lead_status must be added conditionally, not always"
+    assert re.search(r"if clean:", src), "sm_demand_feedback must be omitted when every answer is blank"
+    # and blank answers are dropped rather than sent as ""
+    assert "if k in SM_FEEDBACK_FIELDS and v" in src
+
+
+def test_complete_and_cancel_echo_the_visits_own_slot():
+    """⚠️ PUT /schedule-visits/{id}/ WRITES selected_date/selected_time — it does not
+    check them. Cancelling with a wrong date MOVES the visit (verified on staging: 7595
+    landed on 1999-01-01). So the payload must come from a fresh read of the visit, never
+    from the caller."""
+    src = inspect.getsource(__import__("app.services.crm_booking", fromlist=["x"])._put_status)
+    assert "_fetch_visit(client, visit_id)" in src, "must read the visit before writing it"
+    assert 'v.get("selectedDate")' in src and 'v.get("selectedTime")' in src
+    sig = inspect.signature(__import__("app.services.crm_booking", fromlist=["x"])._put_status)
+    assert "selected_date" not in sig.parameters, "the caller must not be able to supply the slot"
+
+
+def test_a_revisit_is_the_same_property_not_just_another_visit():
+    """The definition that drives the stage: a buyer touring three different societies has
+    three first visits and stays visit_scheduled; going back to one they have already seen
+    is what makes it revisit_scheduled."""
+    src = inspect.getsource(visits_router.book)
+    assert "seen_homes" in src, "the revisit test must be against homes already visited"
+    assert 'r["home_id"] in seen_homes' in src
+    # the old rule — any second booking on the lead — must be gone
+    assert "WHEN stage = 'visit_scheduled' THEN 'revisit_scheduled'" not in src, \
+        "that is the OLD rule: it made every second visit a revisit, whatever the property"
+
+
+def test_stage_moves_stay_forward_only():
+    """Terminal leads keep their stage, and a lead already in the pipeline is never
+    demoted back to visit_scheduled by a booking for a new property."""
+    for fn in (visits_router.book, visits_router.revisit):
+        src = inspect.getsource(fn)
+        assert "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage" in src
+    assert "WHEN stage = 'revisit_scheduled' THEN stage" in inspect.getsource(visits_router.book)
+
+
+def test_cancelling_a_visit_does_not_touch_the_lead_stage():
+    """A cancelled visit doesn't un-happen the ones before it, and stage writes are
+    forward-only everywhere else — rolling one back here would be the one exception."""
+    src = inspect.getsource(visits_router.cancel)
+    assert "UPDATE leads" not in src
+
+
+def test_every_manage_action_records_what_it_did():
+    """Reports derive entirely from activity_log, so an action with no event is invisible
+    there — which is exactly how bulk WhatsApp lead creation went unnoticed."""
+    actions = {
+        visits_router.cancel: "visit_cancelled",
+        visits_router.complete: "visit_completed",
+        visits_router.reschedule: "visit_rescheduled",
+        visits_router.revisit: "visit_booked",
+    }
+    for fn, action in actions.items():
+        assert f'action="{action}"' in inspect.getsource(fn), f"{fn.__name__} logs nothing"
+
+
+def test_the_feedback_form_matches_core_field_for_field():
+    """The six sm_demand_feedback keys and the lead_status values are Core's, not ours —
+    a key it doesn't know is dropped silently, so the answer would just vanish."""
+    assert SM_FEEDBACK_FIELDS == [
+        "time_spent_on_site", "society_amenity_tour", "price_discussion",
+        "client_queries", "closing_signal", "buyer_primary_concern",
+    ]
+    assert LEAD_STATUS_VALUES == ["hot", "warm", "cold", "future_prospect", "dead", "select_status"]
+
+    ts = (FRONTEND / "lib" / "api.ts").read_text()
+    block = ts.split("SM_FEEDBACK_QUESTIONS", 1)[1].split("];", 1)[0]
+    assert re.findall(r'key:\s*"([^"]+)"', block) == SM_FEEDBACK_FIELDS, "the form asks different questions"
+    statuses = ts.split("VISIT_LEAD_STATUS = [", 1)[1].split("]", 1)[0]
+    assert re.findall(r'"([^"]+)"', statuses) == LEAD_STATUS_VALUES
+
+
+def test_a_dead_core_route_reads_as_not_available_yet():
+    """Prod answered an HTML 404 for reschedule-visits/ before Core deployed the release,
+    while a JSON 404 means the VISIT wasn't found. Same status code, opposite meanings —
+    telling an RM "visit not found" when the endpoint simply isn't live is a bug hunt."""
+    src = inspect.getsource(__import__("app.services.crm_booking", fromlist=["x"])._post_slot)
+    assert 'r.status_code == 404 and "html" in' in src
+    assert "isn't available on Openhouse Core yet" in src
+
+
+def test_the_manage_endpoints_are_mounted():
+    routes = {r.path for r in visits_router.router.routes}
+    for p in ("/visits/{visit_id}/cancel", "/visits/{visit_id}/complete",
+              "/visits/{visit_id}/reschedule", "/visits/{visit_id}/revisit"):
+        assert p in routes, f"{p} is not registered"
+
+
+def test_no_module_parses_the_frontend_slot_list_at_runtime():
+    """These mirrors are checked HERE, in a test. Reading slots.ts from the app at runtime
+    would make the API depend on the frontend source tree being deployed beside it."""
+    for py in (Path(__file__).parents[1] / "app").rglob("*.py"):
+        tree = ast.parse(py.read_text())
+        assert "slots.ts" not in ast.dump(tree), f"{py.name} reads the frontend source"

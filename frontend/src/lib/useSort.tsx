@@ -27,11 +27,20 @@ export function useSort<T>(items: T[], accessors: Record<string, Accessor<T>>, i
     });
   }, [items, key, dir, accessors]);
 
+  /* Three clicks, then back where you started: asc → desc → the page's own order.
+     Two-state (asc ⇄ desc forever) left no way back to the default ordering — New
+     Leads' NEW-first grouping or Follow-up's due-date ranking — short of reloading.
+     "Default" is the initial key if the page gave one, otherwise no sort at all, which
+     hands `items` through untouched in whatever order the page built them. */
   const onSort = (k: string) => {
-    if (key === k) setDir(dir === "asc" ? "desc" : "asc");
-    else {
+    if (key !== k) {
       setKey(k);
       setDir("asc");
+    } else if (dir === "asc") {
+      setDir("desc");
+    } else {
+      setKey(initialKey ?? null);
+      setDir(initialDir);
     }
   };
 
@@ -60,7 +69,7 @@ export function SortTh({
     <th
       onClick={() => onSort(sortKey)}
       style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", textAlign: align, ...style }}
-      title="Click to sort"
+      title={!active ? "Sort ascending" : dir === "asc" ? "Sort descending" : "Back to default order"}
     >
       {label}
       {/* Was fontSize 9 + opacity .25: icons size to 1em, so that drew a 9px chevron at a

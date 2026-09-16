@@ -4,24 +4,26 @@
    exactly one of them and there has never been a single place to see the whole book.
    This is that place — read-only triage, not a replacement for the worklists. */
 import { useMemo, useState } from "react";
-import { formatDateTime, useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
-import { LEAD_SEGMENTS, isNewToday, leadMatchesQuery, newFirst, segHue, sourcesLabel, stageLabel } from "../lib/leads";
+import { useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
+import { LEAD_SEGMENTS, leadMatchesQuery, newFirst, segHue } from "../lib/leads";
 import { matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras, sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { useFilterValues } from "../components/FilterBar";
 import { LeadToolbar, cityMatches } from "../components/LeadToolbar";
-import { Skeleton, SkeletonTable } from "../components/Skeleton";
-import { useSort, SortTh } from "../lib/useSort";
-import { CallButton } from "../components/CallButton";
-import LeadPhone from "../components/LeadPhone";
+import { Skeleton } from "../components/Skeleton";
+import { useSort } from "../lib/useSort";
 import { ExportCsvButton } from "../components/ExportCsvButton";
 import type { Lead } from "../lib/api";
 import { useRowOpen } from "../components/LeadModal";
 import { TopbarSlot } from "../components/TopbarSlot";
 import { Pager, usePaging } from "../components/Pager";
-import { StageChip } from "../components/StageChip";
-import { ArrivalCount, NewBadge, SourceChips } from "../components/StageChip";
+import { LeadTable } from "../features/leadTable/LeadTable";
+import { LEAD_SORTERS } from "../features/leadTable/columns";
+import { useLeadColumns } from "../features/leadTable/ColumnSettings";
 
+
+/** This page's original columns, in their original order — what Reset returns to. */
+const ALL_LEADS_COLS = ["name", "phone", "source", "stage", "city", "society", "assigned", "created", "activity"];
 
 export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode }) {
   const { leads, isLoading } = useAllLeads(true);
@@ -57,17 +59,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [all, f, q, cityTab]);
 
-  const { sorted: sortedRows, sortKey, dir, onSort } = useSort(filtered, {
-    name: (l) => l.name,
-    phone: (l) => l.phone,
-    source: (l) => sourcesLabel(l),
-    stage: (l) => stageLabel(l.stage),
-    city: (l) => l.city,
-    society: (l) => l.society,
-    assigned: (l) => l.assigned_to,
-    created: (l) => (l.received_at ? Date.parse(l.received_at) : null),
-    activity: (l) => (l.latest_activity_at ? Date.parse(l.latest_activity_at) : null),
-  });
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort(filtered, LEAD_SORTERS);
 
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -79,11 +71,13 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
   const assignees = useAssignees();
   const societies = useAllSocieties();
   const pg = usePaging(list);
+  const columns = useLeadColumns("all-leads", ALL_LEADS_COLS, "All Leads");
 
   return (
     <>
       {/* Page actions live in the topbar strip, not in the toolbar. */}
-      <TopbarSlot><ExportCsvButton leads={list} name="all-leads" /></TopbarSlot>
+      <TopbarSlot>{columns.button}<ExportCsvButton leads={list} name="all-leads" /></TopbarSlot>
+      {columns.modal}
 
       <LeadToolbar
         city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
@@ -132,58 +126,12 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
 
       <div className="card">
         <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <SortTh label="Lead" sortKey="name" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 230 }} />
-              <SortTh label="Phone" sortKey="phone" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Source" sortKey="source" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Stage" sortKey="stage" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Society" sortKey="society" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Assigned To" sortKey="assigned" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Received" sortKey="created" activeKey={sortKey} dir={dir} onSort={onSort} />
-              <SortTh label="Latest activity" sortKey="activity" activeKey={sortKey} dir={dir} onSort={onSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading ? (
-              <SkeletonTable rows={10} cols={9} />
-            ) : list.length === 0 ? (
-              <tr><td colSpan={9}><div className="empty" style={{ padding: 30 }}>
-                {all.length === 0 ? "No leads yet." : "No leads match the filters."}
-              </div></td></tr>
-            ) : (
-              pg.slice.map((l) => (
-                <tr key={l.id} {...rowOpen(l.id)}>
-                  <td className="lead-cell" title={l.name ?? ""}>
-                                            <div className="nm">
-                          {isNewToday(l) && <NewBadge size={18} style={{ marginRight: 6 }} />}
-                          {l.name}<ArrivalCount lead={l} />
-                        </div>
-                  </td>
-                  <td className="ph-cell" onClick={(e) => e.stopPropagation()}>
-                    <div className="phone-cell">
-                      <CallButton leadId={l.id} disabled={!l.phone} />
-                      <LeadPhone phone={l.phone} missCount={l.miss_count} />
-                    </div>
-                  </td>
-                  <td className="cell-tight"><SourceChips lead={l} /></td>
-                  <td className="cell-tight"><StageChip stage={l.stage} /></td>
-                  <td className="cell-tight">{l.city || <span style={{ color: "var(--muted)" }}>—</span>}</td>
-                  <td className="cell-text" title={l.society || ""}><span>{l.society || "—"}</span></td>
-                  <td>{l.assigned_to || <span style={{ color: "var(--muted)" }}>Unassigned</span>}</td>
-                  <td style={{ whiteSpace: "nowrap", fontFamily: "var(--font-mono)", fontSize: 12 }}>
-                    {l.received_at ? new Date(l.received_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short" }) : "—"}
-                  </td>
-                  <td className="cell-tight" style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--muted)" }}>
-                    {l.latest_activity_at ? formatDateTime(l.latest_activity_at) : "—"}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-          </table>
+        <LeadTable
+          cols={columns.cols} rows={pg.slice} ctx={{ assignReadOnly: true }}
+          sortKey={sortKey} dir={dir} onSort={onSort}
+          isLoading={isLoading} skeletonRows={10} rowProps={rowOpen}
+          empty={all.length === 0 ? "No leads yet." : "No leads match the filters."}
+        />
         </div>
       </div>
     </>

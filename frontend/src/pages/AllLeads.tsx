@@ -17,6 +17,8 @@ import type { Lead } from "../lib/api";
 import { useRowOpen } from "../components/LeadModal";
 import { TopbarSlot } from "../components/TopbarSlot";
 import { Pager, usePaging } from "../components/Pager";
+import { useRowSelection } from "../lib/useRowSelection";
+import { BulkAssignBar } from "../components/BulkAssignBar";
 import { LeadTable } from "../features/leadTable/LeadTable";
 import { LEAD_SORTERS } from "../features/leadTable/columns";
 import { useLeadColumns } from "../features/leadTable/ColumnSettings";
@@ -71,6 +73,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
   const assignees = useAssignees();
   const societies = useAllSocieties();
   const pg = usePaging(list);
+  const sel = useRowSelection(list.map((l) => l.id));
   const columns = useLeadColumns("all-leads", ALL_LEADS_COLS, "All Leads");
 
   return (
@@ -121,14 +124,21 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
       </div>
 
       {/* Same reason as the boxes: "of N" climbed while segments were still arriving. */}
+      {selectMode && (
+        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />
+      )}
+
       {!isLoading && <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}
-        sizeChoice={pg.sizeChoice} onSize={pg.setSize} />}
+        sizeChoice={pg.sizeChoice} onSize={pg.setSize}
+        select={{ on: selectMode, onToggle: () => setSelectMode((v) => !v),
+                  total: sel.visibleCount, onPick: sel.selectFirst }} />}
 
       <div className="card">
         <div className="table-wrap">
         <LeadTable
           cols={columns.cols} rows={pg.slice} ctx={{ assignReadOnly: true }}
           sortKey={sortKey} dir={dir} onSort={onSort}
+          selectMode={selectMode} sel={sel}
           isLoading={isLoading} skeletonRows={10} rowProps={rowOpen}
           empty={all.length === 0 ? "No leads yet." : "No leads match the filters."}
         />

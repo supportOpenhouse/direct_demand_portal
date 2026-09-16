@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AppSettings, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
+import { api, AppSettings, BookRequest, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -776,3 +776,24 @@ export function useRevisitVisit(leadId?: string) {
 }
 
 interface Slotted { visitId: number; date: string; time: string }
+
+/* Re-book a property whose visit was cancelled. Not a Core "revisit" — that endpoint
+   only clones a COMPLETED visit, and a cancelled one never happened. It goes through the
+   ordinary booking path with the details we stored on the cancelled row, so the buyer
+   check, the CP lookup and the SMID attribution all run exactly as they do for any
+   first-time booking. */
+export function useRebookProperty(leadId?: string) {
+  return useVisitAction((p: BookRequest) => api.bookVisits(p), leadId);
+}
+
+/* One visit's full record — fetched only when its card is expanded. The payload carries
+   every Core column, so pulling it for each row up-front would cost a request per visit
+   to render a list nobody has opened yet. */
+export function useVisitDetails(visitId: number | null) {
+  return useQuery({
+    queryKey: ["visit-details", visitId],
+    queryFn: () => api.visitDetails(visitId as number),
+    enabled: visitId != null,
+    staleTime: 30_000,
+  });
+}

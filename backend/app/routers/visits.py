@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..core.auth import current_user
 from ..db import neon_engine
-from ..models import CrmVisit
+from ..models import AppVisitData, CrmVisit
 from ..services import activity
 from ..services.crm_booking import BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits
 
@@ -147,9 +147,12 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     "SELECT society FROM crm_visits WHERE lead_id = :id AND status = 'upcoming' "
                     "AND home_id = ANY(:homes) LIMIT 1"),
                     {"id": req.lead_id, "homes": homes})).first()
-                # every property this lead has EVER had a visit to — decides revisit below
+                # every property this lead has actually been to (or is going to) — decides
+                # revisit below. ⚠️ Cancelled visits are excluded: the buyer never went,
+                # so re-booking that property is their FIRST visit to it, not a revisit.
                 seen_homes = {r[0] for r in (await conn.execute(text(
-                    "SELECT DISTINCT home_id FROM crm_visits WHERE lead_id = :id AND home_id IS NOT NULL"),
+                    "SELECT DISTINCT home_id FROM crm_visits "
+                    "WHERE lead_id = :id AND home_id IS NOT NULL AND status <> 'cancelled'"),
                     {"id": req.lead_id})).all()}
             if clash:
                 raise HTTPException(status_code=409,
@@ -428,3 +431,45 @@ async def revisit(visit_id: int, req: SlotIn, user: dict = Depends(current_user)
              req.selected_date, req.selected_time, user.get("email"))
     return {"ok": True, "visit_id": new_id, "revisit_of": visit_id,
             "selected_date": req.selected_date, "selected_time": req.selected_time}
+
+
+# --- one visit, everything Core holds about it -------------------------------------
+
+# Built FROM THE MODEL, so a column added to app_visit_data appears here automatically and
+# HIDDEN_FIELDS is applied BY CONSTRUCTION — the alternative is a hand-written SELECT that
+# has to remember to leave five names out, which is exactly the kind of list that rots.
+def _detail_columns() -> list[str]:
+    from ..services.app_visit_data import HIDDEN_FIELDS
+
+    skip = set(HIDDEN_FIELDS) | {"visit_id", "found", "data", "crm_updated_at", "fetched_at"}
+    return [c for c in AppVisitData.__table__.columns.keys() if c not in skip]
+
+
+@router.get("/visits/{visit_id}/details")
+async def visit_details(visit_id: int):
+    """Everything Core holds about one visit — the expanded card in Manage visits.
+
+    Two sources, deliberately kept apart in the response:
+      * `core`    — Openhouse's own record (app_visit_data). Null until that visit has
+                    been pulled; a visit booked a minute ago has none, because the fill is
+                    a manual script with no cron behind it.
+      * `booking` — ours, from crm_visits. Always there, because we wrote it when we
+                    booked. It's also the only place the booker and accompanying RM live.
+    """
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    cols = _detail_columns()
+    async with engine.connect() as conn:
+        booking = (await conn.execute(text(
+            "SELECT society, city, selected_date, selected_time, status, visit_date, "
+            "buyer_name, buyer_mobile, sales_feedback, buyer_feedback, booked_by, "
+            "rm_accompanying, source, home_id FROM crm_visits WHERE visit_id = :v"),
+            {"v": visit_id})).mappings().first()
+        if booking is None:
+            raise HTTPException(status_code=404, detail="We have no record of that visit.")
+        core = (await conn.execute(text(
+            f"SELECT {', '.join(cols)} FROM app_visit_data WHERE visit_id = :v AND found"),
+            {"v": visit_id})).mappings().first()
+    return {"visit_id": visit_id, "booking": dict(booking),
+            "core": dict(core) if core else None}

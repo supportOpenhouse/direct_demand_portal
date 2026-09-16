@@ -132,3 +132,81 @@ def test_no_module_parses_the_frontend_slot_list_at_runtime():
     for py in (Path(__file__).parents[1] / "app").rglob("*.py"):
         tree = ast.parse(py.read_text())
         assert "slots.ts" not in ast.dump(tree), f"{py.name} reads the frontend source"
+
+
+def test_a_cancelled_visit_does_not_make_the_next_one_a_revisit():
+    """A cancelled visit never happened, so re-booking that property is the buyer's FIRST
+    visit to it. Counting it as a revisit would push the lead into Pipeline Leads off a
+    visit nobody attended."""
+    src = inspect.getsource(visits_router.book)
+    assert "status <> 'cancelled'" in src, "seen_homes must exclude cancelled visits"
+
+
+def test_rebooking_a_cancelled_property_uses_the_normal_booking_path():
+    """Not Core's revisit endpoint — that one requires a COMPLETED source visit and
+    answers 400 'Revisit is only allowed when the prior visit is completed.' for a
+    cancelled one (verified on staging)."""
+    modal = (FRONTEND / "features" / "ManageVisitsModal.tsx").read_text()
+    rebook = modal.split('if (kind === "rebook")', 1)[1].split("return;", 1)[0]
+    assert "rebook.mutate" in rebook
+    for field in ("home_id", "buyer_name", "buyer_mobile", "rm_accompanying", "lead_id"):
+        assert field in rebook, f"the booking payload is missing {field}"
+    assert "useRevisitVisit" not in rebook
+
+
+def test_the_rebook_button_is_hidden_when_the_row_cannot_be_booked():
+    """5 of 97 cancelled visits are old sheet-synced rows with no buyer stored. Offering a
+    button that can only fail validation is worse than saying why it isn't there."""
+    modal = (FRONTEND / "features" / "ManageVisitsModal.tsx").read_text()
+    guard = modal.split("const canRebook", 1)[1].split(";", 1)[0]
+    assert "home_id" in guard and "buyer_name" in guard and "buyer_mobile" in guard
+
+
+def test_a_per_unit_booking_failure_is_not_reported_as_success():
+    """POST /visits/book answers 200 with a per-unit results[] — a refusal arrives INSIDE
+    a success, so reporting off the HTTP status alone would claim a booking that isn't."""
+    modal = (FRONTEND / "features" / "ManageVisitsModal.tsx").read_text()
+    assert "results?.[0]" in modal and "if (r && !r.ok)" in modal
+
+
+def test_visit_details_are_built_from_the_model_minus_the_hidden_fields():
+    """Not a hand-written SELECT. A column added to app_visit_data shows up in the card
+    on its own, and the five hidden fields are excluded BY CONSTRUCTION — a list you have
+    to remember to keep five names out of is a list that eventually leaks them."""
+    from app.services.app_visit_data import HIDDEN_FIELDS
+    from app.routers.visits import _detail_columns
+
+    cols = set(_detail_columns())
+    assert not (cols & set(HIDDEN_FIELDS)), f"leaking {cols & set(HIDDEN_FIELDS)}"
+    # the plumbing columns are ours, not the visit's story
+    assert not (cols & {"visit_id", "found", "data", "crm_updated_at", "fetched_at"})
+    assert {"status", "society_name", "sales_manager", "sm_closing_signal"} <= cols
+
+
+def test_the_details_endpoint_keeps_core_and_our_booking_apart():
+    """`core` is null until that visit has been pulled from Openhouse — the fill is a
+    manual script with no cron, so a visit booked a minute ago has none. `booking` is ours
+    and always there, and is the ONLY place the booker and accompanying RM exist."""
+    src = inspect.getsource(visits_router.visit_details)
+    assert '"core": dict(core) if core else None' in src, "a missing Core row must read as null, not {}"
+    assert "FROM crm_visits WHERE visit_id" in src
+    assert "booked_by" in src and "rm_accompanying" in src
+
+
+def test_the_expanded_card_never_hardcodes_the_hidden_fields_back_in():
+    """The exclusion is server-side, so the browser never receives them. This catches
+    someone adding a label or a group entry for one, which would be a strong hint they
+    meant to serve it too."""
+    for f in ("api.ts", ):
+        ts = (FRONTEND / "lib" / f).read_text()
+        block = ts.split("VISIT_DETAIL_GROUPS", 1)[1].split("VISIT_LEAD_STATUS", 1)[0]
+        for hidden in ("profession", "broker_name", "broker_contact", "broker_alt_contact", "company_name"):
+            assert hidden not in block, f"{hidden} listed in the visit detail UI"
+
+
+def test_an_unlabelled_core_column_still_renders():
+    """Core adds fields. A value under a rough label beats it silently not appearing —
+    which is what a strict label lookup would do."""
+    modal = (FRONTEND / "features" / "ManageVisitsModal.tsx").read_text()
+    assert "VISIT_DETAIL_LABELS[k] ?? prettify(k)" in modal
+    assert 'title: "Other"' in modal, "unlisted keys need a group to land in"

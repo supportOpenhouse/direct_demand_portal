@@ -100,16 +100,22 @@ def test_the_hidden_fields_are_stored_but_never_served():
     assert HIDDEN_FIELDS <= table, "hiding a field that isn't a column is a typo, not a rule"
 
     def leaks(src: str) -> set[str]:
-        """Hidden fields named by a source file that serves visit data."""
-        if "app_visit_data" not in src:
+        """Hidden fields named by a source file that serves visit data. Both spellings
+        count: a router can reach the table through the ORM model without ever writing
+        its name — which is exactly what /visits/{id}/details does."""
+        if "app_visit_data" not in src and "AppVisitData" not in src:
             return set()  # this file doesn't serve visit data at all
         return {f for f in HIDDEN_FIELDS if re.search(rf"\b{f}\b", src)}
 
-    # the check has teeth — no router serves visit data yet, so without this the loop
-    # below would pass by never running
     assert leaks("SELECT visit_id, broker_name FROM app_visit_data") == {"broker_name"}
+    assert leaks("from ..models import AppVisitData\nSELECT broker_name") == {"broker_name"}
     assert leaks("SELECT visit_id, broker_name FROM crm_visits") == set(), "other tables are not this rule's business"
     assert leaks("SELECT visit_id, city FROM app_visit_data") == set()
+
+    # the endpoint that serves them builds its column list from the model MINUS
+    # HIDDEN_FIELDS, so this holds no matter what columns are added later
+    from app.routers.visits import _detail_columns
+    assert not (set(_detail_columns()) & HIDDEN_FIELDS)
 
     routers = Path(__file__).parents[1] / "app" / "routers"
     for py in routers.rglob("*.py"):

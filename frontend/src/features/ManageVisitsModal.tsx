@@ -17,12 +17,19 @@
    rules and would just reject the rest:
      upcoming  → Reschedule (same id) · Complete · Cancel
      completed → Schedule revisit
-     cancelled → nothing
+     cancelled → New visit (book that property again)
+
+   ⚠️ "New visit" on a CANCELLED row is not a revisit and does not use Core's revisit
+   endpoint — that one only clones a COMPLETED visit, and a cancelled visit never
+   happened. It goes through the ordinary booking path with the details stored on the
+   cancelled row, so the backend counts it as the buyer's FIRST visit to that property.
 */
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import {
   SM_FEEDBACK_QUESTIONS,
+  VISIT_DETAIL_GROUPS,
+  VISIT_DETAIL_LABELS,
   VISIT_LEAD_STATUS,
   type CompleteVisitIn,
   type CrmVisitRow,
@@ -31,8 +38,10 @@ import {
   useCancelVisit,
   useCompleteVisit,
   useLeadCrmVisits,
+  useRebookProperty,
   useRescheduleVisit,
   useRevisitVisit,
+  useVisitDetails,
 } from "../lib/queries";
 import { useModalExit } from "../lib/useModalExit";
 import { useToast } from "../components/Toast";
@@ -48,7 +57,11 @@ interface Props {
 
 /* Which row is showing a form, and which one. Only ever one at a time — two open forms
    in a list this short is noise, and the actions are mutually exclusive anyway. */
-type OpenForm = { visitId: number; kind: "reschedule" | "revisit" | "complete" } | null;
+type OpenForm = { visitId: number; kind: "reschedule" | "revisit" | "complete" | "rebook" } | null;
+
+/* A cancelled visit can only be re-booked if we still hold what the booking API needs. */
+const canRebook = (v: CrmVisitRow) =>
+  v.home_id != null && !!v.buyer_name?.trim() && (v.buyer_mobile ?? "").replace(/\D/g, "").length >= 5;
 
 export default function ManageVisitsModal({ leadId, leadName, onNewVisit, onClose: rawClose }: Props) {
   const { onClose, overlayClass } = useModalExit(rawClose);
@@ -107,25 +120,33 @@ function VisitRow({
 }: {
   v: CrmVisitRow;
   leadId: string;
-  form: "reschedule" | "revisit" | "complete" | null;
+  form: "reschedule" | "revisit" | "complete" | "rebook" | null;
   setForm: (f: OpenForm) => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const close = () => setForm(null);
-  const open = (kind: "reschedule" | "revisit" | "complete") => setForm({ visitId: v.visit_id, kind });
+  const open = (kind: NonNullable<OpenForm>["kind"]) => setForm({ visitId: v.visit_id, kind });
 
   return (
     <div className={`mv-row mv-${v.status}`}>
-      <div className="mv-rowtop">
+      {/* The whole header toggles the full record. A <button> rather than a click
+          handler on the div, so it's reachable by keyboard and announces its state. */}
+      <button className="mv-rowtop" aria-expanded={expanded} onClick={() => setExpanded((x) => !x)}>
         <div className="mv-where">
           <div className="mv-society">{v.society || `Home ${v.home_id ?? "—"}`}</div>
           <div className="mv-meta">
             {[v.city, v.selected_date, v.selected_time].filter(Boolean).join(" · ") || "No slot recorded"}
           </div>
         </div>
-        <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
-      </div>
+        <span className="mv-rowright">
+          <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
+          <span className={`mv-caret${expanded ? " on" : ""}`} aria-hidden>▾</span>
+        </span>
+      </button>
 
       {v.sales_feedback && <div className="mv-feedback">{v.sales_feedback}</div>}
+
+      {expanded && <VisitDetailPanel visitId={v.visit_id} />}
 
       <div className="mv-actions">
         {v.status === "upcoming" && (
@@ -140,11 +161,19 @@ function VisitRow({
             <IconCalendar /> Schedule revisit
           </button>
         )}
-        {v.status === "cancelled" && <span className="mv-none">Cancelled — nothing to do</span>}
+        {v.status === "cancelled" && (
+          canRebook(v)
+            ? <button className="btn ghost sm" onClick={() => (form === "rebook" ? close() : open("rebook"))}>
+                <IconCalendar /> New visit
+              </button>
+            /* the old sheet-synced rows kept no buyer — say why rather than offer a
+               button that can only fail validation on the way to Core */
+            : <span className="mv-none">No buyer details stored — book from “+ New visit”</span>
+        )}
       </div>
 
-      {(form === "reschedule" || form === "revisit") && (
-        <SlotForm kind={form} visitId={v.visit_id} leadId={leadId} society={v.society} onDone={close} />
+      {(form === "reschedule" || form === "revisit" || form === "rebook") && (
+        <SlotForm kind={form} v={v} leadId={leadId} onDone={close} />
       )}
       {form === "complete" && <CompleteForm visitId={v.visit_id} leadId={leadId} onDone={close} />}
     </div>
@@ -179,15 +208,19 @@ function CancelButton({ visitId, leadId }: { visitId: number; leadId: string }) 
   );
 }
 
-/* Reschedule and revisit take exactly the same input — a date and a slot — and differ
-   only in which endpoint they hit and what that does to the visit id. One form. */
+/* All three slot-picking actions take the same input — a date and a slot — and differ
+   only in where they send it and what that does to the visit id:
+     reschedule → same visit, moved
+     revisit    → new visit id, cloned by Core from a COMPLETED visit
+     rebook     → new visit via the ordinary booking path, because a CANCELLED visit
+                  can't be cloned and never counted as a visit in the first place
+   One form, because three near-identical date pickers is how they drift apart. */
 function SlotForm({
-  kind, visitId, leadId, society, onDone,
+  kind, v, leadId, onDone,
 }: {
-  kind: "reschedule" | "revisit";
-  visitId: number;
+  kind: "reschedule" | "revisit" | "rebook";
+  v: CrmVisitRow;
   leadId: string;
-  society: string | null;
   onDone: () => void;
 }) {
   const toast = useToast();
@@ -196,29 +229,64 @@ function SlotForm({
   const [slot, setSlot] = useState("");
   const reschedule = useRescheduleVisit(leadId);
   const revisit = useRevisitVisit(leadId);
-  const m = kind === "reschedule" ? reschedule : revisit;
+  const rebook = useRebookProperty(leadId);
+  /* NOT aliased into one `m`: the three mutations take different payloads, and a union
+     of them type-checks as the INTERSECTION — every call would have to satisfy all three. */
+  const pending = reschedule.isPending || revisit.isPending || rebook.isPending;
+  const society = v.society;
 
-  const submit = () =>
-    m.mutate(
-      { visitId, date, time: slot },
-      {
-        onSuccess: () => {
-          toast(
-            kind === "reschedule" ? "Visit moved to the new slot" : `Revisit booked at ${society || "the same property"}`,
-            "green",
-          );
-          onDone();
+  const done = (msg: string) => { toast(msg, "green"); onDone(); };
+  const fail = (e: unknown) => toast(errText(e), "gold");
+
+  const submit = () => {
+    if (kind === "rebook") {
+      /* Rebuilt from the cancelled row, not from the planner: the property, the buyer and
+         the accompanying RM are all already decided — this is the same visit that was
+         called off. `source` carries over so attribution isn't rewritten as "direct". */
+      rebook.mutate(
+        {
+          selected_date: date, selected_time: slot,
+          source: v.source || "direct",
+          rm_accompanying: v.rm_accompanying,
+          sales_manager_id: v.smid,
+          lead_id: leadId,
+          visits: [{
+            home_id: v.home_id as number, city: v.city,
+            buyer_name: v.buyer_name as string, buyer_mobile: v.buyer_mobile as string,
+            society: v.society,
+          }],
         },
-        onError: (e: unknown) => toast(errText(e), "gold"),
-      },
-    );
+        {
+          onSuccess: (res: unknown) => {
+            /* Booking answers 200 with a PER-UNIT result, so a failure arrives inside a
+               success. Reporting "booked" off the HTTP status would be a lie. */
+            const r = (res as { results?: { ok: boolean; error?: string }[] }).results?.[0];
+            if (r && !r.ok) return fail(new Error(r.error || "Openhouse refused the booking"));
+            done(`New visit booked at ${society || "that property"}`);
+          },
+          onError: fail,
+        },
+      );
+      return;
+    }
+    const args = { visitId: v.visit_id, date, time: slot };
+    if (kind === "reschedule") {
+      reschedule.mutate(args, { onSuccess: () => done("Visit moved to the new slot"), onError: fail });
+    } else {
+      revisit.mutate(args, {
+        onSuccess: () => done(`Revisit booked at ${society || "the same property"}`), onError: fail });
+    }
+  };
 
   return (
     <div className="mv-form">
       <div className="mv-formhead">
         {kind === "reschedule"
           ? "Move this visit to a new slot — same visit, same property."
-          : `Book ${society || "this property"} again for the same buyer.`}
+          : kind === "revisit"
+          ? `Book ${society || "this property"} again for the same buyer.`
+          /* not a revisit: the cancelled visit never happened, so this is a first visit */
+          : `Re-book ${society || "this property"} for the same buyer. The cancelled visit didn’t happen, so this counts as a first visit, not a revisit.`}
       </div>
 
       <div className="mv-days">
@@ -254,8 +322,8 @@ function SlotForm({
 
       <div className="mv-formfoot">
         <button className="btn ghost sm" onClick={onDone}>Back</button>
-        <button className="btn primary sm" disabled={!date || !slot || m.isPending} onClick={submit}>
-          {m.isPending ? "Saving…" : kind === "reschedule" ? "Reschedule" : "Book revisit"}
+        <button className="btn primary sm" disabled={!date || !slot || pending} onClick={submit}>
+          {pending ? "Saving…" : kind === "reschedule" ? "Reschedule" : kind === "revisit" ? "Book revisit" : "Book visit"}
         </button>
       </div>
     </div>
@@ -332,6 +400,86 @@ function CompleteForm({ visitId, leadId, onDone }: { visitId: number; leadId: st
       </div>
     </div>
   );
+}
+
+/* The full Core record for one visit, fetched on first expand.
+
+   ⚠️ Five fields are missing on purpose — profession, broker name / contact / alt
+   contact, and company name. They are excluded SERVER-SIDE (HIDDEN_FIELDS in
+   services/app_visit_data.py builds the SELECT), so they never reach the browser and
+   can't be put back by editing this file.
+
+   Unlabelled keys still render, with the column name prettified: Core adds fields, and a
+   value showing up under a rough label beats it silently not showing up at all. */
+function VisitDetailPanel({ visitId }: { visitId: number }) {
+  const { data, isLoading, isError } = useVisitDetails(visitId);
+
+  if (isLoading) return <div className="mv-detail mv-none">Loading visit record…</div>;
+  if (isError || !data) return <div className="mv-detail mv-none">Couldn’t load this visit’s record.</div>;
+
+  const core = data.core ?? {};
+  const listed = new Set(VISIT_DETAIL_GROUPS.flatMap((g) => g.keys));
+  const extra = Object.keys(core).filter((k) => !listed.has(k));
+  const groups = [
+    ...VISIT_DETAIL_GROUPS,
+    ...(extra.length ? [{ title: "Other", keys: extra }] : []),
+  ];
+
+  return (
+    <div className="mv-detail">
+      {!data.core && (
+        <div className="mv-note">
+          Openhouse’s own record hasn’t been pulled for this visit yet — showing what we
+          stored when it was booked.
+        </div>
+      )}
+
+      {data.core &&
+        groups.map((g) => {
+          const rows = g.keys
+            .map((k) => [k, core[k]] as const)
+            .filter(([, val]) => val !== null && val !== undefined && val !== "" &&
+                                 !(Array.isArray(val) && val.length === 0));
+          if (!rows.length) return null;
+          return (
+            <div className="mv-dgroup" key={g.title}>
+              <div className="mv-dtitle">{g.title}</div>
+              {rows.map(([k, val]) => (
+                <div className="mv-drow" key={k}>
+                  <span className="mv-dkey">{VISIT_DETAIL_LABELS[k] ?? prettify(k)}</span>
+                  <span className="mv-dval">{render(val)}</span>
+                </div>
+              ))}
+            </div>
+          );
+        })}
+
+      {/* Ours, not Core's — who booked it and who is going. Core has no idea about
+          either, so this group is always shown. */}
+      <div className="mv-dgroup">
+        <div className="mv-dtitle">Booked by us</div>
+        {(["booked_by", "rm_accompanying", "buyer_mobile", "source"] as const).map((k) => {
+          const val = data.booking[k];
+          if (val === null || val === undefined || val === "") return null;
+          return (
+            <div className="mv-drow" key={k}>
+              <span className="mv-dkey">{VISIT_DETAIL_LABELS[k] ?? prettify(k)}</span>
+              <span className="mv-dval">{render(val)}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const prettify = (k: string) => k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+
+function render(v: unknown): string {
+  if (typeof v === "boolean") return v ? "Yes" : "No";
+  if (Array.isArray(v)) return v.length ? JSON.stringify(v) : "—";
+  if (v && typeof v === "object") return JSON.stringify(v);
+  return String(v);
 }
 
 /* Core's own message is the useful one ("This visit is already created.", "Only upcoming

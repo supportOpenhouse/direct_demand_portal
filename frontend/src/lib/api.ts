@@ -796,6 +796,7 @@ export const api = {
   latestVisit: (id: string) => request<{ plan: VisitPlan | null }>(`/v1/leads/${id}/visits`),
   // Manage visits — one Openhouse visit at a time. Reschedule keeps the visit id;
   // revisit returns a NEW one (same buyer, same property).
+  visitDetails: (visitId: number) => request<VisitDetails>(`/v1/visits/${visitId}/details`),
   cancelVisit: (visitId: number) =>
     request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/cancel`, { method: "POST" }),
   completeVisit: (visitId: number, body: CompleteVisitIn) =>
@@ -993,6 +994,44 @@ export interface CampaignDetail {
   per_rm: Record<string, { live: number; done: number }>;
   feed: CampaignFeedRow[];
 }
+
+/** Everything Core holds about one visit — the expanded Manage-visits card.
+ *  `core` is null until that visit has been pulled from Openhouse (the fill is a manual
+ *  script, so a visit booked minutes ago has none yet). `booking` is ours and always
+ *  present. Five fields (profession, broker name/contact/alt, company) are excluded
+ *  server-side by HIDDEN_FIELDS and never appear here. */
+export interface VisitDetails {
+  visit_id: number;
+  booking: Record<string, string | number | null>;
+  core: Record<string, unknown> | null;
+}
+
+/** Field → label and the order they read in. Anything the API returns that isn't listed
+ *  is still rendered, with its column name prettified — so a new Core column shows up
+ *  without a frontend deploy, just without a hand-written label. */
+export const VISIT_DETAIL_GROUPS: { title: string; keys: string[] }[] = [
+  { title: "Visit", keys: ["status", "lead_status", "selected_date", "selected_time", "visit_date", "source", "lead_occurrence_count"] },
+  { title: "Property", keys: ["society_name", "city", "unit_address_line1", "unit_address_line2", "floor", "furnishing_status", "home_id"] },
+  { title: "Buyer", keys: ["buyer_name", "buyer_contact", "buyer_registration_date", "lead_key"] },
+  { title: "Openhouse team", keys: ["sales_manager", "sales_manager_id", "added_by", "first_added_by", "cp_code"] },
+  { title: "Feedback", keys: ["sales_feedback", "buyer_feedback", "sm_time_spent_on_site", "sm_society_amenity_tour", "sm_price_discussion", "sm_client_queries", "sm_closing_signal", "sm_buyer_primary_concern"] },
+];
+
+export const VISIT_DETAIL_LABELS: Record<string, string> = {
+  status: "Status", lead_status: "Lead status", selected_date: "Scheduled for",
+  selected_time: "Slot", visit_date: "Visited on", source: "Source",
+  lead_occurrence_count: "Lead occurrences", society_name: "Society", city: "City",
+  unit_address_line1: "Unit", unit_address_line2: "Address", floor: "Floor",
+  furnishing_status: "Furnishing", home_id: "Openhouse home id", buyer_name: "Buyer",
+  buyer_contact: "Buyer contact", buyer_registration_date: "Registered on",
+  lead_key: "Core lead key", sales_manager: "Sales manager",
+  sales_manager_id: "SM id", added_by: "Added by", first_added_by: "First added by",
+  cp_code: "CP code", sales_feedback: "Sales feedback", buyer_feedback: "Buyer feedback",
+  sm_time_spent_on_site: "Time on site", sm_society_amenity_tour: "Amenity tour",
+  sm_price_discussion: "Price discussed", sm_client_queries: "Client queries",
+  sm_closing_signal: "Closing signal", sm_buyer_primary_concern: "Primary concern",
+  booked_by: "Booked by", rm_accompanying: "RM accompanying", buyer_mobile: "Buyer mobile",
+};
 
 /** Completing a visit. `sm_feedback` is the assisted path (the SM filled the form);
  *  sales_feedback alone is the OTP path. Core picks the path from what's sent. */

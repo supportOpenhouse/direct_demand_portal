@@ -482,6 +482,15 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:11px 14px;border-bottom:1px solid var(--line)}
 /* frozen header: pinned to the top of the scrolling wrapper, opaque so rows pass under it */
 .table-wrap thead th{position:sticky;top:0;z-index:2;background:var(--panel)}
+/* Sort indicator (SortTh). Sized in px, not em: the header text is 11px, and an icon that
+   inherits it is exactly the invisible sliver this replaced. Unsorted = --ink-3, dark
+   enough to find at a glance; the sorted column's arrow takes the brand so the one that
+   is actually ordering the table stands out from the rest. */
+.sort-ind{display:inline-flex;vertical-align:middle;margin-left:4px;margin-top:-2px;color:var(--ink-3);
+  transition:color var(--t-move) var(--ease)}
+.sort-ind svg{width:14px;height:14px;stroke-width:2.4}
+th:hover > .sort-ind{color:var(--ink)}
+.sort-ind.on{color:var(--brand)}
 td{padding:13px 14px;border-bottom:1px solid var(--line-2);font-size:13px;vertical-align:middle}
 tbody tr:last-child td{border-bottom:0}
 tr.lead-row{cursor:pointer;transition:.1s}
@@ -649,9 +658,11 @@ tr.lead-row:hover{background-color:var(--panel-2)}
 }
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--emerald);background:var(--panel);box-shadow:0 0 0 3px var(--emerald-soft)}
 .field.invalid input,.field.invalid select{border-color:var(--coral);background:var(--coral-soft)}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:13px}
+/* minmax(0,…): a bare 1fr column can't shrink below its content, so one long value
+   widens the whole grid — same fix .three already had */
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
 .three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px}
-@media (max-width:620px){.three{grid-template-columns:1fr 1fr}}
+@media (max-width:620px){.three{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 /* lead detail */
 .detail-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:18px;align-items:start}
@@ -2130,6 +2141,10 @@ html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
 
 /* -- pager (ported from Direct Inventory's filtered-header) ----------------- */
 .pager{display:flex;align-items:center;gap:10px;margin-bottom:12px;font-size:13px;flex-wrap:wrap}
+/* Select sits at the LEFT of "Showing…" and rows-per-page just before Prev — both are
+   choices about how many rows you're dealing with, so they live on the bar that counts them */
+.pager-select,.pager-size{display:inline-flex;align-items:center;gap:8px}
+.pager-size .ctl,.pager-select .ctl{height:var(--control-h);font-size:12.5px}
 .pager-spacer{flex:1}
 .page-num{display:flex;align-items:center;gap:10px;color:var(--ink-2);white-space:nowrap}
 .page-of{white-space:nowrap;flex:none}
@@ -2175,7 +2190,11 @@ html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
 /* Field pairs inside a section — label above, value below. */
 .field-row{display:flex;flex-direction:column;gap:2px;margin-bottom:11px}
 .field-lbl{font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:700}
-.field-val{font-size:13.5px;color:var(--ink);font-weight:500}
+.field-row{min-width:0}
+/* overflow-wrap:anywhere — an email or URL is one unbreakable word and otherwise runs
+   straight out of its grid column and past the card edge. It only breaks when the
+   word can't fit, so ordinary values wrap at spaces exactly as before. */
+.field-val{font-size:13.5px;color:var(--ink);font-weight:500;overflow-wrap:anywhere}
 .field-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 /* The qualify form's three actions sit on ONE line. */
 .form-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px}
@@ -2522,12 +2541,18 @@ td.lead-cell .nm{
   width:100%;padding:0;background:none;border:0;font:inherit;color:inherit;
   text-align:left;cursor:pointer;
 }
-.mv-rowright{display:flex;align-items:center;gap:8px;flex:none}
+/* the name block takes the slack so the chevron stays pinned left and the pill right */
+.mv-rowtop .mv-where{flex:1;min-width:0}
 .mv-caret{
-  color:var(--muted);font-size:11px;line-height:1;
-  transition:transform var(--t-move) var(--ease);
+  flex:none;display:grid;place-items:center;
+  width:22px;height:22px;margin-top:-1px;border-radius:6px;
+  color:var(--muted);
+  transition:transform var(--t-move) var(--ease),color var(--t-move) var(--ease),background var(--t-move) var(--ease);
 }
-.mv-caret.on{transform:rotate(180deg)}
+/* icons.tsx icons default to 1em — size it explicitly or it inherits the button's type */
+.mv-caret svg{width:16px;height:16px}
+.mv-rowtop:hover .mv-caret{color:var(--ink);background:var(--panel-2)}
+.mv-caret.on{transform:rotate(90deg);color:var(--brand)}
 
 .mv-detail{margin-top:10px;padding-top:10px;border-top:1px dashed var(--line)}
 .mv-note{

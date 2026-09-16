@@ -5,11 +5,12 @@
    list you walked away from, which is what the global one did.
 
    Layout follows Direct Inventory's board toolbar:
-     [ city tabs ] [ search ][ Search ] [ Filters ] [ Select ] [ extras ] */
+     [ city tabs ] [ search ][ Search ] [ Filters ] [ extras ]
+
+   Select is NOT here — it lives on the Pager, beside "Showing 1–50 of N" (16 Sep). */
 import { useState, type FormEvent, type ReactNode } from "react";
 import SlideTabs from "./SlideTabs";
 import { FilterBar, type Field, type Values } from "./FilterBar";
-import { SelectFirst } from "./SelectFirst";
 import { IconSearch, IconX } from "./icons";
 
 /* The three cities the team actually works. Anything else -- a typo, a sheet
@@ -31,7 +32,7 @@ export function cityMatches(city: string | null | undefined, sel: string): boole
 export function LeadToolbar({
   city, onCity, q, onQ, placeholder = "Search any lead - name, number, city, society",
   fields, values, onChange, onClear,
-  selectMode, onSelectMode, selectTotal = 0, onSelectFirst, children,
+  children,
 }: {
   city: string;
   onCity: (c: string) => void;
@@ -43,11 +44,6 @@ export function LeadToolbar({
   values: Values;
   onChange: (k: string, v: any) => void;
   onClear: () => void;
-  /** Omit the whole group to hide Select (pages with no bulk actions). */
-  selectMode?: boolean;
-  onSelectMode?: (on: boolean) => void;
-  selectTotal?: number;
-  onSelectFirst?: (n: number) => void;
   children?: ReactNode;
 }) {
   const [draft, setDraft] = useState(q);
@@ -78,17 +74,6 @@ export function LeadToolbar({
       </form>
 
       <FilterBar fields={fields} values={values} onChange={onChange} onClear={onClear}>
-        {onSelectMode && (
-          <>
-            <button className={"btn sm" + (selectMode ? "" : " ghost")} onClick={() => onSelectMode(!selectMode)}>
-              {selectMode ? "Exit Select" : "Select"}
-            </button>
-            {/* the 10/25 shortcuts only mean anything once rows can be picked */}
-            {selectMode && onSelectFirst && (
-              <SelectFirst total={selectTotal} onPick={onSelectFirst} btnClass="btn ghost sm" />
-            )}
-          </>
-        )}
         {children}
       </FilterBar>
     </div>

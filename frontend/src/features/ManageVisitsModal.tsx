@@ -46,7 +46,7 @@ import {
 import { useModalExit } from "../lib/useModalExit";
 import { useToast } from "../components/Toast";
 import { SLOTS, next7Days, isSlotDisabled } from "../lib/slots";
-import { IconX, IconCalendar } from "../components/icons";
+import { IconX, IconCalendar, IconChevronRight } from "../components/icons";
 
 interface Props {
   leadId: string;
@@ -132,16 +132,17 @@ function VisitRow({
       {/* The whole header toggles the full record. A <button> rather than a click
           handler on the div, so it's reachable by keyboard and announces its state. */}
       <button className="mv-rowtop" aria-expanded={expanded} onClick={() => setExpanded((x) => !x)}>
+        {/* Disclosure chevron, LEFT of the name: points right when closed and turns down
+            when open. It was a "▾" glyph at the far right, which rendered at ~6px and sat
+            beside the status pill where it read as part of the pill. */}
+        <span className={`mv-caret${expanded ? " on" : ""}`} aria-hidden><IconChevronRight /></span>
         <div className="mv-where">
           <div className="mv-society">{v.society || `Home ${v.home_id ?? "—"}`}</div>
           <div className="mv-meta">
             {[v.city, v.selected_date, v.selected_time].filter(Boolean).join(" · ") || "No slot recorded"}
           </div>
         </div>
-        <span className="mv-rowright">
-          <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
-          <span className={`mv-caret${expanded ? " on" : ""}`} aria-hidden>▾</span>
-        </span>
+        <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
       </button>
 
       {v.sales_feedback && <div className="mv-feedback">{v.sales_feedback}</div>}

@@ -127,7 +127,8 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
       </div>
 
       {/* Same reason as the boxes: "of N" climbed while segments were still arriving. */}
-      {!isLoading && <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage} />}
+      {!isLoading && <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}
+        sizeChoice={pg.sizeChoice} onSize={pg.setSize} />}
 
       <div className="card">
         <div className="table-wrap">

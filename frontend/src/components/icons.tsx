@@ -149,6 +149,7 @@ export {
   LuPencil as IconEdit,
   LuChevronDown as IconChevronDown,
   LuChevronUp as IconChevronUp,
+  LuChevronsUpDown as IconChevronsUpDown,
   LuArrowRight as IconArrowRight,
   LuArrowUp as IconArrowUp,
   LuArrowDown as IconArrowDown,

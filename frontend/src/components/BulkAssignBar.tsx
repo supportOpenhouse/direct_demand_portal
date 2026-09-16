@@ -2,15 +2,13 @@
    "select first N" shortcuts. Appears only once at least one row is ticked. */
 import { useState } from "react";
 import { useAssignees, useBulkAssign } from "../lib/queries";
-import { SelectFirst } from "./SelectFirst";
 import { useToast } from "./Toast";
 
 export function BulkAssignBar(
-  { ids, onDone, total, onSelectFirst }: {
+  { ids, onDone, total }: {
     ids: string[];
     onDone: () => void;
     total: number;                       // rows currently on screen, after filters
-    onSelectFirst: (n: number) => void;
   },
 ) {
   const { data } = useAssignees();
@@ -35,8 +33,6 @@ export function BulkAssignBar(
     }}>
       <b style={{ fontSize: 13.5 }}>{ids.length} selected</b>
       <span style={{ fontSize: 11.5, opacity: .62 }}>of {total}</span>
-      <SelectFirst total={total} onPick={onSelectFirst} btnClass="btn sm"
-        style={{ background: "var(--on-accent-2)", color: "var(--on-accent)" }} />
       <div style={{ flex: 1 }} />
       <select
         value={pick}

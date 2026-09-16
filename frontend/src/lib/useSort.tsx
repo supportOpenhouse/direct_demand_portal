@@ -1,7 +1,7 @@
 /* Reusable click-to-sort for any table. Pages declare per-column accessors;
    <SortTh> renders a clickable header with a direction caret. Nulls sort last. */
 import { useMemo, useState } from "react";
-import { IconChevronDown, IconChevronUp } from "../components/icons";
+import { IconChevronDown, IconChevronUp, IconChevronsUpDown } from "../components/icons";
 
 type Dir = "asc" | "desc";
 type Accessor<T> = (item: T) => string | number | null | undefined;
@@ -63,8 +63,11 @@ export function SortTh({
       title="Click to sort"
     >
       {label}
-      <span style={{ marginLeft: 5, opacity: active ? 1 : 0.25, fontSize: 9 }}>
-        {active ? (dir === "asc" ? <IconChevronUp /> : <IconChevronDown />) : <IconChevronDown />}
+      {/* Was fontSize 9 + opacity .25: icons size to 1em, so that drew a 9px chevron at a
+          quarter strength on already-muted header text — present, but invisible.
+          Unsorted columns show the two-way "sortable" mark; the sorted one shows which way. */}
+      <span className={`sort-ind${active ? " on" : ""}`} aria-hidden>
+        {active ? (dir === "asc" ? <IconChevronUp /> : <IconChevronDown />) : <IconChevronsUpDown />}
       </span>
     </th>
   );

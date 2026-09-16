@@ -26,7 +26,6 @@ import { useFilterValues } from "../components/FilterBar";
 import { LeadToolbar, cityMatches } from "../components/LeadToolbar";
 import { useRowOpen } from "../components/LeadModal";
 import { TopbarSlot } from "../components/TopbarSlot";
-import { SelectFirst } from "../components/SelectFirst";
 import { Pager, usePaging } from "../components/Pager";
 import { StageChip } from "../components/StageChip";
 import { NewBadge } from "../components/StageChip";
@@ -128,10 +127,6 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
     <>
       {/* Page actions belong in the topbar strip, not repeated in the toolbar. */}
       <TopbarSlot>
-        <button className={"btn sm" + (selectMode ? "" : " ghost")} onClick={() => setSelectMode((v) => !v)}>
-          {selectMode ? "Exit Select" : "Select"}
-        </button>
-        {selectMode && <SelectFirst total={sel.visibleCount} onPick={sel.selectFirst} btnClass="btn ghost sm" />}
         <ExportCsvButton leads={list} name={segment} />
       </TopbarSlot>
       <LeadToolbar
@@ -151,11 +146,13 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "pipe
       />
 
       {selectMode && (
-        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear}
-          total={sel.visibleCount} onSelectFirst={sel.selectFirst} />
+        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />
       )}
 
-      <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage} />
+      <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}
+        sizeChoice={pg.sizeChoice} onSize={pg.setSize}
+        select={{ on: selectMode, onToggle: () => setSelectMode((v) => !v),
+                  total: sel.visibleCount, onPick: sel.selectFirst }} />
 
       <div className="card">
         <div className="table-wrap">

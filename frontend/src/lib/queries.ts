@@ -797,3 +797,24 @@ export function useVisitDetails(visitId: number | null) {
     staleTime: 30_000,
   });
 }
+
+/* Manual triggers for the jobs a Render cron also runs. Each invalidates what it can
+   change, so the page it affects doesn't keep showing the pre-run state. */
+export function useRefreshUpcomingVisits() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.refreshUpcomingVisits,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["visit-details"] }),
+  });
+}
+
+export function useAssignUnownedChats() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.assignUnownedChats,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["wa-messages"] });
+      qc.invalidateQueries({ queryKey: ["wa-pending"] });
+    },
+  });
+}

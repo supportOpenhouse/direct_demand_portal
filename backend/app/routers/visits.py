@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
-from ..core.auth import current_user
+from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..models import AppVisitData, CrmVisit
 from ..services import activity
@@ -44,6 +44,19 @@ async def _smid_for_name(name: str | None) -> int | None:
             "SELECT smid FROM users WHERE lower(name) = lower(:n) AND active AND smid IS NOT NULL LIMIT 1"),
             {"n": name.strip()})).first()
     return row[0] if row else None
+
+
+@router.post("/visits/refresh-upcoming", dependencies=[Depends(require_admin)])
+async def refresh_upcoming():
+    """Re-pull the visits that aren't finished yet — the cron's job, and the Settings
+    button. Completed and cancelled visits are skipped: Core never changes them again, so
+    re-fetching them every ten minutes is thousands of requests to learn nothing."""
+    from ..services.app_visit_data import run_upcoming_visits_refresh
+
+    try:
+        return await run_upcoming_visits_refresh(trigger="manual")
+    except RuntimeError as e:          # not configured — a 500 here reads as "we broke"
+        raise HTTPException(status_code=503, detail=str(e))
 
 
 @router.post("/visits/sync")

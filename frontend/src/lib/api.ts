@@ -795,6 +795,11 @@ export const api = {
   // Manage visits — one Openhouse visit at a time. Reschedule keeps the visit id;
   // revisit returns a NEW one (same buyer, same property).
   visitDetails: (visitId: number) => request<VisitDetails>(`/v1/visits/${visitId}/details`),
+  // manual triggers for the jobs the cron also runs (Settings → Background jobs)
+  refreshUpcomingVisits: () =>
+    request<{ visit_ids: number; found: number; missing: number }>("/v1/visits/refresh-upcoming", { method: "POST" }),
+  assignUnownedChats: () =>
+    request<{ status: string; assigned: number }>("/v1/gupshup/assign/backfill", { method: "POST" }),
   cancelVisit: (visitId: number) =>
     request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/cancel`, { method: "POST" }),
   completeVisit: (visitId: number, body: CompleteVisitIn) =>

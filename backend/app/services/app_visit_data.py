@@ -99,7 +99,24 @@ def rows_from_response(body: dict) -> tuple[list[dict], list[dict]]:
     return found, missing
 
 
-async def run_app_visit_data_sync(trigger: str = "manual") -> dict:
+# A visit that is completed or cancelled is FINISHED — Core will not change it again, so
+# re-fetching it every ten minutes is thousands of requests to learn nothing. The cron
+# refreshes only the ones that can still move.
+# ⚠️ This never discovers a visit we have no row for. New visits enter the table through
+# the full walk (run_all_visits_sync / scripts/17) — see the note there.
+UPCOMING_IDS = text("""
+    SELECT visit_id FROM app_visit_data
+     WHERE found AND coalesce(status, '') NOT IN ('completed', 'cancelled')
+     ORDER BY visit_id
+""")
+
+
+async def run_upcoming_visits_refresh(trigger: str = "manual") -> dict:
+    """Re-pull only the visits that aren't finished yet. The cron's job."""
+    return await run_app_visit_data_sync(trigger=trigger, ids_sql=UPCOMING_IDS, what="upcoming")
+
+
+async def run_app_visit_data_sync(trigger: str = "manual", ids_sql=VISIT_IDS, what: str = "crm_visits") -> dict:
     settings = get_settings()
     if not (settings.CRM_BOOKING_API_BASE_URL and settings.CRM_API_KEY):
         raise RuntimeError("CRM_BOOKING_API_BASE_URL / CRM_API_KEY not set")
@@ -108,7 +125,7 @@ async def run_app_visit_data_sync(trigger: str = "manual") -> dict:
         raise RuntimeError("DATABASE_URL not configured")
 
     async with engine.connect() as conn:
-        ids = [r[0] for r in await conn.execute(VISIT_IDS)]
+        ids = [r[0] for r in await conn.execute(ids_sql)]
 
     n_found = n_missing = 0
     async with _client() as client:
@@ -138,7 +155,7 @@ async def run_app_visit_data_sync(trigger: str = "manual") -> dict:
             n_found += len(found)
             n_missing += len(missing)
 
-    result = {"status": "ok", "trigger": trigger, "visit_ids": len(ids),
+    result = {"status": "ok", "trigger": trigger, "scope": what, "visit_ids": len(ids),
               "batches": ceil(len(ids) / BATCH), "found": n_found, "missing": n_missing}
     log.info("app_visit_data: %s", result)
     return result

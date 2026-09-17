@@ -1,7 +1,7 @@
 /* Settings & Access — user management. Only people added here can sign in, and
    each maps to their leads via the sheet's "Assigned to" name. */
 import { useState } from "react";
-import { useAppSettings, useAssignSweep, useSetAppSetting, useUsers, useUserMutations } from "../lib/queries";
+import { useAppSettings, useAssignSweep, useAssignUnownedChats, useRefreshUpcomingVisits, useSetAppSetting, useUsers, useUserMutations } from "../lib/queries";
 import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
@@ -410,42 +410,89 @@ function UserRow({ u, allUsers }: { u: ManagedUser; allUsers: ManagedUser[] }) {
    Same sweep, same rules (city an RM covers → a covering RM, else the RM with the
    fewest leads today), so this can't hand out leads differently from the automatic run.
    Bounded per click, which is why the result line says how many are still waiting. */
-function AssignLeadsPanel() {
-  const sweep = useAssignSweep();
-  const toast = useToast();
-  const [last, setLast] = useState<{ assigned: number; pending: number } | null>(null);
+/* The three jobs a Render cron also runs, on demand.
 
-  const run = () =>
-    sweep.mutate(undefined, {
-      onSuccess: (r) => {
-        setLast({ assigned: r.assigned, pending: r.pending });
-        toast(r.assigned
-          ? `Assigned ${r.assigned} lead${r.assigned === 1 ? "" : "s"}`
-          : "Nothing to assign — every lead already has an RM", "green");
-      },
-      onError: (e: any) => toast(e.message, "gold"),
-    });
+   One panel, not three: they are the same kind of thing — a scheduled job you can pull
+   forward — and a button per card would spread them across the page. Each row says what
+   the job does, when it runs on its own, and what the last manual run did, because
+   "did that work?" is the only question anyone has after pressing one. */
+function JobRow({
+  title, blurb, cta, busyLabel, run, busy, result,
+}: {
+  title: string; blurb: string; cta: string; busyLabel: string;
+  run: () => void; busy: boolean; result: string | null;
+}) {
+  return (
+    <div className="job-row">
+      <div className="job-text">
+        <div className="job-title">{title}</div>
+        <p className="sec-sub" style={{ margin: 0 }}>{blurb}</p>
+        {result && <p className="sec-sub job-result">{result}</p>}
+      </div>
+      <button className="btn green" onClick={run} disabled={busy}>{busy ? busyLabel : cta}</button>
+    </div>
+  );
+}
+
+function BackgroundJobsPanel() {
+  const toast = useToast();
+  const sweep = useAssignSweep();
+  const visits = useRefreshUpcomingVisits();
+  const chats = useAssignUnownedChats();
+  const [said, setSaid] = useState<Record<string, string>>({});
+  const say = (k: string, msg: string) => setSaid((p) => ({ ...p, [k]: msg }));
+  const fail = (k: string) => (e: any) => { say(k, `Failed: ${e.message}`); toast(e.message, "gold"); };
 
   return (
     <div className="card panel-pad" style={{ marginTop: 16 }}>
-      <div className="section-head">
-        <div>
-          <div className="panel-title" style={{ marginBottom: 2 }}>Lead assignment</div>
-          <p className="sec-sub" style={{ margin: 0 }}>
-            Hands leads with no RM to one who covers their city, or to whoever has taken the
-            fewest today. Runs hourly on its own; this does it now, up to 500 at a time.
-          </p>
-        </div>
-        <button className="btn green" onClick={run} disabled={sweep.isPending}>
-          {sweep.isPending ? "Assigning…" : "Assign unassigned leads"}
-        </button>
-      </div>
-      {last && (
-        <p className="sec-sub" style={{ margin: 0 }}>
-          Assigned <b>{last.assigned}</b> · <b>{last.pending}</b> still unassigned
-          {last.pending > 0 ? " — run it again to continue." : "."}
-        </p>
-      )}
+      <div className="panel-title" style={{ marginBottom: 2 }}>Background jobs</div>
+      <p className="sec-sub" style={{ marginTop: 0 }}>
+        These run on a schedule. Press one to run it now — each is safe to repeat.
+      </p>
+
+      <JobRow
+        title="Lead assignment"
+        blurb="Hands leads with no RM to one who covers their city, or to whoever has taken the fewest today. Up to 500 at a time."
+        cta="Assign unassigned leads" busyLabel="Assigning…" busy={sweep.isPending}
+        result={said.leads ?? null}
+        run={() => sweep.mutate(undefined, {
+          onSuccess: (r) => {
+            say("leads", `Assigned ${r.assigned} · ${r.pending} still unassigned${r.pending > 0 ? " — run again to continue." : "."}`);
+            toast(r.assigned ? `Assigned ${r.assigned} lead${r.assigned === 1 ? "" : "s"}`
+                             : "Nothing to assign — every lead already has an RM", "green");
+          },
+          onError: fail("leads"),
+        })}
+      />
+
+      <JobRow
+        title="WhatsApp conversation owners"
+        blurb="Gives every unowned conversation an owner. An unowned thread is visible to admins only, so nothing surfaces it to an RM until it has one. Conversations marked rejected are never handed out."
+        cta="Assign unowned chats" busyLabel="Assigning…" busy={chats.isPending}
+        result={said.chats ?? null}
+        run={() => chats.mutate(undefined, {
+          onSuccess: (r) => {
+            say("chats", r.assigned ? `Assigned ${r.assigned} conversation${r.assigned === 1 ? "" : "s"}.`
+                                    : "Nothing to assign — every conversation already has an owner.");
+            toast(r.assigned ? `Assigned ${r.assigned} chat${r.assigned === 1 ? "" : "s"}` : "Nothing to assign", "green");
+          },
+          onError: fail("chats"),
+        })}
+      />
+
+      <JobRow
+        title="Visit records from Openhouse"
+        blurb="Re-pulls visits that aren't finished yet. Completed and cancelled ones are skipped — Openhouse never changes those again. A brand-new visit only appears after the full fill script."
+        cta="Refresh visit data" busyLabel="Refreshing…" busy={visits.isPending}
+        result={said.visits ?? null}
+        run={() => visits.mutate(undefined, {
+          onSuccess: (r) => {
+            say("visits", `Refreshed ${r.found} of ${r.visit_ids} unfinished visit${r.visit_ids === 1 ? "" : "s"}${r.missing ? ` · ${r.missing} no longer at Openhouse` : ""}.`);
+            toast(`Refreshed ${r.found} visit${r.found === 1 ? "" : "s"}`, "green");
+          },
+          onError: fail("visits"),
+        })}
+      />
     </div>
   );
 }
@@ -509,7 +556,7 @@ export default function Settings() {
           data.items.map((u) => <UserRow key={u.id} u={u} allUsers={data.items} />)
         )}
       </div>
-      <AssignLeadsPanel />
+      <BackgroundJobsPanel />
       <PrivacyPanel />
       <WhatsAppAccessPanel />
       {adding && <AddUserForm onClose={() => setAdding(false)} />}

@@ -57,7 +57,7 @@ interface Props {
 
 /* Which row is showing a form, and which one. Only ever one at a time — two open forms
    in a list this short is noise, and the actions are mutually exclusive anyway. */
-type OpenForm = { visitId: number; kind: "reschedule" | "revisit" | "complete" | "rebook" } | null;
+type OpenForm = { visitId: number; kind: "reschedule" | "revisit" | "complete" | "rebook" | "cancel" } | null;
 
 /* A cancelled visit can only be re-booked if we still hold what the booking API needs. */
 const canRebook = (v: CrmVisitRow) =>
@@ -120,12 +120,19 @@ function VisitRow({
 }: {
   v: CrmVisitRow;
   leadId: string;
-  form: "reschedule" | "revisit" | "complete" | "rebook" | null;
+  form: "reschedule" | "revisit" | "complete" | "rebook" | "cancel" | null;
   setForm: (f: OpenForm) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const close = () => setForm(null);
   const open = (kind: NonNullable<OpenForm>["kind"]) => setForm({ visitId: v.visit_id, kind });
+  const toggle = (kind: NonNullable<OpenForm>["kind"]) => (form === kind ? close() : open(kind));
+  /* The action whose form is open renders as the accent, so you can see which one you're
+     in. It has to CHANGE CLASS — there is no .btn.active in app.css, and a class name that
+     nothing styles is silently inert. A focus ring is not a substitute: it vanishes the
+     moment focus moves into the form below, which is exactly when you need to know. */
+  const act = (kind: NonNullable<OpenForm>["kind"]) =>
+    "btn sm mv-act" + (form === kind ? " primary" : " ghost");
 
   return (
     <div className={`mv-row mv-${v.status}`}>
@@ -152,19 +159,20 @@ function VisitRow({
       <div className="mv-actions">
         {v.status === "upcoming" && (
           <>
-            <button className="btn ghost sm" onClick={() => (form === "reschedule" ? close() : open("reschedule"))}>Reschedule</button>
-            <button className="btn ghost sm" onClick={() => (form === "complete" ? close() : open("complete"))}>Complete</button>
-            <CancelButton visitId={v.visit_id} leadId={leadId} />
+            <button className={act("reschedule")} aria-pressed={form === "reschedule"} onClick={() => toggle("reschedule")}>Reschedule</button>
+            <button className={act("complete")} aria-pressed={form === "complete"} onClick={() => toggle("complete")}>Complete</button>
+            <CancelButton visitId={v.visit_id} leadId={leadId}
+              confirming={form === "cancel"} onToggle={() => toggle("cancel")} onKeep={close} />
           </>
         )}
         {v.status === "completed" && (
-          <button className="btn ghost sm" onClick={() => (form === "revisit" ? close() : open("revisit"))}>
+          <button className={act("revisit")} aria-pressed={form === "revisit"} onClick={() => toggle("revisit")}>
             <IconCalendar /> Schedule revisit
           </button>
         )}
         {v.status === "cancelled" && (
           canRebook(v)
-            ? <button className="btn ghost sm" onClick={() => (form === "rebook" ? close() : open("rebook"))}>
+            ? <button className={act("rebook")} aria-pressed={form === "rebook"} onClick={() => toggle("rebook")}>
                 <IconCalendar /> New visit
               </button>
             /* the old sheet-synced rows kept no buyer — say why rather than offer a
@@ -181,15 +189,29 @@ function VisitRow({
   );
 }
 
-function CancelButton({ visitId, leadId }: { visitId: number; leadId: string }) {
+function CancelButton({ visitId, leadId, confirming, onToggle, onKeep }: {
+  visitId: number; leadId: string; confirming: boolean; onToggle: () => void; onKeep: () => void;
+}) {
   const toast = useToast();
   const cancel = useCancelVisit(leadId);
-  const [confirm, setConfirm] = useState(false);
 
   /* Two-step rather than a window.confirm: cancelling writes straight through to
-     Openhouse and can't be undone from here. */
-  if (!confirm) return <button className="btn ghost sm mv-danger" onClick={() => setConfirm(true)}>Cancel visit</button>;
+     Openhouse and can't be undone from here.
+
+     The confirm state lives in the ROW's form state, not here. It used to be private,
+     so "Cancel this visit?" could sit open beside a Reschedule form — two answers to one
+     visit on screen at once. Now opening either closes the other.
+
+     The button stays visible and turns coral while confirming, rather than being replaced
+     by the question: the selected action should look selected, same as its neighbours. */
+  const btn = (
+    <button className={"btn sm mv-act " + (confirming ? "mv-danger-on" : "ghost mv-danger")}
+      aria-pressed={confirming} onClick={onToggle}>Cancel visit</button>
+  );
+  if (!confirming) return btn;
   return (
+    <>
+    {btn}
     <span className="mv-confirm">
       Cancel this visit?
       <button
@@ -204,8 +226,9 @@ function CancelButton({ visitId, leadId }: { visitId: number; leadId: string }) 
       >
         {cancel.isPending ? "Cancelling…" : "Yes, cancel"}
       </button>
-      <button className="btn ghost sm" onClick={() => setConfirm(false)}>Keep it</button>
+      <button className="btn ghost sm" onClick={onKeep}>Keep it</button>
     </span>
+    </>
   );
 }
 

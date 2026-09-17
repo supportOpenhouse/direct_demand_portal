@@ -2495,6 +2495,11 @@ td.lead-cell .nm{
 .mv-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .mv-none { font-size: 12px; color: var(--muted); }
 .mv-danger { color: var(--coral); }
+/* Cancel while its confirm is open: selected like its neighbours, but coral — the accent
+   blue would make a destructive action look like the primary one. Not the solid fill:
+   "Yes, cancel" beside it is solid coral, and two solid coral buttons read as one. */
+.mv-danger-on { background: var(--coral-soft); color: var(--coral); border-color: var(--coral); }
+.mv-act { transition: background var(--t-move) var(--ease), color var(--t-move) var(--ease), border-color var(--t-move) var(--ease); }
 .mv-danger-solid { background: var(--coral); color: var(--on-brand); border-color: var(--coral); }
 .mv-confirm { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 

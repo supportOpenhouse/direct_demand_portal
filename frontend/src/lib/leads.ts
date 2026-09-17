@@ -136,6 +136,29 @@ const SEG_HUE: Record<string, string> = {
   converted: "--emerald",
 };
 
+/* The pages that hold MORE than one stage, and the stages each holds, in the order their
+   filter boxes read. Mirrors the IN (...) predicates in backend SEGMENTS — a page listed
+   here gets ALL + one box per stage above its table; a single-stage page gets none, since
+   a lone box would only repeat the page's own total.
+   tests/test_stages.py checks this against the backend so the two can't drift. */
+export const SEGMENT_STAGES: Record<string, string[]> = {
+  call_not_received: ["call_not_received", "rnr"],
+  visited: ["visit_scheduled", "revisit_scheduled"],
+};
+
+/* A STAGE's box colour, for the pages above. Separate from SEG_HUE because these boxes
+   split a page by stage: Visit and Revisit were one segment colour, and two amber boxes
+   side by side would read as the same thing. Gold is free again since the Pipeline page
+   went, and it was already Revisit's colour on the funnel. rnr takes coral — ten misses
+   on a lead never reached reads as the alarm it is next to the cyan still being chased. */
+const STAGE_HUE: Record<string, string> = {
+  call_not_received: "--cyan",
+  rnr: "--coral",
+  visit_scheduled: "--amber",
+  revisit_scheduled: "--gold",
+};
+export const stageHue = (stage: string) => `var(${STAGE_HUE[stage] ?? "--slate"})`;
+
 /** CSS var for a segment's colour; `null` (the ALL bucket) is the brand. */
 export const segHue = (seg: string | null) =>
   seg === null ? "var(--brand)" : `var(${SEG_HUE[seg] ?? "--slate"})`;

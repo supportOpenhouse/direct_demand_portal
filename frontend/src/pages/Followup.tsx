@@ -10,7 +10,8 @@
 import { useState } from "react";
 import { useAllSocieties, useAssignees, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { leadMatchesQuery, newFirst } from "../lib/leads";
+import { SEGMENT_STAGES, leadMatchesQuery, newFirst } from "../lib/leads";
+import { StageBoxes } from "../components/StageBoxes";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { DATE_PRESETS, rmOptions } from "../components/Filters";
 import { matchesOption, inDatePreset, type DatePreset } from "../components/Filters";
@@ -52,10 +53,16 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   });
   const { source, owner, datePreset, dateFrom, dateTo } = f;
   const societies = useAllSocieties();
+  /* The stage boxes' selection. Its own state, not a FilterBar value: the boxes ARE the
+     control, and as a filter value it would also appear as a removable chip — two controls
+     for one choice. Home → Table keeps its segment boxes apart the same way. */
+  const stages = SEGMENT_STAGES[segment];
+  const [stage, setStage] = useState("");
 
   const all = data?.items ?? [];
   // faceted counts: each dropdown counts leads passing all the OTHER filters (skip its own)
   const pass = (l: Lead, skip?: string) =>
+    (skip === "stage" || !stage || l.stage === stage) &&
     (skip === "source" || sourceMatches(l, source)) &&
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
@@ -63,6 +70,10 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     passExtras(l, f, skip) &&
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
+  // faceted, like every dropdown here: each box counts leads passing all the OTHER filters
+  const inStageScope = stages ? all.filter((l) => pass(l, "stage")) : [];
+  const byStage: Record<string, number> = {};
+  for (const l of inStageScope) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
   /* Most-actionable first. The row tints these used to mirror are gone, but the ORDER
      still earns its keep — it is what puts today's work at the top:
        0 moved into Follow-up today
@@ -92,7 +103,12 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
   const assignees = useAssignees();
   const pg = usePaging(list);
   const sel = useRowSelection(list.map((l) => l.id));
-  const columns = useLeadColumns("follow-up", FOLLOWUP_COLS, "Call Back Again");
+  /* Own key per page. Both pages render this component, and sharing "follow-up" meant
+     arranging columns on Call Not Received silently rearranged Call Back Again. The
+     follow-up key is unchanged so nobody's existing Call Back Again layout is lost. */
+  const cnr = segment === "call_not_received";
+  const columns = useLeadColumns(cnr ? "call-not-received" : "follow-up", FOLLOWUP_COLS,
+                                 cnr ? "Call Not Received" : "Call Back Again");
 
   return (
     <>
@@ -123,6 +139,11 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
           ]}
           values={f} onChange={set} onClear={clear}
         />
+
+      {stages && (
+        <StageBoxes stages={stages} counts={byStage} total={inStageScope.length}
+          value={stage} onChange={setStage} loading={isLoading} />
+      )}
 
       {selectMode && (
         <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />

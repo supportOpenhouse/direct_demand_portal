@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { useAllSocieties, useAssignees, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { leadMatchesQuery, newFirst } from "../lib/leads";
+import { SEGMENT_STAGES, leadMatchesQuery, newFirst } from "../lib/leads";
+import { StageBoxes } from "../components/StageBoxes";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras } from "../lib/leadFilters";
@@ -72,6 +73,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   });
   const { source, owner, visitStatus, hotOnly } = f;
   const societies = useAllSocieties();
+  // stage boxes, on the pages that hold more than one stage — own state, not a filter
+  // chip, for the same reason as on Call Not Received
+  const stages = SEGMENT_STAGES[segment];
+  const [stage, setStage] = useState("");
   const [planner, setPlanner] = useState<Lead | null>(null);
   const [managing, setManaging] = useState<Lead | null>(null);
 
@@ -80,6 +85,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   // computed over the leads passing all the OTHER filters (faceted), so they react to
   // the current selection; `filtered` (skip nothing) drives the table + header count.
   const pass = (l: Lead, skip?: string) =>
+    (skip === "stage" || !stage || l.stage === stage) &&
     (skip === "source" || sourceMatches(l, source)) &&
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
@@ -88,6 +94,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
     passExtras(l, f, skip) &&
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
+  // faceted: each box counts leads passing every OTHER filter, so picking one doesn't zero the rest
+  const inStageScope = stages ? all.filter((l) => pass(l, "stage")) : [];
+  const byStage: Record<string, number> = {};
+  for (const l of inStageScope) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -120,6 +130,11 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
         ]}
         values={f} onChange={set} onClear={clear}
       />
+
+      {stages && (
+        <StageBoxes stages={stages} counts={byStage} total={inStageScope.length}
+          value={stage} onChange={setStage} loading={isLoading} />
+      )}
 
       {selectMode && (
         <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />

@@ -187,3 +187,19 @@ def test_blocked_no_writes_nothing():
 def test_cooldown_is_two_hours():
     from app.routers.leads import NO_COOLDOWN_HOURS
     assert NO_COOLDOWN_HOURS == 2
+
+
+def test_stage_boxes_match_the_pages_that_hold_several_stages():
+    """SEGMENT_STAGES (lib/leads.ts) drives the ALL + per-stage boxes on a page. It must
+    list exactly the multi-stage pages, with exactly their stages: a missing stage leaves
+    leads with no box to find them by, and an extra one is a box that always reads 0."""
+    import pathlib
+
+    ts = (pathlib.Path(__file__).parents[2] / "frontend" / "src" / "lib" / "leads.ts").read_text()
+    block = ts.split("export const SEGMENT_STAGES", 1)[1].split("};", 1)[0]
+    frontend = {seg: set(re.findall(r'"([a-z_]+)"', stages))
+                for seg, stages in re.findall(r"(\w+):\s*\[([^\]]*)\]", block)}
+
+    backend = {seg: _stages_named_in(p) for seg, p in SEGMENTS.items()
+               if len(_stages_named_in(p)) > 1}
+    assert frontend == backend, f"stage boxes drifted from SEGMENTS: {frontend} vs {backend}"

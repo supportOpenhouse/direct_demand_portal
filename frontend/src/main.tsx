@@ -70,14 +70,18 @@ const desktopRoutes = [
       // RM-facing half of the dialer — not under /dialer, which is admin-only
       { path: "live-calls", element: <LiveCalls /> },
       { path: "leads/new", element: <NewLeads /> },
-      { path: "leads/call-not-received", element: <Followup segment="call_not_received" /> },
-      { path: "leads/followup", element: <Followup /> },
-      { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
-      { path: "leads/future-prospect", element: <LeadsSegment segment="future_prospect" /> },
+      /* Every page that shares a component is KEYED by its page. Same component at the same
+         spot, so without a key React keeps one instance across navigation — and its state
+         with it: a stage box picked on Call Not Received still filtering Call Back Again to
+         nothing, or Qualified's search carried into Visited. The key forces a fresh page. */
+      { path: "leads/call-not-received", element: <Followup key="call_not_received" segment="call_not_received" /> },
+      { path: "leads/followup", element: <Followup key="followup" /> },
+      { path: "leads/qualified", element: <LeadsSegment key="qualified" segment="qualified" /> },
+      { path: "leads/future-prospect", element: <LeadsSegment key="future_prospect" segment="future_prospect" /> },
       // one page for visit_scheduled + revisit_scheduled
-      { path: "leads/visited", element: <LeadsSegment segment="visited" /> },
-      { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
-      { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
+      { path: "leads/visited", element: <LeadsSegment key="visited" segment="visited" /> },
+      { path: "leads/converted", element: <LeadsSegment key="converted" segment="converted" /> },
+      { path: "leads/rejected", element: <LeadsSegment key="rejected" segment="rejected" /> },
       /* Old page URLs. These are in people's bookmarks and in links already sent, and a
          dead /leads/pipeline would land on the catch-all rather than the leads it used
          to show. rnr moved from Rejected to Call Not Received with the 16 Sep pages. */

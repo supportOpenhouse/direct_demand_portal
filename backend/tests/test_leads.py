@@ -506,3 +506,23 @@ def test_source_data_edits_log_one_row_per_changed_field():
     assert "activity.changes_between" in body
     # before-values come from RETURNING, not a racing second SELECT
     assert "RETURNING" in body and "SELECT {f} FROM leads WHERE id = :id" in body
+
+
+# --- Q8 "Willing to come to office?" removed (16 Sep) ------------------------
+
+def test_the_qualify_form_no_longer_requires_office_willing():
+    """The question is gone from the form. Left required here, every qualify would 422."""
+    from app.routers.leads import ConfirmPayload
+
+    assert "office_willing" not in ConfirmPayload.model_fields
+    assert "office_preferred_date" not in ConfirmPayload.model_fields
+    assert '"office_willing"' not in _body_of("confirm_lead").split("missing = [", 1)[1].split("]", 1)[0]
+
+
+def test_saving_the_form_does_not_wipe_an_existing_office_answer():
+    """The confirm upsert's set_ rewrites EVERY key in `values`. Writing office_willing as
+    None would erase the answer already on file for each lead the next time it's saved —
+    so the columns must not be written at all, and old answers survive."""
+    body = _body_of("confirm_lead")
+    values = body.split("values = dict(", 1)[1].split(")", 1)[0]
+    assert "office_willing" not in values and "office_preferred_date" not in values

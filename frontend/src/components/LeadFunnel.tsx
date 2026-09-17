@@ -28,8 +28,9 @@ import { Skeleton } from "./Skeleton";
 export const STAGES: { seg: string | null; label: string }[] = [
   { seg: null,        label: "All" },
   { seg: "qualified", label: "Qualified" },
-  { seg: "pipeline",  label: "Visit" },
-  { seg: "revisit",   label: "Revisit" },
+  // one bar now: visit_scheduled and revisit_scheduled share a page, and drawing them
+  // apart here claimed a funnel step that no longer exists
+  { seg: "visited",   label: "Visited" },
   { seg: "converted", label: "Closed" },
   { seg: "future_prospect", label: "Future Prospect" },
 ];
@@ -83,9 +84,11 @@ function weekStartIST(): string {
    that ever reached the stage, so a lead that moved on from Qualified to Visit no
    longer counts as Qualified — and "Visit / Qualified" printed 400%.
 
-   Rejected EXCLUDES future prospects: they live in the rejected segment but already
-   have a bar, and counting them twice would break "bars + band = All". RNR stays in
-   Rejected, which is the page it lives on. */
+   Every segment appears exactly once — four bars, four band rows, eight segments, so
+   "bars + band = All" holds by construction. Future Prospect used to be counted inside
+   `rejected` AND drawn as a bar, which needed a subtraction here to stop it being
+   counted twice; it is its own segment now, so that workaround is gone. RNR is inside
+   Call Not Received, the page it lives on. */
 const OTHER_STAGES: { seg: string; label: string }[] = [
   { seg: "new",               label: "New Leads" },
   { seg: "call_not_received", label: "Call Not Received" },
@@ -94,12 +97,7 @@ const OTHER_STAGES: { seg: string; label: string }[] = [
 ];
 
 export function otherStages(by: Record<string, number>) {
-  return OTHER_STAGES.map((s) => ({
-    ...s,
-    count: s.seg === "rejected"
-      ? (by.rejected ?? 0) - (by.future_prospect ?? 0)
-      : by[s.seg] ?? 0,
-  }));
+  return OTHER_STAGES.map((s) => ({ ...s, count: by[s.seg] ?? 0 }));
 }
 
 export function LeadFunnel() {
@@ -148,11 +146,6 @@ export function LeadFunnel() {
     for (const r of inRange) {
       if (!matchesOption(r.lead.assigned_to, rm)) continue;
       by[r.segment.seg] = (by[r.segment.seg] ?? 0) + 1;
-      // Also counted on its own: its segment is "rejected", which the funnel doesn't
-      // draw, so this is the only way the bar can see it. It stays in `n` exactly
-      // once, as every lead does.
-      if (r.lead.stage === "future_prospect")
-        by.future_prospect = (by.future_prospect ?? 0) + 1;
       n += 1;
     }
     return { ...funnelGeometry(by, n), others: otherStages(by) };

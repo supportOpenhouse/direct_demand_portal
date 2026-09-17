@@ -33,29 +33,33 @@ router = APIRouter(tags=["leads"], dependencies=[Depends(current_user)])
 VIEW_DEDUPE_MIN = 30
 
 STAGES = ("new", "call_not_received", "follow_up", "qualified",
-          "visit_scheduled", "revisit_scheduled", "won", "future_prospect", "rejected", "rnr")
+          "visit_scheduled", "revisit_scheduled", "converted", "future_prospect", "rejected", "rnr")
 
 # stages a lead never moves back out of on its own. future_prospect is parked, not
-# lost — but like rnr it lives on the Rejected page, so a re-submitted qualify form or
-# a saved callback must not silently pull it back into the funnel. Bringing one back
-# is a deliberate act, done with the manual stage setter.
-_TERMINAL = "('won','future_prospect','rejected','rnr')"
+# lost — a re-submitted qualify form or a saved callback must not silently pull it back
+# into the funnel. Bringing one back is a deliberate act, done with the manual stage
+# setter.
+_TERMINAL = "('converted','future_prospect','rejected','rnr')"
 
-# segment → SQL predicate. One page per stage, except Rejected, which also holds two
-# stages that have no page of their own and are badged on it instead:
-#   rnr             — 10 missed calls, never reached
-#   future_prospect — not buying now, worth coming back to
+# segment → SQL predicate. EIGHT pages (16 Sep); a lead lives on exactly one.
+# Three pages hold more than one stage, and each pairing is deliberate:
+#   Call Not Received  rnr is 10 straight misses on a never-reached lead — the same
+#                      problem as call_not_received, further along, so it belongs with
+#                      the leads still being chased, not filed under Rejected.
+#   Visited Leads      visit_scheduled + revisit_scheduled. A revisit is the same buyer
+#                      returning to the same property; it's a stronger signal but not a
+#                      different kind of work, so the two split a page, not two pages.
+#   Future Prospect    its own page now. It was badged inside Rejected, where a parked
+#                      buyer worth calling in three months sat among dead leads.
 SEGMENTS = {
     "new": "stage = 'new'",
-    "call_not_received": "stage = 'call_not_received'",
+    "call_not_received": "stage IN ('call_not_received','rnr')",
     "followup": "stage = 'follow_up'",
     "qualified": "stage = 'qualified'",
-    # a visit is booked (Visited Leads tab). A second booking (a revisit) advances
-    # the lead to revisit_scheduled → the Pipeline Leads tab below.
-    "pipeline": "stage = 'visit_scheduled'",
-    "revisit": "stage = 'revisit_scheduled'",
-    "converted": "stage = 'won'",
-    "rejected": "stage IN ('rejected','rnr','future_prospect')",
+    "future_prospect": "stage = 'future_prospect'",
+    "visited": "stage IN ('visit_scheduled','revisit_scheduled')",
+    "rejected": "stage = 'rejected'",
+    "converted": "stage = 'converted'",
 }
 
 
@@ -307,8 +311,6 @@ class ConfirmPayload(BaseModel):
     preferred_micromarkets: list[str] = []
     shortlisted_societies: list[str] = []
     preferred_localities: list[str] = []
-    office_willing: str
-    office_preferred_date: str | None = None
     remark: str | None = None
     # follow-up is mandatory to qualify or to save-with-callback; omitted (null) means
     # "save the details only" — used for Pipeline leads, which are past qualification and
@@ -326,11 +328,11 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
-    # mandatory: purpose, budget range, config, office-willing
+    # mandatory: purpose, budget range, config
     missing = [
         f for f, v in [("purpose", payload.purpose), ("budget_min_lacs", payload.budget_min_lacs),
                        ("budget_max_lacs", payload.budget_max_lacs),
-                       ("configuration", payload.configuration), ("office_willing", payload.office_willing)]
+                       ("configuration", payload.configuration)]
         if v in (None, "", 0)
     ]
     if missing:
@@ -342,12 +344,6 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
     follow_up = _parse_followup(payload.follow_up_at) if payload.follow_up_at else None
     if payload.qualify and follow_up is None:
         raise HTTPException(status_code=422, detail={"fields": ["follow_up_at"], "message": "follow-up is required to qualify"})
-    office_date: date | None = None
-    if payload.office_preferred_date:
-        try:
-            office_date = date.fromisoformat(payload.office_preferred_date)
-        except ValueError:
-            raise HTTPException(status_code=422, detail={"fields": ["office_preferred_date"]})
     from ..services.normalize import normalize_config
     values = dict(
         lead_id=lead_id, purpose=payload.purpose, budget_value_lacs=None, size_sqft=None,
@@ -356,8 +352,12 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
         size_min_sqft=payload.size_min_sqft, size_max_sqft=payload.size_max_sqft,
         preferred_micromarkets=payload.preferred_micromarkets,
         shortlisted_societies=payload.shortlisted_societies, preferred_localities=payload.preferred_localities,
-        office_willing=payload.office_willing, office_preferred_date=office_date, remark=payload.remark,
+        remark=payload.remark,
     )
+    # office_willing / office_preferred_date are deliberately NOT here (Q8 removed 16 Sep).
+    # The upsert's set_ rewrites every key in `values`, so listing them — even as None —
+    # would wipe the answer already on file for every lead the next time it's saved. Left
+    # out, the columns keep whatever they held.
     async with engine.begin() as conn:
         exists = await conn.execute(text("SELECT stage FROM leads WHERE id = :id"), {"id": lead_id})
         if exists.first() is None:
@@ -508,7 +508,7 @@ _CALL_RESULT_NO = text(f"""
         stage = CASE WHEN cur.blocked THEN leads.stage
                      WHEN CAST(:reject AS boolean) THEN 'rejected'
                      WHEN cur.escalate THEN 'rnr'
-                     WHEN leads.stage IN ('qualified','visit_scheduled','revisit_scheduled','won') THEN leads.stage
+                     WHEN leads.stage IN ('qualified','visit_scheduled','revisit_scheduled','converted') THEN leads.stage
                      WHEN NOT leads.ever_connected THEN 'call_not_received'
                      ELSE 'follow_up' END,
         -- cleared, never auto-set: the callback that was due has now been attempted

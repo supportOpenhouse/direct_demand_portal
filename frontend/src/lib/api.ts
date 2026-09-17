@@ -472,8 +472,6 @@ export interface ConfirmPayload {
   preferred_micromarkets: string[];
   shortlisted_societies: string[];
   preferred_localities: string[];
-  office_willing: string;
-  office_preferred_date: string | null;
   remark: string | null;
   follow_up_at: string | null;  // UTC ISO; null = save details only (Pipeline, no callback)
   qualify: boolean;       // true → qualify the lead; false → save details (+ follow-up if given)

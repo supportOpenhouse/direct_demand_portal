@@ -32,6 +32,34 @@ DEFAULT_SOURCE = "direct"
 # the SPACED forms the app and the API guide use — mirror in frontend/src/lib/slots.ts.
 SLOT_VALUES = ["9 - 11 AM", "11 - 1 PM", "1 - 3 PM", "3 - 5 PM", "5 - 7 PM", "7 - 9 PM"]
 
+# One canonical spelling, accepted in any of the spellings that exist in the wild.
+#
+# "3-5 PM" and "3 - 5 PM" are the same slot to a person and two different slots to Core,
+# which compares them as strings. Both forms are already out there: 297 prod visits were
+# booked unspaced by our own older builds, a deployed frontend can lag a backend deploy by
+# hours, and the Openhouse app writes the spaced one. Rejecting a spelling we understand
+# perfectly well just breaks booking for whoever is behind — so every entry point
+# normalises to SLOT_VALUES instead, and only a slot we genuinely don't recognise is a 400.
+def _slot_key(v: str) -> str:
+    return "".join(v.split()).upper()
+
+
+_SLOT_BY_KEY = {_slot_key(v): v for v in SLOT_VALUES}
+# …and by the hours alone, so a bare "3-5" resolves too. The six slots have distinct hour
+# pairs (9-11, 11-1, 1-3, 3-5, 5-7, 7-9), so dropping AM/PM loses nothing — asserted here
+# rather than assumed, because adding a 7th slot could break it silently.
+_HOURS_ONLY = {_slot_key(v.rsplit(" ", 1)[0]): v for v in SLOT_VALUES}
+assert len(_HOURS_ONLY) == len(SLOT_VALUES), "two slots share the same hours — drop the bare-hours form"
+
+
+def canonical_slot(raw: str | None) -> str | None:
+    """The canonical spaced slot for any accepted spelling, or None if it isn't a slot.
+
+    Accepts "3 - 5 PM", "3-5 PM", "3 -5 pm" and "3-5" — all the same slot to a person."""
+    key = _slot_key(raw or "")
+    return _SLOT_BY_KEY.get(key) or _HOURS_ONLY.get(key)
+
+
 # PUT /schedule-visits/{id}/ — the completion/cancellation contract.
 LEAD_STATUS_VALUES = ["hot", "warm", "cold", "future_prospect", "dead", "select_status"]
 # the six keys of sm_demand_feedback, in the order the form asks them

@@ -73,12 +73,17 @@ const desktopRoutes = [
       { path: "leads/call-not-received", element: <Followup segment="call_not_received" /> },
       { path: "leads/followup", element: <Followup /> },
       { path: "leads/qualified", element: <LeadsSegment segment="qualified" /> },
-      { path: "leads/pipeline", element: <LeadsSegment segment="pipeline" /> },
-      { path: "leads/revisit", element: <LeadsSegment segment="revisit" /> },
+      { path: "leads/future-prospect", element: <LeadsSegment segment="future_prospect" /> },
+      // one page for visit_scheduled + revisit_scheduled
+      { path: "leads/visited", element: <LeadsSegment segment="visited" /> },
       { path: "leads/converted", element: <LeadsSegment segment="converted" /> },
-      // RNR leads live on the Rejected page now — keep old links working
-      { path: "leads/rnr", element: <Navigate to="/leads/rejected" replace /> },
       { path: "leads/rejected", element: <LeadsSegment segment="rejected" /> },
+      /* Old page URLs. These are in people's bookmarks and in links already sent, and a
+         dead /leads/pipeline would land on the catch-all rather than the leads it used
+         to show. rnr moved from Rejected to Call Not Received with the 16 Sep pages. */
+      { path: "leads/pipeline", element: <Navigate to="/leads/visited" replace /> },
+      { path: "leads/revisit", element: <Navigate to="/leads/visited" replace /> },
+      { path: "leads/rnr", element: <Navigate to="/leads/call-not-received" replace /> },
       { path: "leads/:id", element: <LeadDetail /> },
       // Auto Dialer is two pages now; the bare path opens the scheduler
       { path: "dialer", element: <Navigate to="/dialer/schedule" replace /> },

@@ -17,6 +17,7 @@ import {
   IconHome,
   IconPlus,
   IconQualified,
+  IconClock,
   IconReject,
   IconSearch,
   IconX,
@@ -30,7 +31,8 @@ export const MOBILE_NAV = [
   { to: "/leads/call-not-received", label: "Call Not Received", seg: "call_not_received", icon: IconRnr },
   { to: "/leads/followup", label: "Follow Up", seg: "followup", icon: IconFollowup },
   { to: "/leads/qualified", label: "Qualified Leads", seg: "qualified", icon: IconQualified },
-  { to: "/leads/pipeline", label: "Pipeline Leads", seg: "pipeline", icon: IconFunnel },
+  { to: "/leads/future-prospect", label: "Future Prospect", seg: "future_prospect", icon: IconClock },
+  { to: "/leads/visited", label: "Visited Leads", seg: "visited", icon: IconFunnel },
   { to: "/leads/converted", label: "Converted Leads", seg: "converted", icon: IconCheckCircle },
   { to: "/leads/rejected", label: "Rejected Leads", seg: "rejected", icon: IconReject },
   // hidden 15 Sep with the desktop Discovery group — uncomment to bring it back

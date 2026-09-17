@@ -30,7 +30,6 @@ import { StageChip } from "../components/StageChip";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
-const OFFICE = ["Yes", "No", "Maybe"];
 const PLANS = ["Within 30 days", "1–3 months", "3–6 months", "Just exploring"];
 const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
 
@@ -487,8 +486,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
   // cascaded "+" options — offered by the level above, never auto-selected
   const [localitySuggest, setLocalitySuggest] = useState<string[]>([]);
   const [societySuggest, setSocietySuggest] = useState<string[]>([]);
-  const [office, setOffice] = useState("");
-  const [officeDate, setOfficeDate] = useState("");
   const [remark, setRemark] = useState("");
   const [followUp, setFollowUp] = useState("");
   const [showErr, setShowErr] = useState(false);
@@ -508,8 +505,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
     setLocalities(c?.preferred_localities || []);
     setLocalitySuggest([]);
     setSocietySuggest([]);
-    setOffice(c?.office_willing || "");
-    setOfficeDate(c?.office_preferred_date || "");
     setRemark(c?.remark || "");
     setFollowUp("");  // always blank on open — RM enters a fresh follow-up for this connected call
   }, [lead]);
@@ -562,8 +557,8 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
 
   // the follow-up is NOT among these: this form no longer sets one (the Follow-up card
   // beside it owns that), so the only required fields are the starred answers
-  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config, office: !office };
-  const reqInvalid = invalid.purpose || invalid.budget || invalid.config || invalid.office;
+  const invalid = { purpose: !purpose, budget: !(bMin > 0 && bMax > 0 && bMax >= bMin), config: !config };
+  const reqInvalid = invalid.purpose || invalid.budget || invalid.config;
 
   const basePayload = () => ({
     purpose,
@@ -575,8 +570,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
     preferred_micromarkets: micromarkets,
     shortlisted_societies: societies,
     preferred_localities: localities,
-    office_willing: office,
-    office_preferred_date: office === "Yes" || office === "Maybe" ? officeDate || null : null,
     remark: remark || null,
   });
 
@@ -764,22 +757,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
                 placeholder="Search societies…"
                 fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", ") }))}
               />
-            </div>
-
-            <div className="two">
-              <div className={field(invalid.office)}>
-                <label>Q8. Willing to come to office? <span className="req">*</span></label>
-                <select value={office} onChange={(e) => setOffice(e.target.value)}>
-                  <option value="">Select…</option>
-                  {OFFICE.map((o) => <option key={o}>{o}</option>)}
-                </select>
-              </div>
-              {(office === "Yes" || office === "Maybe") ? (
-                <div className="field">
-                  <label>Preferred date</label>
-                  <input type="date" value={officeDate} onChange={(e) => setOfficeDate(e.target.value)} />
-                </div>
-              ) : <div />}
             </div>
 
             <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>

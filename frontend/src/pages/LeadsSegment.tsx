@@ -23,10 +23,13 @@ import { LeadTable } from "../features/leadTable/LeadTable";
 import { LEAD_SORTERS } from "../features/leadTable/columns";
 import { useLeadColumns } from "../features/leadTable/ColumnSettings";
 
-const NOUN: Record<string, string> = { qualified: "qualified leads", pipeline: "visited leads", revisit: "pipeline leads", converted: "converted leads", rejected: "rejected leads" };
+const NOUN: Record<string, string> = {
+  qualified: "qualified leads", future_prospect: "future prospects", visited: "visited leads",
+  converted: "converted leads", rejected: "rejected leads",
+};
 
 const TITLE: Record<string, string> = {
-  qualified: "Qualified Leads", pipeline: "Visited Leads", revisit: "Pipeline Leads",
+  qualified: "Qualified Leads", future_prospect: "Future Prospect", visited: "Visited Leads",
   converted: "Converted Leads", rejected: "Rejected Leads",
 };
 
@@ -35,21 +38,22 @@ const TITLE: Record<string, string> = {
 function segmentCols(segment: string): string[] {
   if (segment === "rejected")
     return ["name", "phone", "source", "reason", "rejectNote", "created", "rejectedOn", "notes", "assigned", "activity"];
-  // Qualified & Converted had no Stage column — every row would read the same
-  const stage = segment === "pipeline" || segment === "revisit" ? ["stage"] : [];
-  // ★ hot marking is a Pipeline Leads tool
-  const hot = segment === "revisit" ? ["hot"] : [];
+  /* Stage only on Visited Leads. Everywhere else every row reads the same word, so the
+     column is a wall of one value — but Visited holds visit_scheduled AND
+     revisit_scheduled, and telling a first visit from a return is the point of the page. */
+  const stage = segment === "visited" ? ["stage"] : [];
+  // ★ hot marking is for leads that have actually been out on a visit
+  const hot = segment === "visited" ? ["hot"] : [];
   return [...hot, "name", "phone", "source", ...stage, "society", "notes", "assigned", "activity", "actions"];
 }
 
-export default function LeadsSegment({ segment }: { segment: "qualified" | "pipeline" | "revisit" | "converted" | "rejected" }) {
+export default function LeadsSegment({ segment }: { segment: "qualified" | "future_prospect" | "visited" | "converted" | "rejected" }) {
   const rejected = segment === "rejected";
-  // "pipeline" = Visited Leads (visit booked); "revisit" = Pipeline Leads (revisit booked).
-  // Both carry visits, so both get the ★ hot column + visit-status filter.
-  const hasVisits = segment === "pipeline" || segment === "revisit";
-  const isPipeline = segment === "revisit"; // the Pipeline Leads tab — the only one with ★ hot marking
-  // Qualified & Converted drop the Stage column — every row would read the same ("Qualified"/"Won")
-  const showStage = !rejected && segment !== "qualified" && segment !== "converted";
+  // Visited Leads is the only page whose rows carry a booked visit, so it owns the
+  // ★ hot column, the visit-status filter and the Stage column.
+  const hasVisits = segment === "visited";
+  const isPipeline = hasVisits;
+  const showStage = hasVisits;
   /* One control, one name, everywhere. "Book Revisit" claimed the button could only do
      that, and there was no way to see or change what was already booked — the popup it
      opens now owns new visit / reschedule / revisit / cancel. */

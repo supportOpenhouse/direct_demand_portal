@@ -142,3 +142,80 @@ async def run_app_visit_data_sync(trigger: str = "manual") -> dict:
               "batches": ceil(len(ids) / BATCH), "found": n_found, "missing": n_missing}
     log.info("app_visit_data: %s", result)
     return result
+
+
+# --- every visit on Openhouse, not just ours -----------------------------------------
+# GET crm/all-visits/?limit=&offset= → {"visits": [...], "pagination": {limit, offset,
+# nextOffset, hasMore}}. Same visit objects as crm/visits/, so _project maps them as-is.
+# limit=100 is rejected with a 400 (probed 16 Sep); 50 is the value Core documented.
+ALL_VISITS_PAGE = 50
+
+
+async def fetch_all_visits(client) -> tuple[list[dict], int]:
+    """Every visit, one page at a time. Returns (unique visits, repeats dropped).
+
+    ⚠️ Offset paging over a table that's still being written to can hand back the same
+    visit twice — a visit created mid-walk shifts every later row down by one. A repeat
+    in one INSERT … ON CONFLICT DO UPDATE is also a hard Postgres error ("cannot affect
+    row a second time"), so repeats are removed here, keeping the copy with the newest
+    updatedAt. A request that fails raises: a half-walked table would look complete."""
+    by_id: dict[int, dict] = {}
+    seen = 0
+    offset = 0
+    while True:
+        resp = await client.get("crm/all-visits/", params={"limit": ALL_VISITS_PAGE, "offset": offset})
+        resp.raise_for_status()
+        body = resp.json()
+        for v in body["visits"]:
+            seen += 1
+            vid = int(v["id"])
+            prev = by_id.get(vid)
+            if prev is None or (v.get("updatedAt") or "") > (prev.get("updatedAt") or ""):
+                by_id[vid] = v
+        page = body["pagination"]
+        if not page["hasMore"]:
+            break
+        if page["nextOffset"] <= offset:
+            # guard against a server bug looping us forever on one page
+            raise RuntimeError(f"all-visits pagination did not advance (offset {offset})")
+        offset = page["nextOffset"]
+    return list(by_id.values()), seen - len(by_id)
+
+
+async def run_all_visits_sync(trigger: str = "manual", apply: bool = True) -> dict:
+    """Pull every Openhouse visit into app_visit_data. `apply=False` fetches and counts
+    but writes nothing."""
+    settings = get_settings()
+    if not (settings.CRM_BOOKING_API_BASE_URL and settings.CRM_API_KEY):
+        raise RuntimeError("CRM_BOOKING_API_BASE_URL / CRM_API_KEY not set")
+    engine = neon_engine()
+    if engine is None:
+        raise RuntimeError("DATABASE_URL not configured")
+
+    async with _client() as client:
+        visits, repeats = await fetch_all_visits(client)
+    found, _ = rows_from_response({"visits": visits, "missingIds": []})
+
+    async with engine.connect() as conn:
+        existing = {r[0] for r in await conn.execute(text("SELECT visit_id FROM app_visit_data"))}
+        ours = {r[0] for r in await conn.execute(VISIT_IDS)}
+    ids = {r["visit_id"] for r in found}
+    result = {
+        "trigger": trigger, "applied": apply,
+        "fetched": len(visits) + repeats, "repeats_dropped": repeats, "unique_visits": len(found),
+        "new_rows": len(ids - existing), "updated_rows": len(ids & existing),
+        "booked_by_us": len(ids & ours), "not_booked_by_us": len(ids - ours),
+    }
+    if not apply:
+        return result
+
+    for i in range(0, len(found), 500):  # 500 rows × ~40 columns stays well under the bind limit
+        chunk = found[i:i + 500]
+        async with engine.begin() as conn:
+            stmt = pg_insert(AppVisitData).values(chunk)
+            await conn.execute(stmt.on_conflict_do_update(
+                index_elements=["visit_id"],
+                set_={c: stmt.excluded[c] for c in chunk[0] if c != "visit_id"},
+            ))
+    log.info("app_visit_data all-visits: %s", result)
+    return result

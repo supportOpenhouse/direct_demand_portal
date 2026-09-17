@@ -374,19 +374,19 @@ class Visit(Base):
 
 
 class AppVisitData(Base):
-    """Openhouse Core's own record of a visit we booked, fetched by visit id from
-    GET /api/v1/oh/crm/visits/?ids=… (services/app_visit_data.py).
+    """Openhouse Core's own record of a visit — EVERY visit on Openhouse, not only the
+    ones we booked (GET crm/all-visits/, services/app_visit_data.run_all_visits_sync).
 
-    Stored VERBATIM in `data` on purpose: what it will be used for isn't decided yet,
-    and a raw copy can be projected into columns later without re-fetching. Keyed and
-    foreign-keyed on crm_visits.visit_id, so it joins straight onto our own visit row.
+    Stored VERBATIM in `data`, and projected into typed columns. Keyed on Core's visit
+    id, so `JOIN crm_visits USING (visit_id)` still reaches our own row for a visit we
+    booked. ⚠️ There is NO foreign key to crm_visits any more (dropped 16 Sep):
+    crm_visits holds only our bookings, so every other Openhouse visit would violate it
+    and roll back its whole insert batch. A LEFT JOIN is how you tell ours from theirs.
     `found = false` = Core listed the id in `missingIds`; the last good `data` is kept."""
 
     __tablename__ = "app_visit_data"
 
-    visit_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("crm_visits.visit_id", ondelete="CASCADE"), primary_key=True
-    )
+    visit_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     found: Mapped[bool] = mapped_column(Boolean, nullable=False)
     data: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
     crm_updated_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))  # Core's updatedAt

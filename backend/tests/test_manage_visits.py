@@ -70,7 +70,7 @@ def test_stage_moves_stay_forward_only():
     demoted back to visit_scheduled by a booking for a new property."""
     for fn in (visits_router.book, visits_router.revisit):
         src = inspect.getsource(fn)
-        assert "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage" in src
+        assert "WHEN stage IN ('converted','future_prospect','rejected','rnr') THEN stage" in src
     assert "WHEN stage = 'revisit_scheduled' THEN stage" in inspect.getsource(visits_router.book)
 
 
@@ -210,3 +210,39 @@ def test_an_unlabelled_core_column_still_renders():
     modal = (FRONTEND / "features" / "ManageVisitsModal.tsx").read_text()
     assert "VISIT_DETAIL_LABELS[k] ?? prettify(k)" in modal
     assert 'title: "Other"' in modal, "unlisted keys need a group to land in"
+
+
+def test_a_slot_is_accepted_in_any_spelling_and_stored_one_way():
+    """"3-5 PM" and "3 - 5 PM" are one slot to a person and two to Core, which compares
+    them as strings. Rejecting a spelling we understand perfectly well just breaks booking
+    for whoever is behind — a deployed frontend lags a backend deploy, and 297 prod visits
+    were booked unspaced by our own older builds."""
+    from app.services.crm_booking import canonical_slot
+
+    for spelling in ("3 - 5 PM", "3-5 PM", "3 -5 pm", "  3-5 PM ", "3-5", "3 - 5"):
+        assert canonical_slot(spelling) == "3 - 5 PM", spelling
+    # every canonical value is its own canonical form — no slot rewrites to a different one
+    for v in SLOT_VALUES:
+        assert canonical_slot(v) == v
+
+
+def test_an_unknown_slot_is_still_rejected():
+    """Normalising must not turn into accepting anything. Core stores selected_time as
+    free text, so a slot it doesn't know is stored verbatim and silently defeats its own
+    duplicate-visit check."""
+    from app.services.crm_booking import canonical_slot
+
+    for junk in ("banana o'clock", "4-6 PM", "", None, "3", "3 - 5 QM"):
+        assert canonical_slot(junk) is None, junk
+
+
+def test_every_entry_point_normalises_before_it_writes_anything():
+    """Three endpoints take a slot. Each must canonicalise BEFORE the Core call, our
+    crm_visits copy and the activity row — a slot normalised in one of the three is the
+    bug this replaced, just moved."""
+    for fn in (visits_router.book, visits_router.reschedule, visits_router.revisit):
+        src = inspect.getsource(fn)
+        assert "canonical_slot(req.selected_time)" in src, f"{fn.__name__} doesn't normalise"
+        assert 'req.model_copy(update={"selected_time": slot})' in src, \
+            f"{fn.__name__} normalises but keeps using the raw value"
+        assert "if req.selected_time not in SLOT_VALUES" not in src, f"{fn.__name__} still rejects a spelling"

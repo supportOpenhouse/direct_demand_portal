@@ -31,10 +31,10 @@ const STAGE_COLS: { seg: string; label: string }[] = [
   { seg: "call_not_received", label: "Call Not Received" },
   { seg: "followup", label: "Call Back Again" },
   { seg: "qualified", label: "Qualified Leads" },
-  { seg: "pipeline", label: "Visited Leads" },
-  { seg: "revisit", label: "Pipeline Leads" },
-  { seg: "converted", label: "Converted Leads" },
+  { seg: "future_prospect", label: "Future Prospect" },
+  { seg: "visited", label: "Visited Leads" },
   { seg: "rejected", label: "Rejected Leads" },
+  { seg: "converted", label: "Converted Leads" },
 ];
 const REP_RANGES: { v: string; label: string }[] = [
   { v: "all", label: "All" },
@@ -184,13 +184,14 @@ export default function Analytics() {
     const nCnr = count("call_not_received");
     const nFollowup = count("followup");
     const nQualified = count("qualified");
-    const nPipeline = count("pipeline");
+    const nPipeline = count("visited");
     const nConverted = count("converted");
-    // RNR and Future Prospect have no segment of their own — both come back under
-    // "rejected", so each is subtracted or a parked buyer reads as a rejected one
+    /* Each of these is its own segment since 16 Sep, so nothing is subtracted back out.
+       RNR sits inside Call Not Received (the page it lives on) and is still counted on
+       its own here, because "never reached after 10 tries" is worth its own number. */
     const nRnr = rows.filter((r) => r.lead.stage === "rnr").length;
-    const nFuture = rows.filter((r) => r.lead.stage === "future_prospect").length;
-    const nRejected = count("rejected") - nRnr - nFuture;
+    const nFuture = count("future_prospect");
+    const nRejected = count("rejected");
     const qualifiedPlus = nQualified + nPipeline + nConverted; // reached qualified or beyond
 
     // TAT — first-contact SLA on leads still awaiting the first call (New)
@@ -264,7 +265,7 @@ export default function Analytics() {
 
       let x = ex.get(rm);
       if (!x) { x = { qualified_reached: 0, ever_connected: 0, miss_total: 0, hot: 0, followups_overdue: 0, active_days: 0, leads_per_active_day: 0 }; ex.set(rm, x); }
-      if (["qualified", "pipeline", "revisit", "converted"].includes(r.seg)) x.qualified_reached += 1;
+      if (["qualified", "visited", "converted"].includes(r.seg)) x.qualified_reached += 1;
       if (r.lead.ever_connected) x.ever_connected += 1;
       x.miss_total += r.lead.miss_count || 0;
       if (r.lead.is_hot) x.hot += 1;

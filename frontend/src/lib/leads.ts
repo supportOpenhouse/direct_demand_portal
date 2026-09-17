@@ -66,8 +66,9 @@ export const initials = (n: string | null) =>
     .toUpperCase();
 
 /* Every stage. `stage` is authoritative — each maps to exactly one page, so a lead
-   is never in two lists or none. rnr and future_prospect have no page of their own;
-   both live on Rejected, badged. */
+   is never in two lists or none. Three pages hold two stages each: Call Not Received
+   (+ rnr), Visited Leads (visit_scheduled + revisit_scheduled), and — until 16 Sep —
+   Rejected. future_prospect has its own page now. */
 const STAGE_LABEL: Record<string, string> = {
   new: "New",
   call_not_received: "Call Not Received",
@@ -75,7 +76,7 @@ const STAGE_LABEL: Record<string, string> = {
   qualified: "Qualified",
   visit_scheduled: "Visit Scheduled",
   revisit_scheduled: "Revisit Scheduled",
-  won: "Won",
+  converted: "Converted",
   future_prospect: "Future Prospect",
   rejected: "Rejected",
   rnr: "RNR",
@@ -125,17 +126,14 @@ const SEG_HUE: Record<string, string> = {
   call_not_received: "--cyan",
   followup: "--slate",
   qualified: "--indigo",
-  pipeline: "--amber",
-  // Visit and Revisit share the `visit` stage class everywhere else, which renders
-  // two identical bars side by side here — gold keeps them apart without leaving
-  // the warm end of the ramp they both belong to.
-  revisit: "--gold",
-  converted: "--emerald",
-  rejected: "--coral",
-  // Not a segment — future prospects live inside "rejected" — but the funnel draws
-  // it as a bar of its own, and this map must stay the ONE place a stage's colour is
-  // decided. Same token as the stage chip, so the bar and the chip agree.
+  // its own page since 16 Sep; same token as the stage chip, so the bar, the box and
+  // the chip all agree — this map stays the ONE place a segment's colour is decided
   future_prospect: "--prospect",
+  // one page for visit_scheduled + revisit_scheduled. The gold that used to separate
+  // Revisit from Visit is unused now that they share a page.
+  visited: "--amber",
+  rejected: "--coral",
+  converted: "--emerald",
 };
 
 /** CSS var for a segment's colour; `null` (the ALL bucket) is the brand. */
@@ -144,7 +142,7 @@ export const segHue = (seg: string | null) =>
 
 export const ALL_STAGES = [
   "new", "call_not_received", "follow_up", "qualified",
-  "visit_scheduled", "revisit_scheduled", "won", "future_prospect", "rejected", "rnr",
+  "visit_scheduled", "revisit_scheduled", "converted", "future_prospect", "rejected", "rnr",
 ] as const;
 
 const STAGE_CLASS: Record<string, string> = {
@@ -154,7 +152,9 @@ const STAGE_CLASS: Record<string, string> = {
   qualified: "nego",
   visit_scheduled: "visit",
   revisit_scheduled: "visit",
-  won: "won",
+  // the CSS class stays `won` — it is the emerald chip, and VisitsCell reuses it for a
+  // COMPLETED VISIT, which has nothing to do with the lead stage that was renamed
+  converted: "won",
   // Its own hue, NOT `lost`: it shares the Rejected page with genuinely dead leads,
   // and a parked buyer drawn in the same coral would be indistinguishable from one.
   future_prospect: "prospect",
@@ -169,16 +169,17 @@ export const stageClass = (s: string) => STAGE_CLASS[s] || "new";
    which tab a matched lead is in and to navigate there. */
 export const LEAD_SEGMENTS: { seg: string; route: string; label: string }[] = [
   { seg: "new", route: "/leads/new", label: "New Leads" },
+  // rnr (10 straight misses, never reached) is the same problem further along, so it
+  // sits with the leads still being chased rather than under Rejected
   { seg: "call_not_received", route: "/leads/call-not-received", label: "Call Not Received" },
   { seg: "followup", route: "/leads/followup", label: "Call Back Again" },
-  { seg: "qualified", route: "/leads/qualified", label: "Qualified" },
-  // "pipeline" segment = stage visit_scheduled, shown as "Visited"; a revisit booking
-  // advances the lead to the new "revisit" segment, shown as "Pipeline"
-  { seg: "pipeline", route: "/leads/pipeline", label: "Visited" },
-  { seg: "revisit", route: "/leads/revisit", label: "Pipeline" },
-  { seg: "converted", route: "/leads/converted", label: "Converted" },
-  // RNR and Future Prospect leads keep their own stage but live on the Rejected page, badged
+  { seg: "qualified", route: "/leads/qualified", label: "Qualified Leads" },
+  { seg: "future_prospect", route: "/leads/future-prospect", label: "Future Prospect" },
+  // visit_scheduled + revisit_scheduled. A revisit is the same buyer returning to the
+  // same property — a stronger signal, but not different work, so one page holds both.
+  { seg: "visited", route: "/leads/visited", label: "Visited Leads" },
   { seg: "rejected", route: "/leads/rejected", label: "Rejected" },
+  { seg: "converted", route: "/leads/converted", label: "Converted" },
 ];
 
 /* Single source of truth for "does this lead match the search box" — every lead

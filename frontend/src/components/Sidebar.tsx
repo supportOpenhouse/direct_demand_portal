@@ -11,6 +11,7 @@ import { markCallsSeen, readCallsSeenAt } from "../lib/calls";
 import {
   IconBox,
   IconCheckCircle,
+  IconClock,
   IconFunnel,
   IconHome,
   IconHomeNav,
@@ -142,19 +143,20 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
         <NavLink to="/leads/qualified" className={navClass} title="Qualified Leads">
           <IconQualified /> <span className="nav-t">Qualified Leads</span> <Pct seg="qualified" />
         </NavLink>
-        <NavLink to="/leads/pipeline" className={navClass} title="Visited Leads">
-          <IconFunnel /> <span className="nav-t">Visited Leads</span> <Pct seg="pipeline" />
+        {/* parked, not lost — its own page since 16 Sep, so a buyer worth calling in
+            three months is no longer filed among dead leads */}
+        <NavLink to="/leads/future-prospect" className={navClass} title="Future Prospect">
+          <IconClock /> <span className="nav-t">Future Prospect</span> <Pct seg="future_prospect" />
         </NavLink>
-        {/* a booked revisit advances a Visited lead here */}
-        <NavLink to="/leads/revisit" className={navClass} title="Pipeline Leads">
-          <IconFunnel /> <span className="nav-t">Pipeline Leads</span> <Pct seg="revisit" />
+        {/* visit_scheduled + revisit_scheduled share this page */}
+        <NavLink to="/leads/visited" className={navClass} title="Visited Leads">
+          <IconFunnel /> <span className="nav-t">Visited Leads</span> <Pct seg="visited" />
+        </NavLink>
+        <NavLink to="/leads/rejected" className={navClass} title="Rejected Leads">
+          <IconReject /> <span className="nav-t">Rejected Leads</span> <Pct seg="rejected" />
         </NavLink>
         <NavLink to="/leads/converted" className={navClass} title="Converted Leads">
           <IconCheckCircle /> <span className="nav-t">Converted Leads</span> <Pct seg="converted" />
-        </NavLink>
-        {/* RNR has no page of its own — those leads sit in Rejected, badged */}
-        <NavLink to="/leads/rejected" className={navClass} title="Rejected Leads">
-          <IconReject /> <span className="nav-t">Rejected Leads</span> <Pct seg="rejected" />
         </NavLink>
         {/* Both were topbar buttons. They're pages, so they belong in the nav — and
             at the END of Workspace: neither is a stage of the funnel above, so

@@ -13,7 +13,9 @@ from ..core.auth import current_user
 from ..db import neon_engine
 from ..models import AppVisitData, CrmVisit
 from ..services import activity
-from ..services.crm_booking import BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits
+from ..services.crm_booking import (
+    BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits, canonical_slot,
+)
 
 log = logging.getLogger("visits")
 router = APIRouter(tags=["visits"], dependencies=[Depends(current_user)])
@@ -114,8 +116,15 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
         raise HTTPException(status_code=400, detail="No visits to book")
     if len(req.visits) > 10:
         raise HTTPException(status_code=400, detail="At most 10 visits per booking")
-    if req.selected_time not in SLOT_VALUES:
+    # "3-5 PM" and "3 - 5 PM" are one slot to a person and two to Core. Normalise rather
+    # than reject: a deployed frontend can lag a backend deploy, and 297 prod visits were
+    # booked in the unspaced form by our own older builds. Replacing it on `req` means
+    # every use below — the Core call, our crm_visits copy, the activity row — is the
+    # canonical spelling, with no third place to remember.
+    slot = canonical_slot(req.selected_time)
+    if slot is None:
         raise HTTPException(status_code=400, detail=f"Invalid time slot. Use one of: {', '.join(SLOT_VALUES)}")
+    req = req.model_copy(update={"selected_time": slot})
     for v in req.visits:
         if not v.buyer_name.strip() or len(v.buyer_mobile.strip()) < 5:
             raise HTTPException(status_code=400, detail="Each visit needs a buyer name and at least 5 mobile digits")
@@ -200,7 +209,7 @@ async def book(req: BookRequest, user: dict = Depends(current_user)):
                     # the pipeline is never demoted back to visit_scheduled.
                     moved = (await conn.execute(text(
                         "UPDATE leads SET stage = CASE "
-                        "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage "
+                        "WHEN stage IN ('converted','future_prospect','rejected','rnr') THEN stage "
                         "WHEN :is_revisit THEN 'revisit_scheduled' "
                         "WHEN stage = 'revisit_scheduled' THEN stage "
                         "ELSE 'visit_scheduled' END WHERE id = :id "
@@ -346,10 +355,17 @@ async def reschedule(visit_id: int, req: SlotIn, user: dict = Depends(current_us
     """Move an upcoming visit to a new slot. Same visit id, so nothing about the lead's
     history changes — only when they're going."""
     row = await _known_visit(visit_id)
-    from ..services.crm_booking import SLOT_VALUES, reschedule_visit
+    from ..services.crm_booking import SLOT_VALUES, canonical_slot, reschedule_visit
 
-    if req.selected_time not in SLOT_VALUES:
+    # "3-5 PM" and "3 - 5 PM" are one slot to a person and two to Core. Normalise rather
+    # than reject: a deployed frontend can lag a backend deploy, and 297 prod visits were
+    # booked in the unspaced form by our own older builds. Replacing it on `req` means
+    # every use below — the Core call, our crm_visits copy, the activity row — is the
+    # canonical spelling, with no third place to remember.
+    slot = canonical_slot(req.selected_time)
+    if slot is None:
         raise HTTPException(status_code=400, detail=f"Invalid time slot. Use one of: {', '.join(SLOT_VALUES)}")
+    req = req.model_copy(update={"selected_time": slot})
 
     res = await reschedule_visit(visit_id, req.selected_date, req.selected_time)
     if res["status"] == "error":
@@ -376,10 +392,17 @@ async def revisit(visit_id: int, req: SlotIn, user: dict = Depends(current_user)
     completed one. Core copies the buyer, home, broker and sales manager, and returns a
     NEW visit id, so this always moves the lead to revisit_scheduled."""
     row = await _known_visit(visit_id)
-    from ..services.crm_booking import SLOT_VALUES, create_revisit
+    from ..services.crm_booking import SLOT_VALUES, canonical_slot, create_revisit
 
-    if req.selected_time not in SLOT_VALUES:
+    # "3-5 PM" and "3 - 5 PM" are one slot to a person and two to Core. Normalise rather
+    # than reject: a deployed frontend can lag a backend deploy, and 297 prod visits were
+    # booked in the unspaced form by our own older builds. Replacing it on `req` means
+    # every use below — the Core call, our crm_visits copy, the activity row — is the
+    # canonical spelling, with no third place to remember.
+    slot = canonical_slot(req.selected_time)
+    if slot is None:
         raise HTTPException(status_code=400, detail=f"Invalid time slot. Use one of: {', '.join(SLOT_VALUES)}")
+    req = req.model_copy(update={"selected_time": slot})
 
     res = await create_revisit(visit_id, req.selected_date, req.selected_time)
     if res["status"] == "error":
@@ -413,7 +436,7 @@ async def revisit(visit_id: int, req: SlotIn, user: dict = Depends(current_user)
                               "society": row["society"]}))
                 moved = (await conn.execute(text(
                     "UPDATE leads SET stage = CASE "
-                    "WHEN stage IN ('won','future_prospect','rejected','rnr') THEN stage "
+                    "WHEN stage IN ('converted','future_prospect','rejected','rnr') THEN stage "
                     "ELSE 'revisit_scheduled' END WHERE id = :id "
                     "RETURNING (SELECT stage FROM leads WHERE id = :id) AS before, stage"),
                     {"id": row["lead_id"]})).first()

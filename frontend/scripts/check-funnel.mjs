@@ -12,11 +12,12 @@ import assert from "node:assert/strict";
 
 const STAGES = [
   { seg: null, label: "All" }, { seg: "qualified", label: "Qualified" },
-  { seg: "pipeline", label: "Visit" }, { seg: "revisit", label: "Revisit" },
+  // one bar: visit_scheduled + revisit_scheduled share the Visited Leads page
+  { seg: "visited", label: "Visited" },
   { seg: "converted", label: "Closed" },
   { seg: "future_prospect", label: "Future Prospect" },
 ];
-const FLOW = 5;   // All → Closed; the rows after this are outside the flow
+const FLOW = 4;   // All → Closed; the rows after this are outside the flow
 /* Widths are now a fraction of the TRACK, and the track itself is half the card —
    so a full bar is 1.0 here, not 0.5. */
 const MIN_W = 0.04;
@@ -29,18 +30,20 @@ function funnelGeometry(by, total) {
   return { counts, share, widths, total };
 }
 
-// future_prospect is also inside `rejected` (278) — the funnel counts it twice on
-// purpose: once in its segment, once on its own bar. `total` counts each lead once.
-const by = { new: 2500, rejected: 278, qualified: 468, pipeline: 97, revisit: 4, converted: 0,
-             future_prospect: 12 };
-const g = funnelGeometry(by, 3347);
+/* The eight segments, each counted ONCE — future_prospect is its own segment now, so
+   nothing is double-counted and nothing is subtracted back out. */
+const by = { new: 2500, call_not_received: 0, followup: 0, rejected: 266,
+             qualified: 468, visited: 101, converted: 0, future_prospect: 12 };
+const TOTAL = Object.values(by).reduce((n, c) => n + c, 0);
+assert.equal(TOTAL, 3347, "the fixture's segments must add up to the book");
+const g = funnelGeometry(by, TOTAL);
 
-assert.deepEqual(g.counts, [3347, 468, 97, 4, 0, 12], "each bar is its own count");
+assert.deepEqual(g.counts, [3347, 468, 101, 0, 12], "each bar is its own count");
 assert.equal(g.share[0], 1, "All is the whole book, so 100%");
 assert.equal(g.widths[0], 1, "All fills its track completely");
 assert.ok(g.widths.every((w) => w <= 1), "nothing overflows the track");
 // Rejected and New are folded into All, never drawn on their own.
-assert.ok(!g.counts.includes(278) && !g.counts.includes(2500), "rejected/new are not bars");
+assert.ok(!g.counts.includes(266) && !g.counts.includes(2500), "rejected/new are not bars");
 // Order must survive the scale, and the steps must stay visible.
 g.widths.slice(0, FLOW).forEach((w, i) => i && assert.ok(w <= g.widths[i - 1], "the flow must narrow"));
 // ...and only the flow. A parked bucket outnumbering Closed is normal, not a bug.
@@ -48,10 +51,12 @@ assert.ok(g.widths[FLOW] > g.widths[FLOW - 1], "Future Prospect may be wider tha
 assert.ok(g.counts[FLOW] < g.counts[0], "Future Prospect is still a slice of All");
 // >= not >: a 4-lead stage computes to 1.7% and CLAMPS to the 2% floor, which is
 // exactly what the floor is for. Asserting > here failed on correct behaviour.
-g.widths.slice(0, 4).forEach((w) => assert.ok(w >= MIN_W, "a non-empty bar is visible"));
+g.widths.filter((w) => w > 0).forEach((w) => assert.ok(w >= MIN_W, "a non-empty bar is visible"));
 // "none" and "almost none" must not look the same.
 assert.equal(g.widths[FLOW - 1], 0, "an empty stage draws nothing");
-assert.ok(g.widths[3] >= MIN_W, "a stage with 4 leads still draws");
+// >= MIN_W on a stage far below the floor: 4 of 3351 is 0.1%, which clamps to 2%
+assert.ok(funnelGeometry({ ...by, converted: 4 }, TOTAL + 4).widths[3] >= MIN_W,
+  "a stage with 4 leads still draws");
 // No leads at all must not divide by zero.
 assert.ok(funnelGeometry({}, 0).widths.every((w) => w === 0), "zero total is safe");
 
@@ -63,12 +68,13 @@ const OTHER = [
   { seg: "followup", label: "Call Back Again" }, { seg: "rejected", label: "Rejected" },
 ];
 function otherStages(b) {
-  return OTHER.map((o) => ({ ...o, count: o.seg === "rejected"
-    ? (b.rejected ?? 0) - (b.future_prospect ?? 0) : b[o.seg] ?? 0 }));
+  return OTHER.map((o) => ({ ...o, count: b[o.seg] ?? 0 }));
 }
 const o = otherStages(by);
 assert.deepEqual(o.map((x) => x.count), [2500, 0, 0, 266], "band counts, missing segments are 0");
-assert.equal(o[3].count, 278 - 12, "Rejected excludes future prospects — they already have a bar");
+// Rejected is just rejected now: future prospects have their own segment AND their own
+// bar, so there is nothing to subtract back out of the band.
+assert.equal(o[3].count, by.rejected, "Rejected is its own segment, no subtraction");
 // The property that makes the card honest: nothing counted twice, nothing dropped.
 const bars = g.counts.slice(1).reduce((n, c) => n + c, 0);
 const band = o.reduce((n, x) => n + x.count, 0);

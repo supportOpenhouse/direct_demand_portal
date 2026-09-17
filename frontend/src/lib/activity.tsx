@@ -23,7 +23,7 @@ const BAD = new Set(["call_missed", "unmarked_hot"]);
 export function actionStyle(r: ActivityRow) {
   if (r.action === "stage_change") {
     const to = r.after_value || "";
-    if (["won", "qualified", "visit_scheduled", "revisit_scheduled"].includes(to))
+    if (["converted", "qualified", "visit_scheduled", "revisit_scheduled"].includes(to))
       return { background: "var(--emerald-soft)", color: "var(--emerald-deep)" };
     if (["rejected", "rnr"].includes(to))
       return { background: "var(--coral-soft)", color: "var(--coral)" };

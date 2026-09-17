@@ -38,10 +38,47 @@ def test_no_page_references_an_unknown_stage():
         assert not unknown, f"segment '{seg}' references unknown stage(s): {unknown}"
 
 
-def test_rejected_page_holds_rnr_and_future_prospect_too():
-    """RNR and Future Prospect keep their own stage but have no page — both share
-    Rejected, badged."""
-    assert _stages_named_in(SEGMENTS["rejected"]) == {"rejected", "rnr", "future_prospect"}
+def test_the_eight_pages_hold_exactly_the_stages_they_should():
+    """The page system (16 Sep). Three pages hold two stages each, and each pairing is a
+    decision, not an accident — so they're pinned here rather than left to drift:
+      Call Not Received  + rnr             10 straight misses is the same problem further
+                                           along, not a rejection
+      Visited Leads      both visit stages a revisit is the same buyer at the same
+                                           property — stronger, but not different work
+      Rejected           rejected ONLY     future_prospect moved out to its own page; a
+                                           buyer worth calling in three months is not dead
+    """
+    assert {seg: _stages_named_in(p) for seg, p in SEGMENTS.items()} == {
+        "new": {"new"},
+        "call_not_received": {"call_not_received", "rnr"},
+        "followup": {"follow_up"},
+        "qualified": {"qualified"},
+        "future_prospect": {"future_prospect"},
+        "visited": {"visit_scheduled", "revisit_scheduled"},
+        "rejected": {"rejected"},
+        "converted": {"converted"},
+    }
+
+
+def test_the_stage_is_converted_not_won():
+    """Renamed 16 Sep — `won` is gone from the model entirely, so a leftover reference
+    is a page that silently never matches. scripts/18 renames the rows to match."""
+    assert "converted" in STAGES and "won" not in STAGES
+    assert "won" not in _TERMINAL and "converted" in _stages_named_in(_TERMINAL)
+
+
+def test_the_frontend_knows_the_same_stages_and_pages():
+    """`ALL_STAGES` feeds the manual stage picker and is validated against STAGES by the
+    endpoint — a value in one and not the other is a 422 nobody can explain. LEAD_SEGMENTS
+    drives the nav, useAllLeads' parallel queries and the funnel's "bars + band = All"."""
+    import pathlib
+
+    ts = (pathlib.Path(__file__).parents[2] / "frontend" / "src" / "lib" / "leads.ts").read_text()
+    stages = re.findall(r'"([a-z_]+)"', ts.split("export const ALL_STAGES = [", 1)[1].split("]", 1)[0])
+    assert set(stages) == set(STAGES), f"frontend stages differ: {set(stages) ^ set(STAGES)}"
+
+    segs = re.findall(r'seg: "([a-z_]+)"', ts.split("LEAD_SEGMENTS", 1)[1].split("];", 1)[0])
+    assert segs == list(SEGMENTS), f"frontend segments differ: {segs} vs {list(SEGMENTS)}"
 
 
 def test_future_prospect_is_parked_like_rnr():

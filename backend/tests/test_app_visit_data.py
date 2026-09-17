@@ -123,6 +123,53 @@ def test_the_hidden_fields_are_stored_but_never_served():
             f"{py.name} exposes {leaks(py.read_text())}, hidden from the UI on purpose"
 
 
-def test_the_table_joins_to_crm_visits_by_foreign_key():
-    fks = {(fk.parent.name, fk.target_fullname) for fk in Base.metadata.tables["app_visit_data"].foreign_keys}
-    assert fks == {("visit_id", "crm_visits.visit_id")}
+def test_the_table_has_no_foreign_key_to_crm_visits():
+    """It holds EVERY Openhouse visit now. crm_visits only has the ones we booked, so a
+    foreign key would reject every other visit — and take its whole insert batch with it."""
+    assert not Base.metadata.tables["app_visit_data"].foreign_keys
+    assert Base.metadata.tables["app_visit_data"].primary_key.columns.keys() == ["visit_id"]
+
+
+async def test_repeats_across_pages_are_dropped_keeping_the_newest():
+    """Offset paging over a table still being written to can return one visit twice, and a
+    repeat inside a single INSERT … ON CONFLICT DO UPDATE is a hard Postgres error."""
+    from app.services.app_visit_data import fetch_all_visits
+
+    pages = {
+        0: {"visits": [{"id": 1, "updatedAt": "2026-09-01"}, {"id": 2, "updatedAt": "2026-09-01"}],
+            "pagination": {"hasMore": True, "nextOffset": 2}},
+        2: {"visits": [{"id": 2, "updatedAt": "2026-09-05"}, {"id": 3, "updatedAt": "2026-09-01"}],
+            "pagination": {"hasMore": False, "nextOffset": 4}},
+    }
+
+    class Resp:
+        def __init__(self, body): self.body = body
+        def raise_for_status(self): pass
+        def json(self): return self.body
+
+    class Client:
+        async def get(self, path, params):
+            assert path == "crm/all-visits/" and params["limit"] == 50
+            return Resp(pages[params["offset"]])
+
+    visits, repeats = await fetch_all_visits(Client())
+    assert sorted(int(v["id"]) for v in visits) == [1, 2, 3]
+    assert repeats == 1
+    assert next(v for v in visits if v["id"] == 2)["updatedAt"] == "2026-09-05", "keeps the newer copy"
+
+
+async def test_a_page_that_does_not_advance_stops_the_walk():
+    """A server bug that answers hasMore with the same offset would loop forever."""
+    import pytest
+
+    from app.services.app_visit_data import fetch_all_visits
+
+    class Resp:
+        def raise_for_status(self): pass
+        def json(self): return {"visits": [], "pagination": {"hasMore": True, "nextOffset": 0}}
+
+    class Client:
+        async def get(self, path, params): return Resp()
+
+    with pytest.raises(RuntimeError, match="did not advance"):
+        await fetch_all_visits(Client())

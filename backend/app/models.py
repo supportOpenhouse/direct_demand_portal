@@ -445,7 +445,11 @@ class CrmVisit(Base):
 
     `visit_id` is the Core visit number returned by the booking API and is the join key
     into the ops visits sheet, from which `status` (upcoming | completed | cancelled) and
-    the feedback fields are synced. A lead with any row here is a Pipeline lead."""
+    the feedback fields are synced. A lead with any row here is a Pipeline lead.
+
+    Core's own record wins too: the `app_visit_data_to_crm_visits` trigger
+    (scripts/21) copies status, dates, slot, feedback, home_id, society and city onto the
+    matching row whenever app_visit_data is refreshed — never a NULL or blank over a value."""
 
     __tablename__ = "crm_visits"
 

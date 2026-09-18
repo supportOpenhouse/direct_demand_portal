@@ -122,7 +122,12 @@ function FilterModal({ fields, values, onChange, onClear, onClose }: {
         <div className="mb">
           <div className="fgrid">
             {fields.map((f) => (
-              <div className="field" key={f.key} style={{ marginBottom: 0 }}>
+              /* A custom date range is two date inputs side by side, and a date input won't
+                 shrink below its natural width — in one 190px grid track the "to" box spilled
+                 into the next cell, which painted over it and took its clicks. Span the row. */
+              <div className="field" key={f.key}
+                   style={{ marginBottom: 0,
+                            gridColumn: f.kind === "daterange" && values[f.key]?.preset === "custom" ? "1 / -1" : undefined }}>
                 <label>{f.label}</label>
                 {f.kind === "toggle" ? (
                   <button className={"btn sm" + (values[f.key] ? "" : " ghost")}

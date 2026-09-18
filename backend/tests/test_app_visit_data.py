@@ -173,3 +173,15 @@ async def test_a_page_that_does_not_advance_stops_the_walk():
 
     with pytest.raises(RuntimeError, match="did not advance"):
         await fetch_all_visits(Client())
+
+
+def test_core_never_blanks_a_crm_visits_value():
+    """scripts/21: every column the trigger copies from Core falls back to what crm_visits
+    already holds, and only the columns crm_visits really has are assigned."""
+    sql = (Path(__file__).parents[1] / "scripts" / "21_crm_visits_from_core.sql").read_text()
+    assigned = re.findall(r"nxt\.(\w+)\s*:=\s*coalesce\((.*?), cur\.(\w+)\);", sql, re.S)
+    assert len(assigned) == len(re.findall(r"nxt\.\w+\s*:=", sql)) == 9
+    cols = set(Base.metadata.tables["crm_visits"].columns.keys())
+    for target, _expr, fallback in assigned:
+        assert target == fallback and target in cols
+    assert "WHEN (NEW.found)" in sql

@@ -12,7 +12,7 @@ anyone who can already see the lead.
 import csv
 import io
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -29,8 +29,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 
 
 def activity_filters(q: str | None, action: str | None, entity_type: str | None,
-                     actor: str | None, date_from: str | None,
-                     date_to: str | None) -> tuple[str, dict]:
+                     actor: str | None, date_from: date | None,
+                     date_to: date | None) -> tuple[str, dict]:
     """WHERE clause + bound params. Split out so the list, the count and the CSV
     export can never disagree about what's being shown."""
     where, params = [], {}
@@ -93,8 +93,8 @@ async def list_activity(
     action: str | None = Query(None),
     entity_type: str | None = Query(None),
     actor: str | None = Query(None),
-    date_from: str | None = Query(None, alias="from"),
-    date_to: str | None = Query(None, alias="to"),
+    date_from: date | None = Query(None, alias="from"),  # a date, not str: asyncpg won't
+    date_to: date | None = Query(None, alias="to"),      # bind a str against ::date (500)
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
 ):
@@ -140,8 +140,8 @@ async def export_activity(
     action: str | None = Query(None),
     entity_type: str | None = Query(None),
     actor: str | None = Query(None),
-    date_from: str | None = Query(None, alias="from"),
-    date_to: str | None = Query(None, alias="to"),
+    date_from: date | None = Query(None, alias="from"),  # a date, not str: asyncpg won't
+    date_to: date | None = Query(None, alias="to"),      # bind a str against ::date (500)
 ):
     """Same filters as the list → CSV. Capped: this is a browser download, and an
     unbounded export of an append-only table only grows."""

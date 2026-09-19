@@ -33,7 +33,7 @@ export default function Logs() {
     entity_type: entityType || undefined, actor: actor || undefined,
     from: from || undefined, to: to || undefined,
   };
-  const { data, isLoading, isFetching } = useActivity({ ...params, limit: PAGE, offset: page * PAGE });
+  const { data, isLoading, isFetching, isPlaceholderData } = useActivity({ ...params, limit: PAGE, offset: page * PAGE });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -41,13 +41,16 @@ export default function Logs() {
   const end = Math.min(total, (page + 1) * PAGE);
   const reset = (fn: () => void) => { fn(); setPage(0); };
   const anyFilter = q || action || entityType || actor || from || to;
+  // keepPreviousData holds the LAST query's rows while a new filter loads — reading them
+  // as the answer is the mistake, so a changed query shows the skeleton instead.
+  const loading = isLoading || isPlaceholderData;
 
 
   return (
     <>
       <div className="section-head lg-head">
         <div className="lg-counts">
-          <div><b>{total.toLocaleString("en-IN")}</b> events{isFetching && <span className="lg-sub"> · updating…</span>}</div>
+          <div>{loading ? <span className="lg-sub">Loading…</span> : <><b>{total.toLocaleString("en-IN")}</b> events</>}{isFetching && !loading && <span className="lg-sub"> · updating…</span>}</div>
         </div>
         <div className="lg-filters">
           <FilterBar
@@ -91,7 +94,7 @@ export default function Logs() {
             </tr>
           </thead>
           <tbody>
-            {isLoading ? (
+            {loading ? (
               <SkeletonTable rows={8} cols={5} />
             ) : !items.length ? (
               <tr><td colSpan={5}><div className="empty" style={{ padding: 24 }}>

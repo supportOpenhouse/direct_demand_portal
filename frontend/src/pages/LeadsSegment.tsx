@@ -86,10 +86,17 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   // the current selection; `filtered` (skip nothing) drives the table + header count.
   // `skip` takes a list too — the ALL box counts the page with BOTH box selections
   // ignored, otherwise picking "Visit completed" makes ALL read that same number.
+  /* VISIT SCHEDULED means the visit is still ahead of them: a lead whose latest visit is
+     completed or cancelled is counted by those boxes instead, never twice. The count and
+     the box's own filter share this one rule, so clicking a box shows what it counted —
+     and the four boxes then sum to ALL. */
+  const settled = (l: Lead) => l.visit_status === "completed" || l.visit_status === "cancelled";
+  const stageBox = (l: Lead) =>
+    hasVisits && l.stage === "visit_scheduled" && settled(l) ? "" : l.stage;
   const pass = (l: Lead, skip?: string | string[]) => {
     const off = (k: string) => skip === k || (Array.isArray(skip) && skip.includes(k));
     return (
-      (off("stage") || !stage || l.stage === stage) &&
+      (off("stage") || !stage || stageBox(l) === stage) &&
       (off("source") || sourceMatches(l, source)) &&
       (off("city") || cityMatches(l.city, cityTab)) &&
       (off("owner") || matchesOption(l.assigned_to, owner)) &&
@@ -103,7 +110,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   // faceted: each box counts leads passing every OTHER filter, so picking one doesn't zero the rest
   const inStageScope = stages ? all.filter((l) => pass(l, "stage")) : [];
   const byStage: Record<string, number> = {};
-  for (const l of inStageScope) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
+  for (const l of inStageScope) {
+    const box = stageBox(l);
+    if (box) byStage[box] = (byStage[box] ?? 0) + 1;
+  }
   /* Visit completed / cancelled sit beside the stage boxes but are the VISIT's status,
      not the lead's — a visited lead's latest visit can be either. Faceted the same way,
      and they SET the visit filter, so the box and the Filters dropdown are one value. */

@@ -2707,28 +2707,29 @@ td.lead-cell .nm{
   font-size:12.5px;color:var(--ink-2)}
 @media (max-width:640px){.dd-fields{grid-template-columns:1fr}}
 /* ---- MultiSelect (Micro-market) ----------------------------------------------------
-   A dropdown, not a modal: it sits in the toolbar row and must clear the page's own
-   dropdowns but stay UNDER the topbar (50) — see the layer order note in CLAUDE.md. */
-.ms{position:relative}
-.ms > .btn{gap:6px}
-.ms-panel{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:270px;
+   `mselect-*`, never `ms-*`: those belong to AssignControl + Autocomplete, and the old
+   `.ms-panel{display:none}` hid this one while a shared name restyled theirs.
+   A dropdown, not a modal: above the page's own dropdowns, UNDER the topbar (50). */
+.mselect{position:relative}
+.mselect > .btn{gap:6px}
+.mselect-panel{position:absolute;z-index:40;top:calc(100% + 6px);left:0;width:270px;
   background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
   box-shadow:var(--shadow-lg);overflow:hidden}
-.ms-search{padding:8px;border-bottom:1px solid var(--line)}
-.ms-search input{width:100%;height:32px;border:1px solid var(--line);border-radius:var(--r-input);
+.mselect-search{padding:8px;border-bottom:1px solid var(--line)}
+.mselect-search input{width:100%;height:32px;border:1px solid var(--line);border-radius:var(--r-input);
   background:var(--panel-2);color:var(--ink);padding:0 10px;outline:0;font:inherit;font-size:13px}
-.ms-search input:focus{border-color:var(--brand)}
-.ms-list{max-height:260px;overflow:auto;padding:4px}
-.ms-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13px}
-.ms-row:hover{background:var(--panel-2)}
-.ms-row input{accent-color:var(--brand);cursor:pointer;flex:none}
-.ms-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ms-count{color:var(--muted);font-size:11.5px;font-family:var(--font-mono)}
-.ms-none{padding:12px;color:var(--muted);font-size:12.5px;text-align:center}
-.ms-clear{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
+.mselect-search input:focus{border-color:var(--brand)}
+.mselect-list{max-height:260px;overflow:auto;padding:4px}
+.mselect-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13px}
+.mselect-row:hover{background:var(--panel-2)}
+.mselect-row input{accent-color:var(--brand);cursor:pointer;flex:none}
+.mselect-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mselect-count{color:var(--muted);font-size:11.5px;font-family:var(--font-mono)}
+.mselect-none{padding:12px;color:var(--muted);font-size:12.5px;text-align:center}
+.mselect-clear{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;
   padding:9px;border:0;border-top:1px solid var(--line);background:transparent;
   color:var(--coral);font:inherit;font-size:12.5px;cursor:pointer}
-.ms-clear:hover{background:var(--panel-2)}
+.mselect-clear:hover{background:var(--panel-2)}
 
 /* the whole row opens the popup, same affordance as a lead row */
 .row-open{cursor:pointer}

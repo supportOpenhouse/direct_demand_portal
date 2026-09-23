@@ -3,6 +3,10 @@
    the case where a person genuinely wants three areas at once, and picking them one
    page-load at a time is the thing that makes a filter not worth using.
 
+   ⚠️ Classes are `mselect-*`, NOT `ms-*`: `.ms` / `.ms-panel` / `.ms-opt` already belong
+   to AssignControl and Autocomplete, and `.ms-panel` is `display:none` unless `.ms.open`.
+   Sharing the names hid this panel completely AND restyled theirs.
+
    Closes on outside click and on Escape. It is NOT a modal: no overlay, no portal, and
    Escape here must not reach a modal underneath, so the handler stops at this control. */
 import { useEffect, useRef, useState } from "react";
@@ -42,29 +46,29 @@ export function MultiSelect({
   const shown = needle ? options.filter((o) => o.label.toLowerCase().includes(needle)) : options;
 
   return (
-    <div className="ms" ref={box}>
+    <div className="mselect" ref={box}>
       <button className={"btn" + (value.length ? " primary" : " ghost")} onClick={() => setOpen((v) => !v)}
               aria-expanded={open} title={value.length ? value.join(", ") : `Filter by ${label.toLowerCase()}`}>
         {label}{value.length > 0 && ` · ${value.length}`} <IconChevronDown />
       </button>
       {open && (
-        <div className="ms-panel">
-          <div className="ms-search">
+        <div className="mselect-panel">
+          <div className="mselect-search">
             <input autoFocus value={q} placeholder={`Search ${label.toLowerCase()}…`}
                    onChange={(e) => setQ(e.target.value)} />
           </div>
-          <div className="ms-list">
-            {shown.length === 0 && <div className="ms-none">No match.</div>}
+          <div className="mselect-list">
+            {shown.length === 0 && <div className="mselect-none">No match.</div>}
             {shown.map((o) => (
-              <label className="ms-row" key={o.value}>
+              <label className="mselect-row" key={o.value}>
                 <input type="checkbox" checked={value.includes(o.value)} onChange={() => toggle(o.value)} />
-                <span className="ms-lbl">{o.label}</span>
-                {o.count !== undefined && <span className="ms-count">{o.count}</span>}
+                <span className="mselect-lbl">{o.label}</span>
+                {o.count !== undefined && <span className="mselect-count">{o.count}</span>}
               </label>
             ))}
           </div>
           {value.length > 0 && (
-            <button className="ms-clear" onClick={() => onChange([])}><IconX /> Clear {value.length}</button>
+            <button className="mselect-clear" onClick={() => onChange([])}><IconX /> Clear {value.length}</button>
           )}
         </div>
       )}

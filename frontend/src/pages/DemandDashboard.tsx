@@ -437,7 +437,9 @@ export default function DemandDashboard() {
      passing all the OTHERS — the same faceting every list page here uses. */
   const pass = (p: DemandProperty, skip?: string) =>
     (skip === "city" || cityMatches(p.city, cityTab)) &&
-    (skip === "micro_market" || !markets.length || markets.includes(p.micro_market ?? "")) &&
+    // trimmed, exactly as the options list builds its values — or a name stored with a
+    // trailing space would be offered and then match nothing
+    (skip === "micro_market" || !markets.length || markets.includes((p.micro_market ?? "").trim())) &&
     (skip === "availability" || !avail || p.availability_status === avail) &&
     (skip === "possession" || matchesOption(p.possession_status ?? p.occupancy_status, f.possession)) &&
     (skip === "source" || matchesOption(p.source, f.source)) &&

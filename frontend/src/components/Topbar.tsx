@@ -18,6 +18,7 @@ const TITLES: Record<string, string> = {
   "/leads/visited": "Visited Leads",
   "/leads/converted": "Converted Leads",
   "/leads/rejected": "Rejected Leads",
+  "/demand-dashboard": "Demand Dashboard",
   "/reminders": "Reminders",
   // routes hidden 15 Sep — titles kept for when they come back
   // "/inventory": "Live Inventory",

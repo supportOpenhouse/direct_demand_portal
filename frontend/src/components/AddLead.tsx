@@ -13,14 +13,18 @@ import { useToast } from "./Toast";
 import { useOpenLead } from "./LeadModal";
 import { IconPlus, IconWarn, IconX } from "./icons";
 import { useCreateLead } from "../lib/queries";
-import { CITIES } from "../lib/leads";
+import { CITIES, PICKABLE_SOURCES, srcLabel } from "../lib/leads";
 import { isCallingRm } from "../lib/roles";
 import { useModalExit } from "../lib/useModalExit";
 import type { NewLead } from "../lib/api";
 
 const EMPTY: NewLead = {
   name: "", phone: "", city: "", society: "", budget_band: "", configuration: "", source_remarks: "",
+  source: "",
 };
+
+/* The dropdown's own value for "type your own" — not a source, so it can't be sent. */
+const CUSTOM = "__custom";
 
 export function AddLeadButton() {
   const [open, setOpen] = useState(false);
@@ -41,14 +45,21 @@ function AddLeadModal({ onClose: rawClose }: { onClose: () => void }) {
   const openLead = useOpenLead();
   const [f, setF] = useState<NewLead>(EMPTY);
   const [err, setErr] = useState(false);
+  // the dropdown, and the text box it opens when "Custom" is picked
+  const [srcPick, setSrcPick] = useState("");
+  const [srcCustom, setSrcCustom] = useState("");
+  const source = srcPick === CUSTOM ? srcCustom.trim() : srcPick;
 
   // the server keeps the last 10 digits (+91 / 0 prefixes are fine); fewer can't be a number
   const phoneOk = f.phone.replace(/\D/g, "").length >= 10;
   const nameOk = !!f.name.trim();
+  // asked for, not defaulted: "manual" says nothing about where the buyer came from,
+  // and a default is what everyone leaves untouched
+  const sourceOk = !!source;
 
   const submit = () => {
-    if (!nameOk || !phoneOk) { setErr(true); return; }
-    create.mutate(f, {
+    if (!nameOk || !phoneOk || !sourceOk) { setErr(true); return; }
+    create.mutate({ ...f, source }, {
       onSuccess: (r) => {
         if (r.created) {
           toast(r.assigned_to ? `Lead added · assigned to ${r.assigned_to}` : "Lead added · no active RM to assign", "green");
@@ -95,11 +106,28 @@ function AddLeadModal({ onClose: rawClose }: { onClose: () => void }) {
             {input("Budget", "budget_band", "e.g. ₹70L – ₹90L")}
             {input("Configuration", "configuration", "e.g. 3 BHK")}
           </div>
+          <div className="two">
+            <div className={"field" + (err && !sourceOk ? " invalid" : "")}>
+              <label>Source <span className="req">*</span></label>
+              <select value={srcPick} onChange={(e) => setSrcPick(e.target.value)}>
+                <option value="">Select…</option>
+                {PICKABLE_SOURCES.map((k) => <option key={k} value={k}>{srcLabel(k)}</option>)}
+                <option value={CUSTOM}>Custom…</option>
+              </select>
+            </div>
+            {srcPick === CUSTOM ? (
+              <div className={"field" + (err && !sourceOk ? " invalid" : "")}>
+                <label>Custom source <span className="req">*</span></label>
+                <input autoFocus value={srcCustom} maxLength={40} placeholder="e.g. Walk-in, Referral"
+                       onChange={(e) => setSrcCustom(e.target.value)} />
+              </div>
+            ) : <div />}
+          </div>
           <div className="field" style={{ marginBottom: 0 }}><label>Remarks</label>
             <textarea rows={2} value={f.source_remarks} onChange={(e) => setF({ ...f, source_remarks: e.target.value })} />
           </div>
-          {err && (!nameOk || !phoneOk) && (
-            <div className="mand-flag show"><IconWarn /> A name and a 10-digit phone number are required.</div>
+          {err && (!nameOk || !phoneOk || !sourceOk) && (
+            <div className="mand-flag show"><IconWarn /> A name, a 10-digit phone number and a source are required.</div>
           )}
           <div className="add-lead-owner">
             {rm

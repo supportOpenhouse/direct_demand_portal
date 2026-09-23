@@ -14,11 +14,11 @@ import { useState, type DragEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import { useModalExit } from "../../lib/useModalExit";
 import { IconColumns, IconGrip, IconPlus, IconReset, IconX } from "../../components/icons";
-import { LEAD_COLUMNS, COLUMN_BY_ID } from "./columns";
+import { LEAD_COLUMNS, COLUMN_BY_ID, type ColumnMeta } from "./columns";
 import { useColumnLayout } from "./useColumnLayout";
 
 export function ColumnSettings({
-  title, cols, onChange, onReset, isDefault, onClose: rawClose,
+  title, cols, onChange, onReset, isDefault, onClose: rawClose, registry = LEAD_COLUMNS,
 }: {
   title: string;
   cols: string[];
@@ -26,14 +26,18 @@ export function ColumnSettings({
   onReset: () => void;
   isDefault: boolean;
   onClose: () => void;
+  /** The columns this table HAS. Defaults to the lead registry; Demand Dashboard
+      passes its own, which is what makes this modal reusable rather than lead-only. */
+  registry?: ColumnMeta[];
 }) {
   const { onClose, overlayClass } = useModalExit(rawClose);
+  const byId: Record<string, ColumnMeta> = Object.fromEntries(registry.map((c) => [c.id, c]));
   const [drag, setDrag] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
 
   const shown = new Set(cols);
-  const hiddenTable = LEAD_COLUMNS.filter((c) => !shown.has(c.id) && !c.popup);
-  const hiddenPopup = LEAD_COLUMNS.filter((c) => !shown.has(c.id) && c.popup);
+  const hiddenTable = registry.filter((c) => !shown.has(c.id) && !c.popup);
+  const hiddenPopup = registry.filter((c) => !shown.has(c.id) && c.popup);
 
   const move = (from: number, to: number) => {
     if (from === to || to < 0 || to >= cols.length) return;
@@ -84,7 +88,7 @@ export function ColumnSettings({
           <div className="cs-label">Shown <span>· drag to reorder, or focus one and use ← →</span></div>
           <div className="cs-shown" onDragLeave={() => setOver(null)}>
             {cols.map((id, i) => {
-              const c = COLUMN_BY_ID[id];
+              const c = byId[id];
               if (!c) return null;
               return (
                 <div
@@ -112,8 +116,12 @@ export function ColumnSettings({
           </div>
 
           <HiddenGroup label="Hidden table columns" cols={hiddenTable} onShow={show} />
-          <HiddenGroup label="From the lead popup" hint="fields otherwise only visible when you open a lead"
-            cols={hiddenPopup} onShow={show} />
+          {/* only where the registry HAS popup fields — on a non-lead table this heading
+              would otherwise sit there reading "All shown." about a popup it has none of */}
+          {registry.some((c) => c.popup) && (
+            <HiddenGroup label="From the lead popup" hint="fields otherwise only visible when you open a lead"
+              cols={hiddenPopup} onShow={show} />
+          )}
         </div>
 
         <div className="cs-foot">
@@ -152,8 +160,10 @@ function HiddenGroup({ label, hint, cols, onShow }: {
 
 /* Everything a page needs, in one call: the saved layout, the "Columns" button for its
    topbar, and the modal. Each page used to be four near-identical blocks of this. */
-export function useLeadColumns(page: string, defaults: string[], title: string) {
-  const layout = useColumnLayout(page, defaults);
+export function useLeadColumns(page: string, defaults: string[], title: string,
+                               registry: ColumnMeta[] = LEAD_COLUMNS) {
+  const layout = useColumnLayout(page, defaults,
+    registry === LEAD_COLUMNS ? COLUMN_BY_ID : Object.fromEntries(registry.map((c) => [c.id, c])));
   const [open, setOpen] = useState(false);
   const button = (
     <button className="btn ghost sm" onClick={() => setOpen(true)} title="Choose and reorder columns">
@@ -161,7 +171,7 @@ export function useLeadColumns(page: string, defaults: string[], title: string) 
     </button>
   );
   const modal = open && (
-    <ColumnSettings title={title} cols={layout.cols} onChange={layout.setCols}
+    <ColumnSettings title={title} cols={layout.cols} onChange={layout.setCols} registry={registry}
       onReset={layout.reset} isDefault={layout.isDefault} onClose={() => setOpen(false)} />
   );
   return { cols: layout.cols, button, modal };

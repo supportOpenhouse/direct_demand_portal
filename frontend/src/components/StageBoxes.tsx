@@ -15,16 +15,17 @@ import { Skeleton } from "./Skeleton";
 export type ExtraBox = { key: string; label: string; hue: string; count: number };
 
 export function StageBoxes({
-  stages, counts, total, value, onChange, loading = false,
+  stages = [], counts = {}, total, value = "", onChange, loading = false,
   extra = [], extraValue = "", onExtra,
 }: {
-  stages: string[];
+  /** Omit on a table with no stages — Demand Dashboard is ALL + three `extra` boxes. */
+  stages?: string[];
   /** leads per stage, with every filter EXCEPT the stage selection applied */
-  counts: Record<string, number>;
+  counts?: Record<string, number>;
   total: number;
   /** "" = ALL */
-  value: string;
-  onChange: (stage: string) => void;
+  value?: string;
+  onChange?: (stage: string) => void;
   loading?: boolean;
   extra?: ExtraBox[];
   /** "" = none of the extra boxes picked */
@@ -37,7 +38,7 @@ export function StageBoxes({
     <div className="stage-counts">
       <div className="stage-pills">
         <button className={"count-pill" + (value || extraValue ? "" : " on")}
-          onClick={() => { onChange(""); onExtra?.(""); }}>
+          onClick={() => { onChange?.(""); onExtra?.(""); }}>
           <span className="num">{num(total, 64)}</span>
           <span className="lbl">ALL</span>
         </button>
@@ -45,7 +46,7 @@ export function StageBoxes({
           <button key={st}
             className={"count-pill" + (value === st ? " on" : "")}
             style={{ ["--pill-hue" as string]: stageHue(st) }}
-            onClick={() => onChange(value === st ? "" : st)}
+            onClick={() => onChange?.(value === st ? "" : st)}
             title={`Show only ${stageLabel(st)}`}
           >
             <span className="num">{num(counts[st] ?? 0, 44)}</span>

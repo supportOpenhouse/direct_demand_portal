@@ -27,7 +27,16 @@ const SRC_LABEL: Record<string, string> = {
   whatsapp: "WhatsApp",
 };
 
-export const srcClass = (s: string) => SRC_CLASS[s] || "meta";
+/* The sources Add lead offers, in the order the team sees them most (Meta is ~75% of
+   the book). Every SRC_LABEL key except `manual`, which is what "no source picked"
+   already means. Mirrored by KNOWN_SOURCES in routers/leads.py. */
+export const PICKABLE_SOURCES = ["meta", "99acres", "magicbricks", "whatsapp", "gads", "youtube"]
+  .filter((k) => k in SRC_LABEL);
+
+/* An unknown source — a custom one typed into Add lead ("Walk-in") — gets the NEUTRAL
+   chip. It fell back to "meta" before, which painted a walk-in in Meta's blue: a colour
+   that claims an attribution the lead doesn't have. */
+export const srcClass = (s: string) => SRC_CLASS[s] || "manual";
 export const srcLabel = (s: string) => SRC_LABEL[s] || s;
 
 /** Every source the buyer arrived from, first one first. Falls back to `source` for a

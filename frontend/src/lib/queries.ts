@@ -280,6 +280,10 @@ export function useSupply() {
   return useQuery({ queryKey: ["supply"], queryFn: api.supply, staleTime: 60_000 });
 }
 
+export function useDemandProperties() {
+  return useQuery({ queryKey: ["demand-dashboard"], queryFn: api.demandDashboard, staleTime: 60_000 });
+}
+
 export function useLeads(segment: string) {
   return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });
 }

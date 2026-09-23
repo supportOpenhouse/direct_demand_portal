@@ -745,6 +745,34 @@ async def reject_lead(lead_id: UUID, payload: RejectPayload,
     return {"status": "ok"}
 
 
+# Sources a hand-added lead can be tagged with — the keys every other ingest path writes,
+# mirrored from SRC_LABEL in frontend/src/lib/leads.ts (a test holds the two together).
+# Key → label; a custom value that matches either spelling maps onto the key.
+KNOWN_SOURCES = {
+    "meta": "Meta", "99acres": "99acres", "magicbricks": "MagicBricks",
+    "whatsapp": "WhatsApp", "gads": "Google Ads", "youtube": "YouTube", "manual": "Manual",
+}
+
+
+def canonical_source(raw: str | None) -> str:
+    """The source to store for a hand-added lead.
+
+    Blank → "manual" (what it always was — and what an older frontend, which sends no
+    source, still gets). A known source in any spelling ("Meta", "magic bricks",
+    "Google Ads") → its key, so a custom entry that is really Meta doesn't become a
+    second Meta that no filter groups with the first. Anything else is kept as typed,
+    whitespace collapsed: "Walk-in" is a real source this app has no key for.
+    """
+    s = " ".join((raw or "").split())
+    if not s:
+        return "manual"
+    squash = s.lower().replace(" ", "").replace("-", "")
+    for key, label in KNOWN_SOURCES.items():
+        if squash in (key, label.lower().replace(" ", "")):
+            return key
+    return s
+
+
 class NewLead(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     phone: str = Field(min_length=1, max_length=40)
@@ -753,6 +781,8 @@ class NewLead(BaseModel):
     budget_band: str | None = Field(default=None, max_length=100)
     configuration: str | None = Field(default=None, max_length=100)
     source_remarks: str | None = Field(default=None, max_length=2000)
+    # where the buyer came from — a KNOWN_SOURCES key or free text; blank = manual
+    source: str | None = Field(default=None, max_length=40)
 
 
 @router.post("/leads")
@@ -793,7 +823,12 @@ async def create_lead(payload: NewLead, user: dict = Depends(current_user)):
 
         inserted = (await conn.execute(
             pg_insert(Lead).values(
-                origin_key=key, source_category="manual", source="manual",
+                # `source` is where the buyer came from, picked in the form. The KEY and
+                # the category stay `manual` — that is how the row entered — so it is
+                # still recognisably hand-added, and a real Meta/sheet arrival for the
+                # same number merges into it via leads_merge_source instead of colliding
+                # with a hand-made `meta:<phone>` key.
+                origin_key=key, source_category="manual", source=canonical_source(payload.source),
                 name=payload.name.strip(), phone=display_phone(phone10),
                 city=city, society=clean(payload.society),
                 budget_band=clean(payload.budget_band),

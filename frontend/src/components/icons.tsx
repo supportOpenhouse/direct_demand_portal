@@ -146,6 +146,7 @@ export const WhatsAppIcon = () => (
    on purpose: this file is the ONLY place that knows which icon pack we use. */
 export {
   LuX as IconX,
+  LuCirclePlay as IconPlay,
   LuPencil as IconEdit,
   LuChevronDown as IconChevronDown,
   LuChevronUp as IconChevronUp,

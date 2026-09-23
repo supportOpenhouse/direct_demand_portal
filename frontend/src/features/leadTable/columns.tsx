@@ -33,7 +33,16 @@ export interface LeadColCtx {
 
 type SortVal = string | number | null | undefined;
 
-export interface LeadColumn {
+/* What column settings needs of a column: an id, a label, and whether it came from the
+   popup. A table with its own columns (Demand Dashboard) satisfies this and reuses the
+   modal; LeadColumn adds the rendering on top. */
+export interface ColumnMeta {
+  id: string;
+  label: string;
+  popup?: boolean;
+}
+
+export interface LeadColumn extends ColumnMeta {
   id: string;
   label: string;
   /** present = sortable; the column id is the sort key */

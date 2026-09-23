@@ -11,12 +11,16 @@ import { COLUMN_BY_ID } from "./columns";
 
 const key = (page: string) => `dd_cols:${page}`;
 
-function read(page: string, defaults: string[]): string[] {
+/* Which columns exist is passed in, so a non-lead table (Demand Dashboard) can use the
+   same storage, the same stale-id filtering and the same modal. */
+type Registry = Record<string, unknown>;
+
+function read(page: string, defaults: string[], byId: Registry): string[] {
   try {
     const raw = localStorage.getItem(key(page));
     if (!raw) return defaults;
     const ids = (JSON.parse(raw) as unknown[]).filter(
-      (id): id is string => typeof id === "string" && id in COLUMN_BY_ID,
+      (id): id is string => typeof id === "string" && id in byId,
     );
     return ids.length ? [...new Set(ids)] : defaults;
   } catch {
@@ -25,8 +29,8 @@ function read(page: string, defaults: string[]): string[] {
   }
 }
 
-export function useColumnLayout(page: string, defaults: string[]) {
-  const [cols, setColsState] = useState<string[]>(() => read(page, defaults));
+export function useColumnLayout(page: string, defaults: string[], byId: Registry = COLUMN_BY_ID) {
+  const [cols, setColsState] = useState<string[]>(() => read(page, defaults, byId));
 
   const setCols = useCallback((next: string[]) => {
     setColsState(next);

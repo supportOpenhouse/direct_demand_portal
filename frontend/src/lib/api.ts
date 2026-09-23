@@ -418,6 +418,32 @@ export interface LeadMatches {
   supply: MatchUnit[];
 }
 
+export type DemandProperty = {
+  uid: string;
+  society_name: string | null;
+  unit_no: string | null;
+  tower_no: string | null;
+  floor: string | null;
+  city: string | null;
+  locality: string | null;
+  micro_market: string | null;
+  affordable: boolean | null;
+  configuration: string | null;
+  area_sqft: number | null;
+  listing_price: number | null;
+  availability_status: string;
+  demand_status: string | null;
+  supply_status: string | null;
+  possession_status: string | null;
+  occupancy_status: string | null;
+  source: string | null;
+  poc: string | null;
+  ama_date: string | null;
+  key_handover_date: string | null;
+  internal_remarks: string | null;
+  origin: "real" | "legacy";
+} & Record<string, unknown>;
+
 export interface MatchPreviewReq {
   city?: string | null;
   societies?: string[];
@@ -538,6 +564,8 @@ export interface MetaLeadResponse {
 export interface NewLead {
   name: string; phone: string; city: string; society: string;
   budget_band: string; configuration: string; source_remarks: string;
+  /** a PICKABLE_SOURCES key, or free text for a source this app has no key for */
+  source: string;
 }
 
 /* Server-side filters for the Meta Leads page. "" = no constraint. */
@@ -654,6 +682,10 @@ export const api = {
   syncInventory: () =>
     request<{ status: string; rows: number; synced_at: string }>("/v1/inventory/sync", { method: "POST" }),
   supply: () => request<SupplyResponse>("/v1/supply"),
+  // Demand Dashboard — the supply team's property book, read-only. 83 columns per row
+  // and the set follows their table, so it is typed as an open record with the fields
+  // this page actually names; a column added there reaches the popup without a change.
+  demandDashboard: () => request<{ status: string; items: DemandProperty[] }>("/v1/demand-dashboard"),
   markPriority: (uid: string, priority: boolean) =>
     request<{ status: string; priority: boolean }>(`/v1/supply/${encodeURIComponent(uid)}/priority`, { method: "POST", body: JSON.stringify({ priority }) }),
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),

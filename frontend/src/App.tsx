@@ -29,7 +29,8 @@ export default function App() {
      Cleaned up on unmount so a route outside this shell can't inherit it. */
   // dormant while those two routes are commented out (main.tsx): nothing matches, so no
   // page takes the orange accent. Left in place so uncommenting the routes restores it.
-  const supplySide = pathname.startsWith("/inventory") || pathname.startsWith("/supply");
+  const supplySide = pathname.startsWith("/inventory") || pathname.startsWith("/supply")
+    || pathname.startsWith("/demand-dashboard");
   useEffect(() => {
     const root = document.documentElement;
     if (supplySide) root.setAttribute("data-accent", "orange");

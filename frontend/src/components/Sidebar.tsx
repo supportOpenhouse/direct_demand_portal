@@ -175,6 +175,11 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
           <IconBox /> <span className="nav-t">Supply Pipeline</span>
         </NavLink>
         */}
+        <div className="nav-label">Discovery</div>
+        <NavLink to="/demand-dashboard" className={navClass} title="Demand Dashboard">
+          <IconBox /> <span className="nav-t">Demand Dashboard</span>
+        </NavLink>
+
         <div className="nav-label">Admin</div>
         {isAdmin && (
           <>

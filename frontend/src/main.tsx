@@ -7,6 +7,7 @@ import App from "./App";
 // the pages drop out of the bundle too, rather than shipping unreachable code.
 // import Inventory from "./pages/Inventory";
 // import Supply from "./pages/Supply";
+import DemandDashboard from "./pages/DemandDashboard";
 import Home from "./pages/Home";
 import NewLeads from "./pages/NewLeads";
 import Followup from "./pages/Followup";
@@ -98,6 +99,7 @@ const desktopRoutes = [
       // top) to bring both back; the pages themselves were not touched
       // { path: "inventory", element: <Inventory /> },
       // { path: "supply", element: <Supply /> },
+      { path: "demand-dashboard", element: <DemandDashboard /> },
       { path: "profile", element: <Profile /> },
       { path: "settings", element: <Settings /> },
       { path: "logs", element: <Logs /> },

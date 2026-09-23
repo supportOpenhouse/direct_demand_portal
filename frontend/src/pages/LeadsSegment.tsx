@@ -107,21 +107,23 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
     );
   };
   const filtered = all.filter((l) => pass(l));
-  // faceted: each box counts leads passing every OTHER filter, so picking one doesn't zero the rest
-  const inStageScope = stages ? all.filter((l) => pass(l, "stage")) : [];
+  /* The boxes are ONE axis — a lead belongs to exactly one of them — so every box is
+     counted with BOTH box selections ignored, and the row of numbers doesn't move when
+     you pick one. Counting each box within the other's selection is what made them
+     rewrite each other on every click. They always sum to ALL. */
+  const boxScope = stages ? all.filter((l) => pass(l, ["stage", "visitStatus"])) : [];
   const byStage: Record<string, number> = {};
-  for (const l of inStageScope) {
+  for (const l of boxScope) {
     const box = stageBox(l);
     if (box) byStage[box] = (byStage[box] ?? 0) + 1;
   }
-  /* Visit completed / cancelled sit beside the stage boxes but are the VISIT's status,
-     not the lead's — a visited lead's latest visit can be either. Faceted the same way,
-     and they SET the visit filter, so the box and the Filters dropdown are one value. */
-  const visitScope = hasVisits ? all.filter((l) => pass(l, "visitStatus")) : [];
+  /* Visit completed / cancelled are the VISIT's status, not the lead's stage, but they
+     sit in the same row and split the same leads. They SET the page's visit filter, so
+     the box and the Filters dropdown stay one value. */
   const visitBoxes = [
     { key: "completed", label: "Visit completed", hue: "var(--emerald)" },
     { key: "cancelled", label: "Visit cancelled", hue: "var(--coral)" },
-  ].map((b) => ({ ...b, count: visitScope.filter((l) => l.visit_status === b.key).length }));
+  ].map((b) => ({ ...b, count: boxScope.filter((l) => l.visit_status === b.key).length }));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -155,12 +157,14 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
         values={f} onChange={set} onClear={clear}
       />
 
+      {/* one axis, so picking a box clears the other kind — two at once would ask for
+          leads that are in both, which by the rule above is nobody */}
       {stages && (
-        <StageBoxes stages={stages} counts={byStage}
-          total={all.filter((l) => pass(l, ["stage", "visitStatus"])).length}
-          value={stage} onChange={setStage} loading={isLoading}
+        <StageBoxes stages={stages} counts={byStage} total={boxScope.length}
+          value={stage} onChange={(st) => { setStage(st); if (st) set("visitStatus", ""); }}
+          loading={isLoading}
           extra={hasVisits ? visitBoxes : []} extraValue={visitStatus}
-          onExtra={(k) => set("visitStatus", k)} />
+          onExtra={(k) => { set("visitStatus", k); if (k) setStage(""); }} />
       )}
 
       {selectMode && (

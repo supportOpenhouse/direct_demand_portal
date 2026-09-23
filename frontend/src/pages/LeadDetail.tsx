@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
 import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
-import type { ActivityRow } from "../lib/api";
+import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { actionStyle, Details, pretty } from "../lib/activity";
 import { api, MetaFormDelivery } from "../lib/api";
@@ -426,6 +426,47 @@ function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void
   );
 }
 
+/* The lead's name, with a pencil to rename it. Any signed-in user can — a wrong name is
+   usually spotted by whoever is on the call, and the activity log records who changed it.
+   One component for both headers, so the popup and the page can't grow two name edits. */
+function NameHeading({ lead, as }: { lead: Lead; as: "h2" | "h3" }) {
+  const patch = usePatchSourceData(lead.id);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(lead.name ?? "");
+  const Tag = as;
+
+  const save = () => {
+    const name = draft.trim();
+    // a blank name would leave the row with nothing to identify it by
+    if (!name || name === (lead.name ?? "")) return setEditing(false);
+    patch.mutate({ name }, { onSuccess: () => setEditing(false) });
+  };
+
+  if (editing) {
+    return (
+      <Tag className="lead-name">
+        <input className="lead-name-input" autoFocus value={draft} disabled={patch.isPending}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") save();
+            if (e.key === "Escape") { setDraft(lead.name ?? ""); setEditing(false); }
+          }}
+          onBlur={save} />
+      </Tag>
+    );
+  }
+  return (
+    <Tag className="lead-name">
+      {lead.name || "Unnamed"}
+      <button className="name-edit" title="Rename this lead" aria-label="Rename this lead"
+        onClick={() => { setDraft(lead.name ?? ""); setEditing(true); }}>
+        <IconEdit />
+      </button>
+      <ArrivalCount lead={lead} />
+    </Tag>
+  );
+}
+
 export default function LeadDetail({ mobile = false, leadId, inModal = false }: {
   mobile?: boolean;
   /** Set by the popup. Absent on the /leads/:id route, where the param wins. */
@@ -610,7 +651,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
       {inModal ? (
         <>
           <div className="lead-modal-head">
-            <h3>{lead.name || "Unnamed"}<ArrivalCount lead={lead} /></h3>
+            <NameHeading lead={lead} as="h3" />
             {lead.city && <span className="chip-soft">{lead.city}</span>}
             {lead.is_test && <span className="chip-soft">Test</span>}
             <StageChip stage={lead.stage} />
@@ -629,7 +670,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
         <div className="lead-head">
           <div className="av">{initials(lead.name)}</div>
           <div>
-            <h2>{lead.name}<ArrivalCount lead={lead} />{lead.is_test && <span className="bucket-tag" style={{ marginLeft: 8, verticalAlign: "middle" }}>TEST</span>}</h2>
+            <div className="lead-name-row"><NameHeading lead={lead} as="h2" />{lead.is_test && <span className="bucket-tag" style={{ verticalAlign: "middle" }}>TEST</span>}</div>
             <div className="meta" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               {lead.phone}
               <SourceChips lead={lead} />

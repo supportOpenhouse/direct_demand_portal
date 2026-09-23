@@ -673,6 +673,20 @@ tr.lead-row:hover{background-color:var(--panel-2)}
 .lead-head{display:flex;align-items:center;gap:14px;margin-bottom:6px}
 .lead-head .av{width:54px;height:54px;border-radius:13px;background:linear-gradient(135deg,var(--sidebar-rail),var(--emerald-deep));display:grid;place-items:center;color:var(--on-accent);font-weight:700;font-size:22px;font-family:var(--font-display)}
 .lead-head h2{font-family:var(--font-display);margin:0;font-size:23px;letter-spacing:-.02em}
+/* Name + rename pencil (both headers). The pencil is quiet until the heading is
+   hovered — it sits beside the largest text on the screen and must not compete with it. */
+.lead-name{display:inline-flex;align-items:center;gap:8px}
+.lead-name-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.name-edit{display:inline-grid;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:8px;
+  background:transparent;color:var(--muted);cursor:pointer;opacity:0;transition:var(--t)}
+.name-edit svg{width:16px;height:16px}
+.lead-name:hover .name-edit,.name-edit:focus-visible{opacity:1}
+.name-edit:hover{background:var(--panel-2);color:var(--brand)}
+/* no hover on a phone — the pencil would be permanently invisible there */
+@media (hover:none){.name-edit{opacity:1}}
+.lead-name-input{font:inherit;color:inherit;width:min(420px,100%);padding:2px 8px;border:1px solid var(--line);
+  border-radius:var(--r-input);background:var(--panel-2);outline:0}
+.lead-name-input:focus{border-color:var(--brand);background:var(--panel)}
 .lead-head .meta{color:var(--muted);font-size:13px;font-family:var(--font-mono);margin-top:2px}
 .lead-actions{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
 .stage-control{display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:5px 10px}

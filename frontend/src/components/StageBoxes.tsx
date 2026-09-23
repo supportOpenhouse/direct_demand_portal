@@ -9,8 +9,14 @@
 import { stageHue, stageLabel } from "../lib/leads";
 import { Skeleton } from "./Skeleton";
 
+/* A box that isn't a stage — Visited Leads adds Visit completed / cancelled, which are
+   the VISIT's status, not the lead's. It drives the page's existing visit filter rather
+   than a second copy of it, so the box and the Filters dropdown can't disagree. */
+export type ExtraBox = { key: string; label: string; hue: string; count: number };
+
 export function StageBoxes({
   stages, counts, total, value, onChange, loading = false,
+  extra = [], extraValue = "", onExtra,
 }: {
   stages: string[];
   /** leads per stage, with every filter EXCEPT the stage selection applied */
@@ -20,13 +26,18 @@ export function StageBoxes({
   value: string;
   onChange: (stage: string) => void;
   loading?: boolean;
+  extra?: ExtraBox[];
+  /** "" = none of the extra boxes picked */
+  extraValue?: string;
+  onExtra?: (key: string) => void;
 }) {
   const num = (n: number, w: number) =>
     loading ? <Skeleton w={w} h={26} r={6} /> : n.toLocaleString("en-IN");
   return (
     <div className="stage-counts">
       <div className="stage-pills">
-        <button className={"count-pill" + (value ? "" : " on")} onClick={() => onChange("")}>
+        <button className={"count-pill" + (value || extraValue ? "" : " on")}
+          onClick={() => { onChange(""); onExtra?.(""); }}>
           <span className="num">{num(total, 64)}</span>
           <span className="lbl">ALL</span>
         </button>
@@ -39,6 +50,17 @@ export function StageBoxes({
           >
             <span className="num">{num(counts[st] ?? 0, 44)}</span>
             <span className="lbl">{stageLabel(st).toUpperCase()}</span>
+          </button>
+        ))}
+        {extra.map((b) => (
+          <button key={b.key}
+            className={"count-pill" + (extraValue === b.key ? " on" : "")}
+            style={{ ["--pill-hue" as string]: b.hue }}
+            onClick={() => onExtra?.(extraValue === b.key ? "" : b.key)}
+            title={`Show only ${b.label}`}
+          >
+            <span className="num">{num(b.count, 44)}</span>
+            <span className="lbl">{b.label.toUpperCase()}</span>
           </button>
         ))}
       </div>

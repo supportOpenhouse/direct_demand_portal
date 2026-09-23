@@ -930,6 +930,10 @@ async def sync_leads():
 # --- editable source-captured card ------------------------------------------
 
 class SourceDataPatch(BaseModel):
+    # `name` is the lead's own identity, not source-captured data, but it is the same
+    # write: one column, same before/after diff, same activity row. A second endpoint
+    # would only duplicate that.
+    name: str | None = None
     city: str | None = None
     society: str | None = None
     configuration: str | None = None
@@ -942,7 +946,7 @@ class SourceDataPatch(BaseModel):
 async def patch_source_data(lead_id: UUID, payload: SourceDataPatch,
                             user: dict = Depends(current_user)):
     sets, params = [], {"id": lead_id}
-    for field in ("city", "society", "configuration", "budget_band", "plan_to_buy", "source_remarks"):
+    for field in ("name", "city", "society", "configuration", "budget_band", "plan_to_buy", "source_remarks"):
         val = getattr(payload, field)
         if val is not None:
             sets.append(f"{field} = :{field}")

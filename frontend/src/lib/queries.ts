@@ -374,9 +374,11 @@ export function usePatchSourceData(id: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (patch: Parameters<typeof api.patchSourceData>[1]) => api.patchSourceData(id, patch),
-    onSuccess: () => {
+    onSuccess: (_r, patch) => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["lead-matches", id] });
+      // the name is on every list row too, so a rename has to reach the tables
+      if (patch.name !== undefined) qc.invalidateQueries({ queryKey: ["leads"] });
     },
   });
 }

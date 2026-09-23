@@ -63,7 +63,7 @@ export default function GlobalSearch({ openLead = false }: { openLead?: boolean 
       <div className="search">
         <IconSearch />
         <input
-          placeholder={globalOn ? "Search any lead — name, number, city…" : "Search property, society…"}
+          placeholder="Search any field — e.g. 1709 Sahaj"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}

@@ -84,20 +84,34 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   // `pass(l, skip)` applies every filter except `skip`. Each dropdown's counts are
   // computed over the leads passing all the OTHER filters (faceted), so they react to
   // the current selection; `filtered` (skip nothing) drives the table + header count.
-  const pass = (l: Lead, skip?: string) =>
-    (skip === "stage" || !stage || l.stage === stage) &&
-    (skip === "source" || sourceMatches(l, source)) &&
-    (skip === "city" || cityMatches(l.city, cityTab)) &&
-    (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
-    (!hotOnly || l.is_hot) &&
-    (!visitStatus || l.visit_status === visitStatus) &&
-    passExtras(l, f, skip) &&
-    leadMatchesQuery(q, l);
+  // `skip` takes a list too — the ALL box counts the page with BOTH box selections
+  // ignored, otherwise picking "Visit completed" makes ALL read that same number.
+  const pass = (l: Lead, skip?: string | string[]) => {
+    const off = (k: string) => skip === k || (Array.isArray(skip) && skip.includes(k));
+    return (
+      (off("stage") || !stage || l.stage === stage) &&
+      (off("source") || sourceMatches(l, source)) &&
+      (off("city") || cityMatches(l.city, cityTab)) &&
+      (off("owner") || matchesOption(l.assigned_to, owner)) &&
+      (!hotOnly || l.is_hot) &&
+      (off("visitStatus") || !visitStatus || l.visit_status === visitStatus) &&
+      passExtras(l, f, Array.isArray(skip) ? undefined : skip) &&
+      leadMatchesQuery(q, l)
+    );
+  };
   const filtered = all.filter((l) => pass(l));
   // faceted: each box counts leads passing every OTHER filter, so picking one doesn't zero the rest
   const inStageScope = stages ? all.filter((l) => pass(l, "stage")) : [];
   const byStage: Record<string, number> = {};
   for (const l of inStageScope) byStage[l.stage] = (byStage[l.stage] ?? 0) + 1;
+  /* Visit completed / cancelled sit beside the stage boxes but are the VISIT's status,
+     not the lead's — a visited lead's latest visit can be either. Faceted the same way,
+     and they SET the visit filter, so the box and the Filters dropdown are one value. */
+  const visitScope = hasVisits ? all.filter((l) => pass(l, "visitStatus")) : [];
+  const visitBoxes = [
+    { key: "completed", label: "Visit completed", hue: "var(--emerald)" },
+    { key: "cancelled", label: "Visit cancelled", hue: "var(--coral)" },
+  ].map((b) => ({ ...b, count: visitScope.filter((l) => l.visit_status === b.key).length }));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -132,8 +146,11 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
       />
 
       {stages && (
-        <StageBoxes stages={stages} counts={byStage} total={inStageScope.length}
-          value={stage} onChange={setStage} loading={isLoading} />
+        <StageBoxes stages={stages} counts={byStage}
+          total={all.filter((l) => pass(l, ["stage", "visitStatus"])).length}
+          value={stage} onChange={setStage} loading={isLoading}
+          extra={hasVisits ? visitBoxes : []} extraValue={visitStatus}
+          onExtra={(k) => set("visitStatus", k)} />
       )}
 
       {selectMode && (

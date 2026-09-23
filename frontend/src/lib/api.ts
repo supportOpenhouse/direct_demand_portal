@@ -773,7 +773,7 @@ export const api = {
     request<{ token: string; user: AuthUser }>("/v1/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   me: () => request<AuthUser>("/v1/me"),
   // source-captured edit + notes thread + autocomplete
-  patchSourceData: (id: string, patch: Partial<Record<"city" | "society" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks", string>>) =>
+  patchSourceData: (id: string, patch: Partial<Record<"name" | "city" | "society" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks", string>>) =>
     request<{ status: string }>(`/v1/leads/${id}/source-data`, { method: "PATCH", body: JSON.stringify(patch) }),
   leadNotes: (id: string) => request<{ items: LeadNote[] }>(`/v1/leads/${id}/notes`),
   addNote: (id: string, body: string) =>

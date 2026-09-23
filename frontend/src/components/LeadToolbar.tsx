@@ -30,7 +30,7 @@ export function cityMatches(city: string | null | undefined, sel: string): boole
 }
 
 export function LeadToolbar({
-  city, onCity, q, onQ, placeholder = "Search any lead - name, number, city, society",
+  city, onCity, q, onQ, placeholder = "Search any field — e.g. 1709 Sahaj",
   fields, values, onChange, onClear,
   children,
 }: {

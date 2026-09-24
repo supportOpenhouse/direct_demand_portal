@@ -65,11 +65,12 @@ def activity_filters(q: str | None, action: str | None, entity_type: str | None,
     return (" WHERE " + " AND ".join(where)) if where else "", params
 
 
-_SELECT = """
+_COLUMNS = """
     SELECT a.id, a.created_at, a.actor_email, a.actor_name, a.actor_role,
            a.entity_type, a.entity_id, a.action, a.field,
            a.before_value, a.after_value, a.metadata,
-           l.name AS lead_name
+           l.name AS lead_name"""
+_FROM = """
       FROM activity_log a
       LEFT JOIN leads l
         ON a.entity_type = 'lead'
@@ -79,6 +80,11 @@ _SELECT = """
        -- AND order isn't guaranteed, so the planner can still run the cast first.
        AND l.id::text = a.entity_id
 """
+_SELECT = _COLUMNS + _FROM
+# The CSV adds the lead's phone. It is NOT in _SELECT: the list endpoint serves the
+# Activity Logs table, and a column in its JSON reaches every browser that opens the
+# page whether or not the table draws it. The number is for the export only.
+_EXPORT_SELECT = _COLUMNS + ", l.phone AS lead_phone" + _FROM
 
 
 def _shape(r) -> dict:
@@ -151,19 +157,19 @@ async def export_activity(
     clause, params = activity_filters(q, action, entity_type, actor, date_from, date_to)
     async with engine.connect() as conn:
         rows = (await conn.execute(text(
-            f"{_SELECT}{clause} ORDER BY a.created_at DESC LIMIT 20000"),
+            f"{_EXPORT_SELECT}{clause} ORDER BY a.created_at DESC LIMIT 20000"),
             params)).mappings().all()
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["When (IST)", "Actor", "Role", "Entity", "Entity ID", "Lead",
+    w.writerow(["When (IST)", "Actor", "Role", "Entity", "Entity ID", "Lead", "Lead phone",
                 "Action", "Field", "Before", "After"])
     for r in rows:
         when = r["created_at"]
         w.writerow([
             when.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S") if when else "",
             r["actor_name"] or r["actor_email"] or "system", r["actor_role"] or "",
-            r["entity_type"], r["entity_id"] or "", r["lead_name"] or "",
+            r["entity_type"], r["entity_id"] or "", r["lead_name"] or "", r["lead_phone"] or "",
             r["action"], r["field"] or "", r["before_value"] or "", r["after_value"] or "",
         ])
     buf.seek(0)

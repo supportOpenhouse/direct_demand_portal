@@ -11,11 +11,12 @@ anyone who can already see the lead.
 """
 import csv
 import io
+import json
 import logging
 from datetime import date, datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 
@@ -81,10 +82,74 @@ _FROM = """
        AND l.id::text = a.entity_id
 """
 _SELECT = _COLUMNS + _FROM
-# The CSV adds the lead's phone. It is NOT in _SELECT: the list endpoint serves the
-# Activity Logs table, and a column in its JSON reaches every browser that opens the
-# page whether or not the table draws it. The number is for the export only.
-_EXPORT_SELECT = _COLUMNS + ", l.phone AS lead_phone" + _FROM
+
+# "Status at the time": the lead's stage when the event happened. The last stage_change
+# at or before it says what the stage BECAME; failing that, the first stage_change after
+# it says what the stage WAS (its before_value); a lead with no stage_change at all is
+# still in its current stage. Both lookups ride ix_activity_entity (entity_type,
+# entity_id, created_at) — 20,000 rows in 0.19s on prod, 24 Sep.
+# ⚠️ Stage logging began 19 Aug. An event before a lead's first logged change reads that
+# change's `before`, which is right; an event on a lead never logged reads its CURRENT
+# stage, which is only a guess for old events.
+STAGE_AT_TIME = """
+           CASE WHEN a.entity_type = 'lead' THEN COALESCE(
+             (SELECT s.after_value FROM activity_log s
+               WHERE s.entity_type = 'lead' AND s.entity_id = a.entity_id
+                 AND s.action = 'stage_change' AND s.created_at <= a.created_at
+               ORDER BY s.created_at DESC LIMIT 1),
+             (SELECT s.before_value FROM activity_log s
+               WHERE s.entity_type = 'lead' AND s.entity_id = a.entity_id
+                 AND s.action = 'stage_change' AND s.created_at > a.created_at
+               ORDER BY s.created_at ASC LIMIT 1),
+             l.stage) END AS stage_at_time"""
+
+# The CSV adds lead columns the table never shows. They are NOT in _SELECT: the list
+# endpoint serves the Activity Logs table, and a column in its JSON reaches every browser
+# that opens the page whether or not the table draws it. The phone is for the export only.
+_EXPORT_SELECT = (_COLUMNS + """,
+           l.phone AS lead_phone, l.stage AS lead_stage_now, l.source AS lead_source,
+           l.city AS lead_city, l.assigned_to AS lead_owner,""" + STAGE_AT_TIME + _FROM)
+
+# Every column the CSV can carry, in the order it writes them: (key, header, on by
+# default). The Download dialog offers exactly these — lib/api.ts mirrors the list and
+# tests/test_activity_export.py fails if the two drift. A request naming no fields gets
+# the defaults, which is what an older frontend (no dialog) still receives.
+EXPORT_FIELDS: list[tuple[str, str, bool]] = [
+    ("when", "When (IST)", True),
+    ("actor", "Actor", True),
+    ("role", "Role", True),
+    ("entity", "Entity", True),
+    ("entity_id", "Entity ID", True),
+    ("lead", "Lead", True),
+    ("lead_phone", "Lead phone", True),
+    ("status_at_time", "Status at the time", True),
+    ("action", "Action", True),
+    ("field", "Field", True),
+    ("before", "Before", True),
+    ("after", "After", True),
+    ("status_now", "Current status", False),
+    ("source", "Source", False),
+    ("city", "City", False),
+    ("owner", "Assigned RM", False),
+    ("details", "Details (JSON)", False),
+]
+
+
+def _export_value(key: str, r) -> str:
+    """One cell. Kept beside EXPORT_FIELDS so a new field is one entry in each."""
+    if key == "when":
+        return r["created_at"].astimezone(IST).strftime("%Y-%m-%d %H:%M:%S") if r["created_at"] else ""
+    if key == "actor":
+        return r["actor_name"] or r["actor_email"] or "system"
+    if key == "details":
+        return json.dumps(r["metadata"], ensure_ascii=False, default=str) if r["metadata"] else ""
+    col = {"role": "actor_role", "entity": "entity_type", "entity_id": "entity_id",
+           "lead": "lead_name", "lead_phone": "lead_phone", "status_at_time": "stage_at_time",
+           "action": "action", "field": "field", "before": "before_value",
+           "after": "after_value", "status_now": "lead_stage_now", "source": "lead_source",
+           "city": "lead_city", "owner": "lead_owner"}[key]
+    v = r[col]
+    return "" if v is None else str(v)
 
 
 def _shape(r) -> dict:
@@ -148,9 +213,21 @@ async def export_activity(
     actor: str | None = Query(None),
     date_from: date | None = Query(None, alias="from"),  # a date, not str: asyncpg won't
     date_to: date | None = Query(None, alias="to"),      # bind a str against ::date (500)
+    fields: list[str] | None = Query(None),
 ):
     """Same filters as the list → CSV. Capped: this is a browser download, and an
-    unbounded export of an append-only table only grows."""
+    unbounded export of an append-only table only grows.
+
+    `fields` picks the columns (repeated param). Written in EXPORT_FIELDS order whatever
+    order they were sent in, so two people's exports line up column for column."""
+    known = [k for k, _h, _d in EXPORT_FIELDS]
+    if fields:
+        unknown = sorted(set(fields) - set(known))
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"unknown export fields: {unknown}")
+        chosen = [k for k in known if k in set(fields)]
+    else:
+        chosen = [k for k, _h, on in EXPORT_FIELDS if on]
     engine = neon_engine()
     if engine is None:
         return StreamingResponse(io.StringIO(""), media_type="text/csv")
@@ -162,16 +239,10 @@ async def export_activity(
 
     buf = io.StringIO()
     w = csv.writer(buf)
-    w.writerow(["When (IST)", "Actor", "Role", "Entity", "Entity ID", "Lead", "Lead phone",
-                "Action", "Field", "Before", "After"])
+    header = dict((k, h) for k, h, _d in EXPORT_FIELDS)
+    w.writerow([header[k] for k in chosen])
     for r in rows:
-        when = r["created_at"]
-        w.writerow([
-            when.astimezone(IST).strftime("%Y-%m-%d %H:%M:%S") if when else "",
-            r["actor_name"] or r["actor_email"] or "system", r["actor_role"] or "",
-            r["entity_type"], r["entity_id"] or "", r["lead_name"] or "", r["lead_phone"] or "",
-            r["action"], r["field"] or "", r["before_value"] or "", r["after_value"] or "",
-        ])
+        w.writerow([_export_value(k, r) for k in chosen])
     buf.seek(0)
     return StreamingResponse(buf, media_type="text/csv", headers={
         "Content-Disposition": 'attachment; filename="activity-log.csv"'})

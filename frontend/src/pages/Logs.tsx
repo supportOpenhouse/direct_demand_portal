@@ -16,6 +16,7 @@ import { SkeletonTable } from "../components/Skeleton";
 import { FilterBar, useFilterValues } from "../components/FilterBar";
 import { LeadLink } from "../components/LeadModal";
 import { actionStyle, Details, pretty } from "../lib/activity";
+import { ExportFieldsModal } from "../components/ExportFieldsModal";
 
 const PAGE = 100;
 
@@ -25,6 +26,8 @@ export default function Logs() {
   const { action, entityType, actor, from, to } = f;
   const [page, setPage] = useState(0);
   const [exporting, setExporting] = useState(false);
+  // the CSV button opens a column picker first; the download runs from inside it
+  const [picking, setPicking] = useState(false);
   const dq = useDebounce(q, 300);
 
   const filters = useActivityFilters().data;
@@ -75,8 +78,7 @@ export default function Logs() {
               setQ(""); clear();
             })}>Clear</button>
           )}
-          <button className="btn sm" disabled={exporting}
-            onClick={() => { setExporting(true); api.activityExport(params).finally(() => setExporting(false)); }}>
+          <button className="btn sm" disabled={exporting} onClick={() => setPicking(true)}>
             {exporting ? "Exporting…" : "↓ CSV"}
           </button>
         </div>
@@ -137,6 +139,15 @@ export default function Logs() {
           <button className="btn ghost sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>Previous</button>
           <button className="btn ghost sm" disabled={end >= total} onClick={() => setPage((p) => p + 1)}>Next</button>
         </div>
+      )}
+      {picking && (
+        <ExportFieldsModal busy={exporting} onClose={() => setPicking(false)}
+          onExport={(fields) => {
+            setExporting(true);
+            api.activityExport(params, fields)
+              .then(() => setPicking(false))
+              .finally(() => setExporting(false));
+          }} />
       )}
     </>
   );

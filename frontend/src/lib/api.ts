@@ -561,6 +561,29 @@ export interface MetaLeadResponse {
   answer: string;
 }
 /* A lead added by hand (topbar "Add lead"). Only name and phone are required. */
+/* The columns the Activity Logs CSV can carry, in the order the server writes them:
+   [key, header, on by default]. Mirrors EXPORT_FIELDS in routers/activity.py —
+   tests/test_activity_export.py fails if the two drift. */
+export const ACTIVITY_EXPORT_FIELDS: [string, string, boolean][] = [
+  ["when", "When (IST)", true],
+  ["actor", "Actor", true],
+  ["role", "Role", true],
+  ["entity", "Entity", true],
+  ["entity_id", "Entity ID", true],
+  ["lead", "Lead", true],
+  ["lead_phone", "Lead phone", true],
+  ["status_at_time", "Status at the time", true],
+  ["action", "Action", true],
+  ["field", "Field", true],
+  ["before", "Before", true],
+  ["after", "After", true],
+  ["status_now", "Current status", false],
+  ["source", "Source", false],
+  ["city", "City", false],
+  ["owner", "Assigned RM", false],
+  ["details", "Details (JSON)", false],
+];
+
 export interface NewLead {
   name: string; phone: string; city: string; society: string;
   budget_band: string; configuration: string; source_remarks: string;
@@ -756,9 +779,11 @@ export const api = {
   /* Fetched with the Bearer header and saved as a blob, rather than a plain <a href>.
      A link can't carry an Authorization header, and the usual workaround — ?token= —
      would put the JWT into access logs and Referer headers for a mere CSV. */
-  activityExport: async (p: ActivityQuery) => {
+  activityExport: async (p: ActivityQuery, fields?: string[]) => {
     const qs = new URLSearchParams();
     Object.entries(p).forEach(([k, v]) => { if (v !== undefined && v !== "") qs.set(k, String(v)); });
+    // repeated `fields=` params; none = the server's defaults
+    (fields ?? []).forEach((f) => qs.append("fields", f));
     const token = getToken();
     const res = await fetch(`${API_URL}/v1/activity/export?${qs.toString()}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},

@@ -363,6 +363,51 @@ async def complete(visit_id: int, req: CompleteIn, user: dict = Depends(current_
     return {"ok": True, "visit_id": visit_id, "status": "completed"}
 
 
+class ReassignIn(BaseModel):
+    rm_accompanying: str
+
+
+@router.post("/visits/{visit_id}/reassign")
+async def reassign(visit_id: int, req: ReassignIn, user: dict = Depends(current_user)):
+    """Change the RM accompanying an upcoming visit (Core: PATCH sales_manager).
+
+    POST, not PATCH/PUT, like the other visit actions — and CORS here has no PUT anyway.
+    The SMID is resolved server-side from the name, exactly as booking does, so a visit
+    can only be handed to an active user who has one. Core notifies the NEW RM itself."""
+    row = await _known_visit(visit_id)
+    if row["status"] != "upcoming":
+        # a completed or cancelled visit records who actually went; rewriting that is
+        # history, not scheduling
+        raise HTTPException(status_code=409, detail="Only an upcoming visit can change its RM.")
+    smid = await _smid_for_name(req.rm_accompanying)
+    if smid is None:
+        raise HTTPException(status_code=422,
+            detail=f"{req.rm_accompanying} has no Openhouse SMID — ask an admin to add it in Settings.")
+    if smid == row["smid"]:
+        # already theirs: skip the call rather than send Core a no-op write
+        return {"ok": True, "visit_id": visit_id, "rm_accompanying": row["rm_accompanying"], "changed": False}
+
+    from ..services.crm_booking import reassign_visit
+
+    res = await reassign_visit(visit_id, smid)
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+
+    name = req.rm_accompanying.strip()
+    events = []
+    if row["lead_id"]:
+        events.append(activity.row_for(
+            activity.Actor.of(user), entity_type="lead", entity_id=row["lead_id"],
+            action="visit_reassigned", field="rm_accompanying",
+            before=row["rm_accompanying"], after=name,
+            metadata={"visit_id": visit_id, "society": row["society"],
+                      "smid_before": row["smid"], "smid_after": smid}))
+    await _apply(visit_id, "smid = :smid, rm_accompanying = :rm, synced_at = now()",
+                 {"smid": smid, "rm": name}, events)
+    log.info("reassign visit=%s %s -> %s by=%s", visit_id, row["rm_accompanying"], name, user.get("email"))
+    return {"ok": True, "visit_id": visit_id, "rm_accompanying": name, "changed": True}
+
+
 @router.post("/visits/{visit_id}/reschedule")
 async def reschedule(visit_id: int, req: SlotIn, user: dict = Depends(current_user)):
     """Move an upcoming visit to a new slot. Same visit id, so nothing about the lead's

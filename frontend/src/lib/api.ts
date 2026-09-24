@@ -442,6 +442,9 @@ export type DemandProperty = {
   key_handover_date: string | null;
   internal_remarks: string | null;
   origin: "real" | "legacy";
+  /** Openhouse Core's home id — the brochure is fetched by it. Null on legacy rows and
+      on some real ones; those show "No home id". */
+  core_home_id: number | null;
 } & Record<string, unknown>;
 
 export interface MatchPreviewReq {
@@ -709,6 +712,9 @@ export const api = {
   // and the set follows their table, so it is typed as an open record with the fields
   // this page actually names; a column added there reaches the popup without a change.
   demandDashboard: () => request<{ status: string; items: DemandProperty[] }>("/v1/demand-dashboard"),
+  // A property's brochure PDF, by its Openhouse Core home id — a link, not the file.
+  demandBrochure: (homeId: number) =>
+    request<{ url: string; filename: string }>(`/v1/demand-dashboard/brochure/${homeId}`),
   markPriority: (uid: string, priority: boolean) =>
     request<{ status: string; priority: boolean }>(`/v1/supply/${encodeURIComponent(uid)}/priority`, { method: "POST", body: JSON.stringify({ priority }) }),
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),
@@ -863,6 +869,10 @@ export const api = {
     request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/complete`, { method: "POST", body: JSON.stringify(body) }),
   rescheduleVisit: (visitId: number, selected_date: string, selected_time: string) =>
     request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/reschedule`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
+  // Change the RM accompanying an upcoming visit. The server resolves the name to an SMID.
+  reassignVisit: (visitId: number, rm_accompanying: string) =>
+    request<{ ok: boolean; visit_id: number; rm_accompanying: string; changed: boolean }>(
+      `/v1/visits/${visitId}/reassign`, { method: "POST", body: JSON.stringify({ rm_accompanying }) }),
   revisitVisit: (visitId: number, selected_date: string, selected_time: string) =>
     request<{ ok: boolean; visit_id: number; revisit_of: number }>(`/v1/visits/${visitId}/revisit`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
   assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),

@@ -2666,6 +2666,9 @@ td.lead-cell .nm{
 .dd-modal{position:relative;width:min(900px,100%);max-height:88vh;display:flex;flex-direction:column}
 .dd-head{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line);padding-right:56px}
 .dd-head h3{margin:0;font-family:var(--font-display);font-size:19px;letter-spacing:-.01em}
+/* the header's actions sit together at its right end, before the close button */
+.dd-head .dd-brochure,.dd-head .dd-brochure + *{margin-left:0}
+.dd-head > div:first-child{margin-right:auto}
 .dd-sub{color:var(--muted);font-size:12.5px;font-family:var(--font-mono);margin-top:3px}
 .dd-body{overflow:auto;padding:4px 18px 18px}
 .dd-section{padding:14px 0;border-bottom:1px solid var(--line)}

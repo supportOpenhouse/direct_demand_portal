@@ -15,7 +15,7 @@
 
    Which actions a row offers is decided by its status, because Core enforces the same
    rules and would just reject the rest:
-     upcoming  → Reschedule (same id) · Complete · Cancel
+     upcoming  → Reschedule (same id) · Change RM · Complete · Cancel
      completed → Schedule revisit
      cancelled → New visit (book that property again)
 
@@ -38,6 +38,8 @@ import {
   useCancelVisit,
   useCompleteVisit,
   useLeadCrmVisits,
+  useBookingConfig,
+  useReassignVisit,
   useRebookProperty,
   useRescheduleVisit,
   useRevisitVisit,
@@ -57,7 +59,7 @@ interface Props {
 
 /* Which row is showing a form, and which one. Only ever one at a time — two open forms
    in a list this short is noise, and the actions are mutually exclusive anyway. */
-type OpenForm = { visitId: number; kind: "reschedule" | "revisit" | "complete" | "rebook" | "cancel" } | null;
+type OpenForm = { visitId: number; kind: "reschedule" | "reassign" | "revisit" | "complete" | "rebook" | "cancel" } | null;
 
 /* A cancelled visit can only be re-booked if we still hold what the booking API needs. */
 const canRebook = (v: CrmVisitRow) =>
@@ -120,7 +122,7 @@ function VisitRow({
 }: {
   v: CrmVisitRow;
   leadId: string;
-  form: "reschedule" | "revisit" | "complete" | "rebook" | "cancel" | null;
+  form: "reschedule" | "reassign" | "revisit" | "complete" | "rebook" | "cancel" | null;
   setForm: (f: OpenForm) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -148,6 +150,8 @@ function VisitRow({
           <div className="mv-meta">
             {[v.city, v.selected_date, v.selected_time].filter(Boolean).join(" · ") || "No slot recorded"}
           </div>
+          {/* who is going — the thing Change RM changes, so it has to be visible first */}
+          <div className="mv-meta">RM: {v.rm_accompanying || "not set"}</div>
         </div>
         <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
       </button>
@@ -160,6 +164,7 @@ function VisitRow({
         {v.status === "upcoming" && (
           <>
             <button className={act("reschedule")} aria-pressed={form === "reschedule"} onClick={() => toggle("reschedule")}>Reschedule</button>
+            <button className={act("reassign")} aria-pressed={form === "reassign"} onClick={() => toggle("reassign")}>Change RM</button>
             <button className={act("complete")} aria-pressed={form === "complete"} onClick={() => toggle("complete")}>Complete</button>
             <CancelButton visitId={v.visit_id} leadId={leadId}
               confirming={form === "cancel"} onToggle={() => toggle("cancel")} onKeep={close} />
@@ -185,6 +190,7 @@ function VisitRow({
         <SlotForm kind={form} v={v} leadId={leadId} onDone={close} />
       )}
       {form === "complete" && <CompleteForm visitId={v.visit_id} leadId={leadId} onDone={close} />}
+      {form === "reassign" && <ReassignForm v={v} leadId={leadId} onDone={close} />}
     </div>
   );
 }
@@ -348,6 +354,51 @@ function SlotForm({
         <button className="btn ghost sm" onClick={onDone}>Back</button>
         <button className="btn primary sm" disabled={!date || !slot || pending} onClick={submit}>
           {pending ? "Saving…" : kind === "reschedule" ? "Reschedule" : kind === "revisit" ? "Book revisit" : "Book visit"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Hand an upcoming visit to another RM. The list is the same `bookable` list booking
+   uses — active users who hold an Openhouse SMID — because Core takes a SalesManager id
+   and a name without one can't be sent. Core notifies the NEW RM itself (in-app + push);
+   the previous RM is not told, so this says so before you save. */
+function ReassignForm({ v, leadId, onDone }: { v: CrmVisitRow; leadId: string; onDone: () => void }) {
+  const toast = useToast();
+  const cfg = useBookingConfig();
+  const reassign = useReassignVisit(leadId);
+  const people = cfg.data?.bookable ?? [];
+  const [rm, setRm] = useState(v.rm_accompanying ?? "");
+  const same = rm === (v.rm_accompanying ?? "");
+
+  const submit = () =>
+    reassign.mutate({ visitId: v.visit_id, rm }, {
+      onSuccess: () => { toast(`Visit handed to ${rm} — they've been notified`, "green"); onDone(); },
+      onError: (e: unknown) => toast(errText(e), "gold"),
+    });
+
+  return (
+    <div className="mv-form">
+      <div className="mv-formhead">
+        Who accompanies this visit. {rm && !same ? `${rm} gets a notification on the Openhouse app; ` : ""}
+        {v.rm_accompanying && !same ? `${v.rm_accompanying} isn't told.` : ""}
+      </div>
+      <label className="mv-field">
+        <span>RM accompanying</span>
+        <select className="ctl" value={rm} onChange={(e) => setRm(e.target.value)} disabled={cfg.isLoading}>
+          {!v.rm_accompanying && <option value="">— pick an RM —</option>}
+          {/* keep the current RM selectable even if they've since lost their SMID */}
+          {v.rm_accompanying && !people.some((p) => p.name === v.rm_accompanying) && (
+            <option value={v.rm_accompanying}>{v.rm_accompanying}</option>
+          )}
+          {people.map((p) => <option key={p.smid} value={p.name}>{p.name}</option>)}
+        </select>
+      </label>
+      <div className="mv-formfoot">
+        <button className="btn ghost sm" onClick={onDone}>Back</button>
+        <button className="btn primary sm" disabled={!rm || same || reassign.isPending} onClick={submit}>
+          {reassign.isPending ? "Saving…" : "Change RM"}
         </button>
       </div>
     </div>

@@ -10,7 +10,7 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDemandProperties } from "../lib/queries";
-import { DemandProperty } from "../lib/api";
+import { api, DemandProperty } from "../lib/api";
 import { FilterBar, useFilterValues } from "../components/FilterBar";
 import { countedOptions, matchesOption } from "../components/Filters";
 import SlideTabs from "../components/SlideTabs";
@@ -26,7 +26,8 @@ import { useSort, SortTh } from "../lib/useSort";
 import { useModalExit } from "../lib/useModalExit";
 import { useLeadColumns } from "../features/leadTable/ColumnSettings";
 import { TopbarSlot } from "../components/TopbarSlot";
-import { IconPlay, IconSearch, IconX } from "../components/icons";
+import { IconDownload, IconPlay, IconSearch, IconX } from "../components/icons";
+import { useToast } from "../components/Toast";
 
 /* ₹ in lakh, as the source dashboard prints it. A price is a real (float) column there,
    so 170 means ₹1.70 Cr — shown in lakh because that is the unit the team speaks in. */
@@ -297,6 +298,7 @@ function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => 
           </div>
           <span className={`stage ${AVAIL_CLASS[p.availability_status] ?? ""}`}>{p.availability_status}</span>
           {p.origin === "legacy" && <span className="chip-soft">Legacy</span>}
+          <BrochureButton homeId={p.core_home_id} />
           <button className="modal-x" onClick={onClose} aria-label="Close"><IconX /></button>
         </div>
         <div className="dd-body">
@@ -341,6 +343,39 @@ function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => 
       {shot && <Lightbox shot={shot} all={photos} onPick={setShot} onClose={() => setShot(null)} />}
     </div>,
     document.body,
+  );
+}
+
+/* Opens the home's brochure PDF in a new tab. The brochure comes from Openhouse Core by
+   the property's `core_home_id`; a property without one (every legacy row, some real
+   ones) has no brochure, and says so rather than offering a button that can only fail.
+
+   The tab is opened BEFORE the request, synchronously inside the click, then pointed at
+   the PDF once the link arrives. Opened after an `await`, the browser no longer counts
+   it as the user's click and the popup blocker eats it. */
+function BrochureButton({ homeId }: { homeId: number | null }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  if (homeId === null || homeId === undefined) {
+    return <span className="chip-soft" title="This property has no Openhouse home id">No home id</span>;
+  }
+  const open = async () => {
+    const tab = window.open("", "_blank");
+    setBusy(true);
+    try {
+      const { url } = await api.demandBrochure(homeId);
+      if (tab) { tab.opener = null; tab.location.href = url; } else window.open(url, "_blank", "noopener");
+    } catch (e) {
+      tab?.close();
+      toast(e instanceof Error ? e.message : "Couldn't get the brochure", "gold");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="btn sm dd-brochure" onClick={open} disabled={busy}>
+      <IconDownload /> {busy ? "Preparing…" : "Brochure"}
+    </button>
   );
 }
 

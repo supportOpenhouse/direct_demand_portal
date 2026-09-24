@@ -325,3 +325,51 @@ async def _post_slot(path: str, visit_id: int, selected_date: str, selected_time
     if r.status_code >= 400:
         return {"status": "error", "detail": _err_text(r)}
     return {"status": "ok", "visit": r.json()}
+
+
+async def reassign_visit(visit_id: int, smid: int) -> dict:
+    """Move a visit to another accompanying RM: PATCH schedule-visits/{id}/ with ONLY
+    `sales_manager`. {status, sales_manager?|detail}.
+
+    A true partial update — probed on staging and prod (24 Sep): it changes
+    salesManager/salesManagerId/updatedAt and nothing else, so unlike the PUT above there
+    is no slot to echo back. Core sends the NEW RM an in-app + push "Lead Assignment";
+    the previous RM is not told, and WhatsApp is not used.
+    ⚠️ In this response `salesManager` is the RM's ID; in GET crm/visits/ it is their
+    NAME (the id there is `salesManagerId`, a string)."""
+    async with _client() as client:
+        try:
+            r = await client.patch(f"schedule-visits/{visit_id}/", json={"sales_manager": smid})
+        except httpx.HTTPError as e:
+            log.warning("reassign visit=%s NETWORK %s", visit_id, e)
+            return {"status": "error", "detail": "Couldn't reach the booking service"}
+    log.info("reassign visit=%s sm=%s -> %s", visit_id, smid, r.status_code)
+    if r.status_code == 400 and "salesManager" in (r.json() if "json" in r.headers.get("content-type", "") else {}):
+        # {"salesManager": ["Invalid pk \"…\" - object does not exist."]} — Core has no
+        # active SalesManager with that id
+        return {"status": "error", "detail": "Openhouse doesn't recognise that RM's SMID (unknown or inactive)."}
+    if r.status_code >= 400:
+        return {"status": "error", "detail": _err_text(r)}
+    return {"status": "ok", "sales_manager": r.json().get("salesManager")}
+
+
+async def fetch_brochure(home_id: int) -> dict:
+    """A home's brochure PDF — GET homes/{id}/brochure/. {status, url?, filename?|detail}.
+
+    Core renders it once and caches it on GCS; repeat calls return the same URL in
+    ~0.2s. The CRM variant carries no broker contact. ⚠️ The keys are camelCase
+    (`brochureUrl`) — the doc they sent says `brochure_url`, which does not exist.
+    The first render can take a while, hence the longer timeout."""
+    async with _client() as client:
+        try:
+            r = await client.get(f"homes/{home_id}/brochure/", timeout=90.0)
+        except httpx.HTTPError as e:
+            log.warning("brochure home=%s NETWORK %s", home_id, e)
+            return {"status": "error", "detail": "Couldn't reach Openhouse Core"}
+    log.info("brochure home=%s -> %s", home_id, r.status_code)
+    if r.status_code == 404:
+        return {"status": "not_found", "detail": f"Openhouse has no home {home_id}"}
+    if r.status_code >= 400:
+        return {"status": "error", "detail": _err_text(r)}
+    b = r.json()
+    return {"status": "ok", "url": b["brochureUrl"], "filename": b["filename"]}

@@ -776,6 +776,11 @@ export function useRescheduleVisit(leadId?: string) {
     (v: Slotted) => api.rescheduleVisit(v.visitId, v.date, v.time), leadId);
 }
 
+export function useReassignVisit(leadId?: string) {
+  return useVisitAction(
+    (v: { visitId: number; rm: string }) => api.reassignVisit(v.visitId, v.rm), leadId);
+}
+
 export function useRevisitVisit(leadId?: string) {
   return useVisitAction(
     (v: Slotted) => api.revisitVisit(v.visitId, v.date, v.time), leadId);

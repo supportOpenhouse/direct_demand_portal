@@ -7,6 +7,7 @@ apps writing the same property with no rule about who wins is how they disagree.
 """
 from fastapi import APIRouter, Depends, HTTPException
 
+from ..config import get_settings
 from ..core.auth import current_user
 from ..services.demand_dashboard import fetch_properties
 
@@ -19,3 +20,22 @@ async def get_demand_dashboard():
     if result["status"] == "not_configured":
         raise HTTPException(status_code=503, detail="properties DB not configured")
     return result
+
+
+@router.get("/demand-dashboard/brochure/{home_id}")
+async def get_brochure(home_id: int):
+    """The home's brochure PDF from Openhouse Core — a link to open, not the file.
+
+    `home_id` is the property's `core_home_id`. A property without one has no brochure;
+    the page says "No home id" and never calls this. Still a GET, still no write on our
+    side (Core caches the PDF it renders, which is its own business)."""
+    if not get_settings().crm_booking_configured:
+        raise HTTPException(status_code=503, detail="Openhouse Core isn't configured (CRM_API_KEY).")
+    from ..services.crm_booking import fetch_brochure
+
+    res = await fetch_brochure(home_id)
+    if res["status"] == "not_found":
+        raise HTTPException(status_code=404, detail=res["detail"])
+    if res["status"] == "error":
+        raise HTTPException(status_code=502, detail=res["detail"])
+    return {"url": res["url"], "filename": res["filename"]}

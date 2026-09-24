@@ -37,6 +37,9 @@ SUPPLY_READY_STATUSES = ("AMA Signed", "Key Handover Done")
 # Generated from their UNIFIED_COLS so the two lists can't drift by a typo.
 # ⚠️ `floor` is TEXT and holds 'Top' / 'Ground' — never cast it to INTEGER.
 UNIFIED_COLS: list[tuple[str, str | None, str, str]] = [
+    # Openhouse Core's home id — the brochure is fetched by it. legacy_properties has
+    # no such column, so every legacy row reads NULL and shows "No home id".
+    ("core_home_id", None, "core_home_id", "INTEGER"),
     ("uid", "uid", "uid", "TEXT"),
     ("society_name", "society_name", "society_name", "TEXT"),
     ("unit_no", "unit_no", "unit_no", "TEXT"),

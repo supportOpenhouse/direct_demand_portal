@@ -2745,5 +2745,9 @@ td.lead-cell .nm{
 .xf-quick{display:flex;gap:8px;margin-top:12px}
 @media (max-width:520px){.xf-grid{grid-template-columns:1fr}}
 
+/* the table's brochure column: a compact download button, or a muted note */
+.dd-dl{gap:5px;white-space:nowrap}
+.dd-nohome{font-size:11.5px;color:var(--muted);white-space:nowrap}
+
 /* the whole row opens the popup, same affordance as a lead row */
 .row-open{cursor:pointer}

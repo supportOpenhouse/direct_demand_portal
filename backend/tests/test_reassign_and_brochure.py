@@ -89,3 +89,59 @@ async def test_an_unknown_home_is_not_found(monkeypatch):
 def test_the_brochure_route_is_a_read_on_the_demand_dashboard():
     route = next(r for r in dd_router.router.routes if r.path == "/demand-dashboard/brochure/{home_id}")
     assert route.methods == {"GET"}
+
+
+# --- brochure download (the table's button) -----------------------------------------
+
+BUCKET_URL = "https://storage.googleapis.com/openhouse-brochures/brochures/home-402/crm/x.pdf"
+
+
+def _fake_core_and_bucket(monkeypatch, brochure_url, file_response):
+    """Core answers with `brochure_url`; the bucket answers with `file_response`. Every
+    httpx client in the service is routed here, so nothing reaches the network."""
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.host == "core.test":
+            return httpx.Response(200, json={"brochureUrl": brochure_url, "filename": "P.pdf",
+                                             "homeId": 402, "source": "crm"})
+        return file_response(req)
+
+    real = httpx.AsyncClient
+
+    def client(*a, **kw):
+        kw.setdefault("transport", httpx.MockTransport(handler))
+        return real(*a, **kw)
+
+    monkeypatch.setattr(httpx, "AsyncClient", client)
+    monkeypatch.setattr(crm_booking, "_client", lambda: client(
+        base_url="https://core.test/api/v1/oh/", headers={"X-CRM-Key": "k"}))
+
+
+async def test_download_returns_the_pdf_bytes(monkeypatch):
+    _fake_core_and_bucket(monkeypatch, BUCKET_URL, lambda r: httpx.Response(200, content=b"%PDF-1.7 ..."))
+    res = await crm_booking.download_brochure(402)
+    assert res == {"status": "ok", "content": b"%PDF-1.7 ...", "filename": "P.pdf"}
+
+
+async def test_download_refuses_a_url_off_the_brochure_bucket(monkeypatch):
+    """The URL comes from another system and OUR server then fetches it — it must not
+    follow one anywhere else, whatever Core returns."""
+    fetched = []
+    for url in ("https://evil.example/openhouse-brochures/x.pdf",
+                "https://storage.googleapis.com/someone-elses-bucket/x.pdf",
+                "http://storage.googleapis.com/openhouse-brochures/x.pdf"):
+        _fake_core_and_bucket(monkeypatch, url, lambda r: fetched.append(r) or httpx.Response(200, content=b"%PDF"))
+        res = await crm_booking.download_brochure(402)
+        assert res["status"] == "error", url
+    assert not fetched, "a refused URL must never be requested"
+
+
+async def test_download_rejects_something_that_is_not_a_pdf(monkeypatch):
+    _fake_core_and_bucket(monkeypatch, BUCKET_URL, lambda r: httpx.Response(200, content=b"<html>denied</html>"))
+    assert (await crm_booking.download_brochure(402))["status"] == "error"
+
+
+def test_the_download_route_is_a_read_that_answers_with_an_attachment():
+    route = next(r for r in dd_router.router.routes if r.path == "/demand-dashboard/brochure/{home_id}/file")
+    assert route.methods == {"GET"}
+    src = inspect.getsource(dd_router.download_brochure_file)
+    assert "attachment;" in src and 'media_type="application/pdf"' in src

@@ -373,3 +373,35 @@ async def fetch_brochure(home_id: int) -> dict:
         return {"status": "error", "detail": _err_text(r)}
     b = r.json()
     return {"status": "ok", "url": b["brochureUrl"], "filename": b["filename"]}
+
+
+# The only place a brochure PDF may be fetched from. Core hands us a URL and our server
+# then requests it — without this check, whatever URL Core returned (or a bug made it
+# return) is a request our backend makes on its behalf.
+BROCHURE_HOST = "storage.googleapis.com"
+BROCHURE_PREFIX = "/openhouse-brochures/"
+
+
+async def download_brochure(home_id: int) -> dict:
+    """The brochure PDF's BYTES, for a direct download. {status, content?, filename?|detail}.
+
+    The browser can't do this itself: the bucket sends no Access-Control-Allow-Origin, so a
+    fetch from the page is blocked, and `<a download>` is ignored for another site's URL —
+    it would open the PDF instead of saving it. So the server fetches it and hands it back
+    as an attachment. ~1.2 MB, held in memory once."""
+    got = await fetch_brochure(home_id)
+    if got["status"] != "ok":
+        return got
+    url = httpx.URL(got["url"])
+    if url.scheme != "https" or url.host != BROCHURE_HOST or not url.path.startswith(BROCHURE_PREFIX):
+        log.warning("brochure home=%s: refusing to fetch %s", home_id, got["url"])
+        return {"status": "error", "detail": "Openhouse returned an unexpected brochure location"}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as h:
+            r = await h.get(url)
+    except httpx.HTTPError as e:
+        log.warning("brochure home=%s download NETWORK %s", home_id, e)
+        return {"status": "error", "detail": "Couldn't download the brochure"}
+    if r.status_code != 200 or not r.content.startswith(b"%PDF"):
+        return {"status": "error", "detail": f"The brochure file didn't download (HTTP {r.status_code})"}
+    return {"status": "ok", "content": r.content, "filename": got["filename"]}

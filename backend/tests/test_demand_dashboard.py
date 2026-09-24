@@ -90,8 +90,13 @@ def test_the_page_asks_for_nothing_the_api_does_not_send():
     """The other direction: a field the page renders but the query never selects is a
     column of blanks nobody notices."""
     sent = {alias for _p, _l, alias, _t in svc.UNIFIED_COLS} | set(svc.JOINED_COLS)
-    # `remarks` is a column ID in the page's own registry, not a database field
-    missing = _fields_the_page_reads() - sent - {"remarks"}
+    # The default layout `DEMAND_COLS = [...]` lists the page's COLUMN ids, not database
+    # fields ("remarks", "brochure") — its last entry matches the `"name"]` pattern the
+    # scan uses for section fields. Every id in that list is excluded as a group, rather
+    # than special-casing whichever one happens to be last.
+    layout = re.search(r"const DEMAND_COLS = \[([^\]]*)\]", PAGE.read_text()).group(1)
+    column_ids = set(re.findall(r'"(\w+)"', layout))
+    missing = _fields_the_page_reads() - sent - column_ids
     assert not missing, f"rendered but never sent: {sorted(missing)}"
 
 

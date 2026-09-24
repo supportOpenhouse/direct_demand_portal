@@ -26,7 +26,7 @@ import { useSort, SortTh } from "../lib/useSort";
 import { useModalExit } from "../lib/useModalExit";
 import { useLeadColumns } from "../features/leadTable/ColumnSettings";
 import { TopbarSlot } from "../components/TopbarSlot";
-import { IconDownload, IconPlay, IconSearch, IconX } from "../components/icons";
+import { IconDownload, IconEye, IconPlay, IconSearch, IconX } from "../components/icons";
 import { useToast } from "../components/Toast";
 
 /* ₹ in lakh, as the source dashboard prints it. A price is a real (float) column there,
@@ -227,6 +227,8 @@ export const DEMAND_COLUMNS: DDColumn[] = [
     sort: (p) => p.availability_status },
   { id: "remarks", label: "Demand Team Remarks", cell: (p) => text(p.internal_remarks),
     sort: (p) => (p.internal_remarks ?? "").toLowerCase() },
+  // the brochure PDF, saved straight to the device; "No home id" where Core has none
+  { id: "brochure", label: "Brochure", tight: true, cell: (p) => <BrochureDownload homeId={p.core_home_id} /> },
   /* Off by default — every other field from the same row. They are ordinary table
      columns, not popup fields, so the settings modal lists them under "Hidden table
      columns"; `popup` is a lead-table distinction that means nothing here. */
@@ -275,7 +277,7 @@ const AVAIL_BOXES = [
 
 const DD_BY_ID: Record<string, DDColumn> = Object.fromEntries(DEMAND_COLUMNS.map((c) => [c.id, c]));
 /* their ten, in their order */
-const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks"];
+const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks", "brochure"];
 /* module-level: an accessor object rebuilt each render re-sorts on every keystroke */
 const SORTERS = Object.fromEntries(
   DEMAND_COLUMNS.filter((c) => c.sort).map((c) => [c.id, c.sort!]),
@@ -374,7 +376,30 @@ function BrochureButton({ homeId }: { homeId: number | null }) {
   };
   return (
     <button className="btn sm dd-brochure" onClick={open} disabled={busy}>
-      <IconDownload /> {busy ? "Preparing…" : "Brochure"}
+      <IconEye /> {busy ? "Preparing…" : "View brochure"}
+    </button>
+  );
+}
+
+/* The table's download button: saves the PDF to the device rather than opening it. Its
+   own component so each row keeps its own busy state. stopPropagation because the whole
+   row opens the property popup — without it, downloading would also open the popup. */
+function BrochureDownload({ homeId }: { homeId: number | null }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  if (homeId === null || homeId === undefined) {
+    return <span className="dd-nohome" title="This property has no Openhouse home id">No home id</span>;
+  }
+  const go = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true);
+    try { await api.downloadBrochure(homeId); }
+    catch (err) { toast(err instanceof Error ? err.message : "Couldn't download the brochure", "gold"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <button className="btn ghost sm dd-dl" onClick={go} disabled={busy} title="Download the brochure PDF">
+      <IconDownload /> {busy ? "…" : "PDF"}
     </button>
   );
 }

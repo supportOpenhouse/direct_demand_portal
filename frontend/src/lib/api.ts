@@ -712,6 +712,31 @@ export const api = {
   // and the set follows their table, so it is typed as an open record with the fields
   // this page actually names; a column added there reaches the popup without a change.
   demandDashboard: () => request<{ status: string; items: DemandProperty[] }>("/v1/demand-dashboard"),
+  /* The brochure PDF straight to the device. Fetched through OUR server (…/file): the
+     bucket sends no CORS header, so the page can't fetch it, and `<a download>` is
+     ignored for another site's URL — it opens instead of saving. Same fetch → blob →
+     click as the Activity Logs CSV; the token can't ride a plain link. */
+  downloadBrochure: async (homeId: number) => {
+    const token = getToken();
+    const res = await fetch(`${API_URL}/v1/demand-dashboard/brochure/${homeId}/file`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail || `download failed (${res.status})`);
+    }
+    // the readable name ("Property-3 BHK-….pdf") rides filename*; fall back to the plain one
+    const cd = res.headers.get("Content-Disposition") || "";
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plain = cd.match(/filename="([^"]+)"/i)?.[1];
+    const name = star ? decodeURIComponent(star) : plain || `brochure-${homeId}.pdf`;
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   // A property's brochure PDF, by its Openhouse Core home id — a link, not the file.
   demandBrochure: (homeId: number) =>
     request<{ url: string; filename: string }>(`/v1/demand-dashboard/brochure/${homeId}`),

@@ -614,7 +614,8 @@ tr.lead-row:hover{background-color:var(--panel-2)}
 .pick-row .pk-add{margin-left:auto}
 .pick-row.added{opacity:.55}
 .itin-empty{font-size:12px;color:var(--muted);text-align:center;padding:24px 8px}
-.itin-stop{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+.itin-stop{display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--panel);cursor:grab}
+.itin-stop.dragging{opacity:.4}
 .itin-stop .num{width:24px;height:24px;border-radius:50%;background:var(--blue);color:var(--on-accent);display:grid;place-items:center;font-weight:700;font-size:12px;flex:none;font-family:var(--font-mono)}
 .itin-stop .sn{font-weight:600;font-size:12.5px;line-height:1.2}
 .itin-stop .sl{font-size:11px;color:var(--muted)}
@@ -627,13 +628,8 @@ tr.lead-row:hover{background-color:var(--panel-2)}
 .totals .tbox{flex:1;border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:linear-gradient(180deg,var(--brand-softer),var(--panel))}
 .totals .tbox .tv{font-family:var(--font-display);font-weight:800;font-size:20px;line-height:1}
 .totals .tbox .tl{font-size:10.5px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
-.plan-map{height:300px;border-radius:12px;border:1px solid var(--line);overflow:hidden;background:var(--panel-2)}
-.map-empty{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;color:var(--muted);font-size:12.5px;padding:24px;gap:8px}
-.map-empty code{font-family:var(--font-mono);font-size:11px;background:var(--panel);border:1px solid var(--line);padding:2px 6px;border-radius:5px;color:var(--ink-2)}
-.route-est{font-size:10.5px;font-weight:600;color:var(--amber);margin-top:6px}
 .btn:disabled{opacity:.45;cursor:not-allowed;transform:none}
 .itin-stop .ops button:disabled{opacity:.3;cursor:not-allowed}
-.opt-btn{padding:4px 10px;font-size:11px}
 
 /* toast */
 #toasts{position:fixed;right:24px;bottom:24px;display:flex;flex-direction:column;gap:10px;z-index:80}
@@ -878,38 +874,6 @@ a.nav-item{text-decoration:none}
   --bv-orange-soft:var(--supply-orange-soft); --bv-surface:var(--panel); --bv-line:var(--line);
 }
 
-/* --- the "woosh" reveal inside the Visit Planner ------------------------- */
-.bv-unlock{
-  margin-top:16px;border:1px solid var(--bv-line);border-radius:16px;
-  background:linear-gradient(180deg,var(--bv-surface),var(--panel));
-  box-shadow:0 1px 2px var(--supply-orange-soft),0 18px 44px -28px var(--supply-orange-soft-2);
-  padding:16px;overflow:hidden;
-  animation:bvUnlock .55s cubic-bezier(.16,.84,.34,1) both;
-}
-@keyframes bvUnlock{
-  0%{opacity:0;transform:translateY(18px) scale(.985);max-height:0;padding-top:0;padding-bottom:0;margin-top:0}
-  60%{opacity:1}
-  100%{opacity:1;transform:none;max-height:1200px}
-}
-.bv-unlock-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:14px}
-.bv-unlock-tick{width:30px;height:30px;border-radius:50%;background:var(--emerald);color:var(--on-accent);
-  display:grid;place-items:center;font-weight:800;flex:none;box-shadow:0 6px 16px -6px var(--emerald)}
-.bv-unlock-title{font-family:var(--font-display);font-weight:700;font-size:15px;color:var(--ink)}
-.bv-unlock-sub{font-size:12.5px;color:var(--ink-2);margin-top:2px}
-.bv-unlock-beta{margin-left:auto;background:var(--bv-orange-soft);color:var(--bv-orange-2);
-  font-size:10px;font-weight:800;letter-spacing:.05em;padding:3px 9px;border-radius:20px;flex:none}
-
-.bv-unlock-grid{border:1px solid var(--bv-line);border-radius:12px;overflow:hidden;background:var(--panel);margin-bottom:14px}
-.bv-ug-head,.bv-ug-row{display:grid;grid-template-columns:1.6fr .7fr 1.3fr .8fr .9fr .9fr;gap:8px;align-items:center;padding:9px 12px}
-.bv-ug-head{background:var(--bv-surface);font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
-.bv-ug-row{border-top:1px solid var(--line-2);font-size:12.5px;color:var(--ink-2)}
-.bv-ug-row:hover{background:var(--bv-surface)}
-.bv-ug-name{font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px}
-.bv-ug-home{font-family:var(--font-mono);color:var(--muted);font-size:11.5px}
-.bv-pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap}
-.bv-pill.ready{background:var(--emerald-soft);color:var(--emerald-deep)}
-.bv-pill.soon{background:var(--amber-soft);color:var(--amber)}
-.bv-unlock-cta{width:100%;justify-content:center;font-size:14px;padding:11px}
 
 /* --- the booking drawer (right-side, guided checkout) -------------------- */
 .bv-overlay{position:fixed;inset:0;background:var(--scrim);backdrop-filter:blur(3px);
@@ -1024,8 +988,6 @@ a.nav-item{text-decoration:none}
   .bv-drawer{width:100%}
   .bv-slot-grid{grid-template-columns:1fr 1fr}
   .bv-two{grid-template-columns:1fr}
-  .bv-ug-head{display:none}
-  .bv-ug-row{grid-template-columns:1fr 1fr;gap:4px 8px}
 }
 
 /* inline notes thread in lead lists (NotesCell) */
@@ -1097,8 +1059,6 @@ a.nav-item{text-decoration:none}
 .visit-line .vl-society{font-size:12px;color:var(--ink);font-weight:600;line-height:1.3}
 .visit-line .vl-sub{font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:1px}
 
-/* inventory unit with no lat/lng yet — visitable, just not routable */
-.no-geo{color:var(--gold);font-weight:600}
 .visits-cell .vc-date{font-size:10.5px;color:var(--muted);font-family:var(--font-mono);margin-top:3px}
 
 /* ── Auto Dialer (Schedule + Previous Campaigns) ───────────────────────────
@@ -1935,6 +1895,12 @@ html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
 .fchip-clear:hover{color:var(--coral)}
 .fgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
 @media (max-width:640px){.fgrid{grid-template-columns:1fr}}
+/* fields sharing a `row`: one full-width line; each takes its content, the last the rest */
+.frow{grid-column:1 / -1;display:flex;gap:14px;flex-wrap:wrap}
+.frow > .field{flex:none}
+.frow > .field:last-child{flex:1;min-width:0}
+.fbtns{display:flex;gap:6px;flex-wrap:wrap}
+.frow .fbtns{flex-wrap:nowrap}
 
 /* ── sliding segmented toggle ────────────────────────────────────────────────
    The thumb paints the "selected" surface, so the active BUTTON goes transparent —
@@ -2117,6 +2083,7 @@ html[data-wipe='btt'] ::view-transition-new(root){--wipe-from:100% 0 0 0}
    third height in the same line. */
 .ctl{height:var(--control-h);border-radius:var(--r-input);border:1px solid var(--line);
   background:var(--panel);color:var(--ink-2);font:inherit;font-size:12.5px;padding:0 10px;cursor:pointer}
+input.ctl{cursor:text}
 
 /* -- lead funnel ------------------------------------------------------------
    The TRACK is half the card, not a full-width track with a half-full bar: the
@@ -2493,7 +2460,11 @@ td.lead-cell .nm{
 
 .mv-row { border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; }
 /* a cancelled visit is history, not a choice — recede it rather than hide it */
-.mv-cancelled { opacity: .62; }
+/* A cancelled visit reads as spent — but only its DETAILS fade. Opacity on the row
+   itself faded every child with it, and a child can't undo a parent's opacity, so the
+   "New visit" button looked disabled while being the one live action on the row. The
+   actions and any form opened from them stay at full strength. */
+.mv-cancelled .mv-rowtop, .mv-cancelled .mv-feedback { opacity: .62; }
 .mv-rowtop { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .mv-society { font-weight: 600; font-size: 14px; }
 .mv-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -2545,13 +2516,25 @@ td.lead-cell .nm{
 
 .mv-field { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 12.5px; }
 .mv-field > span { flex: 0 0 130px; color: var(--muted); }
-.mv-field select, .mv-field textarea { flex: 1; min-width: 0; }
+.mv-field select, .mv-field input, .mv-field textarea { flex: 1; min-width: 0; }
 .mv-field-wide { align-items: flex-start; }
 .mv-field textarea {
   background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-input);
   color: var(--ink); padding: 8px 10px; font: inherit; font-size: 12.5px; resize: vertical;
 }
 .mv-formfoot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+/* Change RM: field + Back + Change RM share one row; wraps on a narrow screen */
+.mv-combo { flex: 1; min-width: 0; position: relative; display: flex; }
+.mv-combo > input { flex: 1; min-width: 0; padding-right: 30px; }
+.mv-combo-caret { position: absolute; right: 10px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px;
+  color: var(--muted); pointer-events: none; transition: transform .15s; }
+.mv-combo-caret.on { transform: rotate(180deg); color: var(--brand); }
+.mv-combo-list { margin-top: 6px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--panel); box-shadow: var(--shadow-lg); }
+.mselect-row.on { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+.mv-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mv-inline > .mv-field { flex: 1; min-width: 240px; margin-bottom: 0; }
+.mv-inline > .mv-formfoot { margin-top: 0; }
 
 @media (max-width: 560px) {
   .mv-field { flex-direction: column; align-items: stretch; gap: 4px; }

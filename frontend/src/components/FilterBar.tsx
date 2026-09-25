@@ -11,17 +11,22 @@ import { useEffect, useState, type ReactNode } from "react";
 import { IconFilter, IconX } from "./icons";
 import { DATE_PRESETS, type FilterOption } from "./Filters";
 
-export type FieldKind = "select" | "toggle" | "range" | "date" | "daterange";
+export type FieldKind = "select" | "buttons" | "toggle" | "range" | "date" | "daterange";
 
 export interface Field {
   key: string;
   label: string;
   kind?: FieldKind;                 // default "select"
-  options?: FilterOption[];         // select only
+  options?: FilterOption[];         // select / buttons
   /** How an active value reads on its chip. Defaults to the raw value. */
   format?: (v: any) => string;
   /** Hide the field entirely (segment-specific filters). */
   hidden?: boolean;
+  /** buttons only: several can be picked; the value is an array. */
+  multi?: boolean;
+  /** Fields with the same `row` share ONE full-width line in the modal: each takes its
+      content width, the last one takes the rest. */
+  row?: string;
 }
 
 export type Values = Record<string, any>;
@@ -40,6 +45,7 @@ const bare = (s: string) => s.replace(/\s*\(\d+\)\s*$/, "");
 function chipText(f: Field, v: any): string {
   if (f.format) return f.format(v);
   if (f.kind === "toggle") return f.label;
+  if (f.multi) return `${f.label}: ${opts(f.options).filter((o) => v.includes(o.value)).map((o) => bare(o.label)).join(", ")}`;
   if (f.kind === "range") return `${f.label} ${v.min || "0"}–${v.max || "∞"}`;
   if (f.kind === "daterange") {
     if (v.preset === "custom") return `${f.label}: ${v.from || "…"} – ${v.to || "…"}`;
@@ -95,7 +101,8 @@ export function FilterBar({
 }
 
 const reset = (f: Field) =>
-  f.kind === "toggle" ? false
+  f.multi ? []
+  : f.kind === "toggle" ? false
   : f.kind === "range" ? { min: "", max: "" }
   : f.kind === "daterange" ? { preset: "", from: "", to: "" }
   : "";
@@ -121,7 +128,21 @@ function FilterModal({ fields, values, onChange, onClear, onClose }: {
         </div>
         <div className="mb">
           <div className="fgrid">
-            {fields.map((f) => (
+            {groups(fields).map((g) => g.length > 1 ? (
+              <div key={g[0].row} className="frow">{g.map(renderField)}</div>
+            ) : renderField(g[0]))}
+          </div>
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClear}>Clear all</button>
+          <button className="btn primary" onClick={onClose}>Done</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  function renderField(f: Field) {
+    return (
               /* A custom date range is two date inputs side by side, and a date input won't
                  shrink below its natural width — in one 190px grid track the "to" box spilled
                  into the next cell, which painted over it and took its clicks. Span the row. */
@@ -161,6 +182,24 @@ function FilterModal({ fields, values, onChange, onClear, onClose }: {
                       </div>
                     )}
                   </div>
+                ) : f.kind === "buttons" ? (
+                  /* one button per option; the picked one is the accent (there is no
+                     .btn.active — it has to change class), and picking it again clears it */
+                  <div className="fbtns">
+                    {opts(f.options).map((o) => {
+                      const cur = values[f.key];
+                      const on = f.multi ? (cur ?? []).includes(o.value) : cur === o.value;
+                      const next = f.multi
+                        ? (on ? cur.filter((x: string) => x !== o.value) : [...(cur ?? []), o.value])
+                        : (on ? "" : o.value);
+                      return (
+                        <button key={o.value} className={"btn sm " + (on ? "primary" : "ghost")}
+                                onClick={() => onChange(f.key, next)}>
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                 ) : f.kind === "date" ? (
                   <input type="date" value={values[f.key] ?? ""} onChange={(e) => onChange(f.key, e.target.value)} />
                 ) : (
@@ -172,16 +211,19 @@ function FilterModal({ fields, values, onChange, onClear, onClose }: {
                   </select>
                 )}
               </div>
-            ))}
-          </div>
-        </div>
-        <div className="mf">
-          <button className="btn ghost" onClick={onClear}>Clear all</button>
-          <button className="btn primary" onClick={onClose}>Done</button>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  }
+}
+
+/* Consecutive fields sharing a `row` key become one group; everything else stands alone. */
+function groups(fields: Field[]): Field[][] {
+  const out: Field[][] = [];
+  for (const f of fields) {
+    const last = out[out.length - 1];
+    if (f.row && last && last[0].row === f.row) last.push(f);
+    else out.push([f]);
+  }
+  return out;
 }
 
 /** One filter object + a setter, so a page holds filters in one piece of state. */

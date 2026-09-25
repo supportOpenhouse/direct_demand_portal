@@ -373,6 +373,31 @@ class Visit(Base):
     )
 
 
+class SalesManagerList(Base):
+    """Openhouse Core's sales managers (RMs) — GET crm/sales-managers/, filled by
+    services/sales_managers.refresh_sales_managers. What it's for is decided later; today
+    it is only kept current.
+
+    `id` is Core's SalesManager id — the SMID a visit's `sales_manager` takes, the same
+    number `users.smid` holds. The endpoint lists ACTIVE managers only, so a manager that
+    drops out of it is kept with `is_active = false` rather than deleted: old visits still
+    name them. `data` is the row VERBATIM, as for app_visit_data."""
+
+    __tablename__ = "sales_manager_list"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    mobile: Mapped[str | None] = mapped_column(Text)
+    city_id: Mapped[int | None] = mapped_column(Integer)
+    city_name: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    first_seen_at: Mapped[str] = mapped_column(
+        TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    # the last refresh that listed this manager; stays put once they drop out
+    fetched_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False)
+
+
 class AppVisitData(Base):
     """Openhouse Core's own record of a visit — EVERY visit on Openhouse, not only the
     ones we booked (GET crm/all-visits/, services/app_visit_data.run_all_visits_sync).

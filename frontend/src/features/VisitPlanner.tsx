@@ -1,59 +1,33 @@
-/* Visit Planner — port of the prototype's planner, made real:
-   - start = the RM's current location (geolocation)
-   - stops picked from LIVE inventory (geocoded lat/lng)
-   - "Optimize route" reorders for the shortest trip regardless of pick order
-   - Google Map draws the driving route via the Directions API
-   - saves the plan to the lead */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
-import { useInventory, useAssignees, useLead, useBookingConfig, formatPrice } from "../lib/queries";
-import { InventoryItem, api } from "../lib/api";
-import { useToast } from "../components/Toast";
-import { optimizeRoute, estimateLeg, pathKm, fmtMin, Pt } from "../lib/geo";
-import { loadGoogleMaps, getCurrentLocation, openInMaps, MAPS_API_KEY } from "../lib/maps";
+/* Visit Planner — pick units from LIVE inventory, then book them on Openhouse.
+   No map, no route, no location: BOOK VISITS hands the selection straight to the
+   booking drawer (slot + buyer). RM accompanying lists every active non-admin user and
+   defaults to the lead's owner; one without an SMID gets the drawer's "no SMID" warning. */
+import { useMemo, useState } from "react";
+import { useInventory, useLead, useAssignees, formatPrice } from "../lib/queries";
+import { next7Days } from "../lib/slots";
+import { InventoryItem } from "../lib/api";
 import { BookVisitsDrawer, BookUnit } from "./BookVisitsDrawer";
-import { IconArrowUpRight, IconCalendar, IconCheck, IconCompass, IconMap, IconPhoneMobile, IconPin, IconWarn, IconX } from "../components/icons";
-import { NewBadge } from "../components/StageChip";
-
-const today = () => new Date().toISOString().slice(0, 10);
+import { IconCalendar, IconCheck, IconX } from "../components/icons";
 
 export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }: { leadId: string; leadName: string | null; leadCity: string | null; leadPhone?: string | null; onClose: () => void }) {
   const { data: inv } = useInventory();
-  const { data: assignees } = useAssignees();
   const { data: lead } = useLead(leadId);
-  const { data: cfg } = useBookingConfig();
-  const leadOwner = lead?.assigned_to ?? null;
-  // only SMID holders can be the accompanying RM — the booking API needs the id
-  const bookable = cfg?.bookable ?? [];
-  const toast = useToast();
-  const qc = useQueryClient();
+  const { data: assignees } = useAssignees();
+  const rms = assignees?.items ?? [];
 
-  const [start, setStart] = useState<Pt | null>(null);
-  const [locating, setLocating] = useState(true);
   const [stopIds, setStopIds] = useState<number[]>([]);
-  const [tripDate, setTripDate] = useState(today());
-  const [leadRm, setLeadRm] = useState("");
-  // defaults to the lead's RM and stays in step until someone picks a different
-  // person; their SMID is what the booking API receives as sales_manager_id
-  const [rmAccompanying, setRmAccompanying] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [googleMetrics, setGoogleMetrics] = useState<{ km: number; min: number } | null>(null);
-  const [savedPlan, setSavedPlan] = useState(false); // unlocks the "Book on Openhouse" section
+  // the drawer books within the next 7 days, so the date is capped to that window
+  const days = useMemo(() => next7Days(), []);
+  const [tripDate, setTripDate] = useState(days[0].date);
   const [booking, setBooking] = useState(false); // the booking drawer is open
+  const [dragId, setDragId] = useState<number | null>(null); // the row being dragged
   const [pickCity, setPickCity] = useState(leadCity || ""); // inventory city filter (defaults to lead's)
   const [societyQuery, setSocietyQuery] = useState(""); // society search — within the selected city
 
-  const mapEl = useRef<HTMLDivElement>(null);
-  const unlockEl = useRef<HTMLDivElement>(null);
-  const mapObj = useRef<any>(null);
-  const markers = useRef<any[]>([]);
-  const dirRenderer = useRef<any>(null);
+  const [rmPick, setRmPick] = useState<string | null>(null); // null = still following the lead's owner
+  const rmAccompanying = rmPick ?? lead?.assigned_to ?? "";
 
-  // Every live unit is pickable. Units without lat/lng (geocoding pending) can still be
-  // added as stops — they just can't be plotted or routed, so they're flagged instead of
-  // silently hidden, which used to make ~22% of inventory look missing here.
   const units = useMemo(() => inv?.items ?? [], [inv]);
-  const hasGeo = (u: InventoryItem) => u.lat != null && u.lng != null;
   const cities = useMemo(() => Array.from(new Set(units.map((u) => u.city).filter((c): c is string => !!c))).sort(), [units]);
   const sq = societyQuery.trim().toLowerCase();
   // scope to the chosen city first, then filter by the society search within it
@@ -61,116 +35,7 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
   const pickList = sq
     ? inCity.filter((u) => [u.society, u.name, u.locality].some((f) => (f || "").toLowerCase().includes(sq)))
     : inCity;
-  const byId = (id: number) => units.find((u) => u.id === id);
-  const stops = stopIds.map(byId).filter((u): u is InventoryItem => !!u);
-  const mapStops = stops.filter(hasGeo);          // only these can be drawn / routed
-  const unmapped = stops.filter((u) => !hasGeo(u));
-
-  // estimate metrics (instant, haversine); replaced by Google driving values when available
-  const est = useMemo(() => {
-    const legs = mapStops.slice(1).map((s, i) => estimateLeg(mapStops[i] as Pt, s as Pt));
-    const fromStart = start && mapStops.length ? estimateLeg(start, mapStops[0] as Pt) : null;
-    const all = fromStart ? [fromStart, ...legs] : legs;
-    return {
-      legs,
-      startLeg: fromStart,
-      totalKm: +all.reduce((a, l) => a + l.km, 0).toFixed(1),
-      totalMin: all.reduce((a, l) => a + l.min, 0),
-    };
-  }, [stopIds, start, inv]);
-
-  const total = googleMetrics
-    ? { km: googleMetrics.km, min: googleMetrics.min, source: "google" as const }
-    : { km: est.totalKm, min: est.totalMin, source: "est" as const };
-
-  const locate = () => {
-    setLocating(true);
-    getCurrentLocation().then((loc) => {
-      setStart(loc);
-      setLocating(false);
-      if (!loc) toast("Allow location permission to optimize the route — then retry", "gold");
-    });
-  };
-  useEffect(() => { locate(); }, []);
-
-  useEffect(() => {
-    if (leadRm === "" && assignees?.items.length) {
-      const owner = assignees.items.find((a) => a.name === leadOwner)?.name;
-      setLeadRm(owner ?? assignees.items[0].name);
-    }
-  }, [assignees]);
-
-  // init the map once
-  useEffect(() => {
-    if (!MAPS_API_KEY || !mapEl.current || mapObj.current) return;
-    loadGoogleMaps()
-      .then((g) => {
-        mapObj.current = new g.maps.Map(mapEl.current!, {
-          center: start || { lat: 28.46, lng: 77.05 }, zoom: 11,
-          mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
-        });
-        dirRenderer.current = new g.maps.DirectionsRenderer({
-          map: mapObj.current, suppressMarkers: true,
-          polylineOptions: { strokeColor: "#2563eb", strokeWeight: 5, strokeOpacity: 0.85 }, // theme-exempt: Maps canvas, var() not resolved
-        });
-        draw();
-      })
-      .catch((e) => toast(e.message, "gold"));
-  }, [mapEl.current]);
-
-  // redraw whenever stops or start change
-  useEffect(() => { draw(); }, [stopIds, start]);
-
-  const draw = () => {
-    const g = (window as any).google;
-    if (!g || !mapObj.current) return;
-    markers.current.forEach((m) => m.setMap(null));
-    markers.current = [];
-    setGoogleMetrics(null);
-    const bounds = new g.maps.LatLngBounds();
-    if (start) {
-      markers.current.push(new g.maps.Marker({
-        position: start, map: mapObj.current, title: "You (start)",
-        /* theme-exempt:start — Maps paints these itself; CSS variables never reach it. */
-        label: { text: "A", color: "#fff", fontWeight: "700" },
-        icon: { path: g.maps.SymbolPath.CIRCLE, scale: 9, fillColor: "#059669", fillOpacity: 1, strokeColor: "#fff", strokeWeight: 2 },
-        /* theme-exempt:end */
-      }));
-      bounds.extend(start);
-    }
-    mapStops.forEach((s, i) => {
-      markers.current.push(new g.maps.Marker({
-        position: { lat: s.lat!, lng: s.lng! }, map: mapObj.current,
-        label: { text: String(i + 1), color: "#fff", fontWeight: "700" }, title: `Visit ${i + 1} · ${s.name}`, // theme-exempt: Maps canvas
-      }));
-      bounds.extend({ lat: s.lat!, lng: s.lng! });
-    });
-    if (dirRenderer.current) dirRenderer.current.set("directions", null);
-    if (!mapStops.length) return;
-    if (markers.current.length) mapObj.current.fitBounds(bounds, 60);
-
-    const waypts = mapStops.slice(0, -1).map((s) => ({ location: { lat: s.lat!, lng: s.lng! }, stopover: true }));
-    const origin = start || { lat: mapStops[0].lat!, lng: mapStops[0].lng! };
-    const startIdx = start ? 0 : 1;
-    new g.maps.DirectionsService().route(
-      {
-        origin,
-        destination: { lat: mapStops[mapStops.length - 1].lat!, lng: mapStops[mapStops.length - 1].lng! },
-        waypoints: start ? waypts : waypts.slice(1),
-        travelMode: g.maps.TravelMode.DRIVING,
-      },
-      (res: any, status: string) => {
-        if (status === "OK" && res.routes?.[0]) {
-          dirRenderer.current.setDirections(res);
-          const legs = res.routes[0].legs;
-          const km = +(legs.reduce((a: number, l: any) => a + l.distance.value, 0) / 1000).toFixed(1);
-          const min = Math.round(legs.reduce((a: number, l: any) => a + l.duration.value, 0) / 60);
-          setGoogleMetrics({ km, min });
-        }
-        void startIdx;
-      }
-    );
-  };
+  const stops = stopIds.map((id) => units.find((u) => u.id === id)).filter((u): u is InventoryItem => !!u);
 
   const add = (id: number) => !stopIds.includes(id) && setStopIds([...stopIds, id]);
   const remove = (i: number) => setStopIds(stopIds.filter((_, idx) => idx !== i));
@@ -181,45 +46,16 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
     [next[i], next[j]] = [next[j], next[i]];
     setStopIds(next);
   };
-
-  const optimize = () => {
-    if (!start) { toast("Allow location permission to optimize the route from your location", "gold"); return; }
-    if (stops.length < 2) { toast("Add 2+ stops to optimize", "gold"); return; }
-    const before = pathKm(start, stops as Pt[]);
-    const ordered = optimizeRoute(start, stops as (InventoryItem & Pt)[]);
-    setStopIds(ordered.map((u) => u.id));
-    const after = pathKm(start, ordered as Pt[]);
-    const saved = +(before - after).toFixed(1);
-    toast(saved > 0.1 ? `Optimized · saved ~${saved} km` : "Already the shortest route", "green");
+  // native HTML5 drag: the dragged row moves live into whichever row it's over
+  const dragOver = (e: React.DragEvent, overId: number) => {
+    e.preventDefault();
+    if (dragId == null || dragId === overId) return;
+    const next = stopIds.filter((id) => id !== dragId);
+    next.splice(stopIds.indexOf(overId), 0, dragId);
+    setStopIds(next);
   };
 
-  const save = () => {
-    if (!stops.length) { toast("Add at least one property", "gold"); return; }
-    setSaving(true);
-    api.saveVisit(leadId, {
-      trip_date: tripDate, lead_rm: leadRm, rm_accompanying: rmAccompanying || leadRm, start_lat: start?.lat ?? null, start_lng: start?.lng ?? null,
-      total_km: total.km, total_min: total.min, route_source: total.source,
-      stops: stops.map((s) => ({ inventory_id: s.id, name: s.name, society: s.society, locality: s.locality, price_text: s.price_text, lat: s.lat, lng: s.lng })),
-    })
-      .then(() => {
-        toast(`${stops.length}-stop visit plan saved`, "green");
-        qc.invalidateQueries({ queryKey: ["lead", leadId] });
-        qc.invalidateQueries({ queryKey: ["leads"] });
-        qc.invalidateQueries({ queryKey: ["visit", leadId] });
-        setSavedPlan(true); // don't close — reveal the "Book on Openhouse" section
-      })
-      .catch((e) => toast(e.message, "gold"))
-      .finally(() => setSaving(false));
-  };
-
-  // the "woosh": once the plan is saved, smoothly scroll the unlocked section into view
-  useEffect(() => {
-    if (!savedPlan) return;
-    const t = setTimeout(() => unlockEl.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 90);
-    return () => clearTimeout(t);
-  }, [savedPlan]);
-
-  // the just-planned stops, shaped for the booking drawer (home_id comes off the raw OH row)
+  // the selected units, shaped for the booking drawer (home_id comes off the raw OH row)
   const bookUnits: BookUnit[] = stops.map((s) => ({
     homeId: (s.raw?.home_id as string | number) ?? s.id,
     name: s.name, society: s.society, locality: s.locality, city: s.city,
@@ -235,33 +71,14 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
           <div className="icon-btn" onClick={onClose}><IconX /></div>
         </div>
         <div className="mb">
-          <div className="note" style={{ marginBottom: 12 }}>
-            Pick properties from live inventory as <b>Visit 1, 2, 3…</b> The route starts from{" "}
-            <b>{locating ? "your location…" : start ? "your current location" : "(location unavailable)"}</b> and the map
-            plots the optimized driving route.
-          </div>
-          {!locating && !start && (
-            <div className="mand-flag show" style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
-              <span><IconWarn /> Location permission is off — allow it in your browser to optimize the route from your location.</span>
-              <button className="btn ghost sm" onClick={locate}><IconPin /> Allow / retry</button>
-            </div>
-          )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 }}>
-            <div className="field" style={{ marginBottom: 12 }}><label>Trip date</label>
-              <input type="date" value={tripDate} onChange={(e) => setTripDate(e.target.value)} /></div>
-            <div className="field" style={{ marginBottom: 12 }}><label>Lead RM</label>
-              <select value={leadRm} onChange={(e) => setLeadRm(e.target.value)}>
-                {(assignees?.items ?? []).map((a) => <option key={a.email}>{a.name}</option>)}
-              </select></div>
-            <div className="field" style={{ marginBottom: 12 }}>
-              <label>RM accompanying <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— books the visit</span></label>
-              {/* only SMID holders: the Openhouse API takes a SalesManager id, so a
-                  name without one can't be booked against */}
-              <select value={rmAccompanying || leadRm} onChange={(e) => setRmAccompanying(e.target.value)}>
-                {bookable.map((b) => <option key={b.smid}>{b.name}</option>)}
-                {!bookable.some((b) => b.name === (rmAccompanying || leadRm)) && (
-                  <option value={rmAccompanying || leadRm}>{rmAccompanying || leadRm} (no SMID)</option>
-                )}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div className="field" style={{ marginBottom: 12, width: 200 }}><label>Trip date</label>
+            <input type="date" value={tripDate} min={days[0].date} max={days[days.length - 1].date}
+              onChange={(e) => e.target.value && setTripDate(e.target.value)} /></div>
+            <div className="field" style={{ marginBottom: 12, width: 260 }}><label>RM accompanying</label>
+              <select value={rmAccompanying} onChange={(e) => setRmPick(e.target.value)}>
+                {!rmAccompanying && <option value="">Select RM…</option>}
+                {rms.map((r) => <option key={r.email} value={r.name}>{r.name}{r.smid == null ? " (no SMID)" : ""}</option>)}
               </select></div>
           </div>
 
@@ -279,14 +96,14 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
               </div>
               <div>
                 {pickList.length === 0 ? (
-                  <div className="itin-empty">{sq ? "No societies match." : "No geocoded inventory in this city."}</div>
+                  <div className="itin-empty">{sq ? "No societies match." : "No inventory in this city."}</div>
                 ) : pickList.map((p) => {
                   const added = stopIds.includes(p.id);
                   return (
                     <div key={p.id} className={"pick-row" + (added ? " added" : "")}>
                       <div style={{ minWidth: 0 }}>
                         <div className="pk-n">{p.name}</div>
-                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}{!hasGeo(p) && <span className="no-geo" title="No map location yet — can be visited, but not plotted or routed"> ·  no map location</span>}</div>
+                        <div className="pk-l">{[p.locality, p.city].filter(Boolean).join(", ")} · {formatPrice(p.price_lacs, p.price_text)} · {p.configuration || "—"}</div>
                       </div>
                       <button className={"btn sm pk-add " + (added ? "ghost" : "primary")} disabled={added} onClick={() => add(p.id)}>
                         {added ? <><IconCheck /> Added</> : "+ Add"}
@@ -299,101 +116,37 @@ export function VisitPlanner({ leadId, leadName, leadCity, leadPhone, onClose }:
 
             <div className="plan-itin">
               <div className="plan-lbl">
-                <span>Itinerary</span>
-                <span style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <button className="btn green sm opt-btn" disabled={stops.length < 2 || !start} onClick={optimize}><IconCompass /> Optimize route</button>
-                  <span>{stops.length} stop{stops.length !== 1 ? "s" : ""}</span>
-                </span>
+                <span>Selected inventory</span>
+                <span>{stops.length} selected</span>
               </div>
               <div>
                 {stops.length === 0 ? (
-                  <div className="itin-empty">No stops yet.<br />Add properties from the left.</div>
-                ) : stops.map((p, i) => {
-                  const leg = i === 0 ? est.startLeg : est.legs[i - 1];
-                  const legLabel = i === 0 ? "from your location" : "";
-                  return (
-                    <div key={p.id}>
-                      {leg && <div className="leg"><span className="lp" />{leg.km} km · {fmtMin(leg.min)} {legLabel || "(est.)"}</div>}
-                      <div className="itin-stop">
-                        <div className="num">{i + 1}</div>
-                        <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}{!hasGeo(p) && <span className="no-geo"> ·  not on map</span>}</div></div>
-                        <div className="ops">
-                          <button title="Up" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
-                          <button title="Down" onClick={() => move(i, 1)} disabled={i === stops.length - 1}>↓</button>
-                          <button title="Remove" onClick={() => remove(i)}><IconX /></button>
-                        </div>
-                      </div>
+                  <div className="itin-empty">Nothing selected yet.<br />Add properties from the left.</div>
+                ) : stops.map((p, i) => (
+                  <div key={p.id} className={"itin-stop" + (dragId === p.id ? " dragging" : "")} draggable
+                    onDragStart={(e) => { setDragId(p.id); e.dataTransfer.effectAllowed = "move"; }}
+                    onDragOver={(e) => dragOver(e, p.id)} onDrop={(e) => e.preventDefault()} onDragEnd={() => setDragId(null)}>
+                    <div className="num">{i + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}><div className="sn">Visit {i + 1} · {p.name}</div><div className="sl">{[p.locality, p.city].filter(Boolean).join(", ")}</div></div>
+                    <div className="ops">
+                      <button title="Up" onClick={() => move(i, -1)} disabled={i === 0}>↑</button>
+                      <button title="Down" onClick={() => move(i, 1)} disabled={i === stops.length - 1}>↓</button>
+                      <button title="Remove" onClick={() => remove(i)}><IconX /></button>
                     </div>
-                  );
-                })}
-              </div>
-              {stops.length >= 1 && (
-                <div className="totals">
-                  <div className="tbox"><div className="tv">{total.km} km</div><div className="tl">Total distance</div></div>
-                  <div className="tbox"><div className="tv">{fmtMin(total.min)}</div><div className="tl">Drive time</div></div>
-                  <div className="tbox"><div className="tv">{stops.length}</div><div className="tl">Stops</div></div>
-                </div>
-              )}
-              {stops.length >= 1 && (
-                <div className="route-est" style={total.source === "google" ? { color: "var(--emerald)" } : undefined}>
-                  {total.source === "google" ? <><IconCheck /> Live Google driving route</> : <><IconWarn /> Straight-line estimate × road factor</>}
-                </div>
-              )}
-            </div>
-          </div>
-
-          <div className="plan-map" ref={mapEl}>
-            {!MAPS_API_KEY && (
-              <div className="map-empty">
-                <div style={{ fontSize: 22 }}><IconMap /></div>
-                <div><b>Map needs a key.</b> Set <code>VITE_MAPS_API_KEY</code> to enable the live map &amp; route.</div>
-                <div style={{ fontSize: 11 }}>The itinerary and distance estimates work without it.</div>
-              </div>
-            )}
-          </div>
-
-          {savedPlan && (
-            <div className="bv-unlock" ref={unlockEl}>
-              <div className="bv-unlock-head">
-                <span className="bv-unlock-tick"><IconCheck /></span>
-                <div>
-                  <div className="bv-unlock-title">Plan saved · ready to book on the Openhouse app</div>
-                  <div className="bv-unlock-sub">Book these {stops.length} visit{stops.length !== 1 ? "s" : ""} for a Channel Partner — single or bulk, in one guided flow.</div>
-                </div>
-                <span className="bv-unlock-beta">Beta</span>
-              </div>
-              <div className="bv-unlock-grid">
-                <div className="bv-ug-head">
-                  <span>Unit</span><span>Home</span><span>Locality</span><span>Config</span><span>Ask</span><span>Status</span>
-                </div>
-                {bookUnits.map((u) => (
-                  <div key={String(u.homeId)} className="bv-ug-row">
-                    <span className="bv-ug-name">{u.name || u.society || "—"}{u.isNew && <NewBadge size={16} style={{ marginLeft: 6 }} />}</span>
-                    <span className="bv-ug-home">#{u.homeId}</span>
-                    <span>{[u.locality, u.city].filter(Boolean).join(", ") || "—"}</span>
-                    <span>{u.configuration || "—"}</span>
-                    <span>{formatPrice(u.priceLacs, u.priceText)}</span>
-                    <span><span className={"bv-pill " + (u.status === "ready" ? "ready" : "soon")}>{u.status === "ready" ? "Ready" : "Coming soon"}</span></span>
                   </div>
                 ))}
               </div>
-              <button className="btn orange bv-unlock-cta" onClick={() => setBooking(true)}>
-                <IconPhoneMobile /> Book {stops.length} visit{stops.length !== 1 ? "s" : ""} on Openhouse app
-              </button>
             </div>
-          )}
+          </div>
         </div>
         <div className="mf">
-          <button className="btn ghost" onClick={onClose}>{savedPlan ? "Close" : "Cancel"}</button>
-          <button className="btn ghost" disabled={!stops.length} onClick={() => openInMaps(start, stops)}><IconArrowUpRight /> Open in Google Maps</button>
-          {!savedPlan && (
-            <button className="btn green" onClick={save} disabled={saving || !stops.length}>{saving ? "Saving…" : "Save visit plan"}</button>
-          )}
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className="btn orange" onClick={() => setBooking(true)} disabled={!stops.length || !rmAccompanying}>BOOK VISITS</button>
         </div>
       </div>
-      {booking && <BookVisitsDrawer units={bookUnits} leadId={leadId} leadName={leadName} leadPhone={leadPhone}
-        salesManagerId={bookable.find((b) => b.name === (rmAccompanying || leadRm))?.smid ?? null}
-        rmAccompanying={rmAccompanying || leadRm} onClose={() => setBooking(false)} />}
+      {booking && <BookVisitsDrawer units={bookUnits} leadId={leadId} leadName={leadName} leadPhone={leadPhone} initialDate={tripDate}
+        salesManagerId={rms.find((r) => r.name === rmAccompanying)?.smid ?? null}
+        rmAccompanying={rmAccompanying || undefined} onClose={() => setBooking(false)} />}
     </div>
   );
 }

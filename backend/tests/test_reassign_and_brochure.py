@@ -57,13 +57,22 @@ async def test_reassign_passes_other_errors_through(monkeypatch):
 def test_the_endpoint_only_moves_upcoming_visits_and_resolves_the_smid_itself():
     src = inspect.getsource(visits_router.reassign)
     assert 'row["status"] != "upcoming"' in src, "a finished visit records who actually went"
-    assert "_smid_for_name(req.rm_accompanying)" in src, "never trust an smid from the client"
+    assert "MANAGER_IN_CITY" in src, "the pick is re-checked against the visit's city list"
     assert 'smid == row["smid"]' in src, "same RM must not send Core a no-op write"
     # the mirror into crm_visits and the activity row, same as every other visit action
     assert "smid = :smid, rm_accompanying = :rm" in src
     assert 'action="visit_reassigned"' in src
     route = next(r for r in visits_router.router.routes if r.path == "/visits/{visit_id}/reassign")
     assert route.methods == {"POST"}, "PUT is blocked by CORS here; the visit actions are POST"
+
+
+def test_change_rm_offers_active_sales_managers_in_the_visits_city():
+    # both the dropdown and the reassign check read sales_manager_list, never users
+    for sql in (visits_router.CITY_MANAGERS.text, visits_router.MANAGER_IN_CITY.text):
+        assert "FROM sales_manager_list" in sql
+        assert "is_active" in sql and "city_name = :city" in sql
+    route = next(r for r in visits_router.router.routes if r.path == "/visits/{visit_id}/sales-managers")
+    assert route.methods == {"GET"}
 
 
 # --- brochure -------------------------------------------------------------------------

@@ -318,10 +318,6 @@ export function useLeadMatches(id: string) {
   return useQuery({ queryKey: ["lead-matches", id], queryFn: () => api.leadMatches(id), staleTime: 60_000 });
 }
 
-export function useLatestVisit(id: string) {
-  return useQuery({ queryKey: ["visit", id], queryFn: () => api.latestVisit(id), staleTime: 30_000 });
-}
-
 export function useBookingConfig() {
   return useQuery({ queryKey: ["booking-config"], queryFn: api.bookingConfig, staleTime: 5 * 60_000 });
 }
@@ -747,7 +743,7 @@ export function formatPrice(priceLacs: number | null, priceText: string | null):
    move the lead's stage (a revisit → revisit_scheduled), so each invalidates the lead
    caches as well as ["crm-visits", leadId]. `leadId` is passed in rather than derived:
    the mutation only knows the Openhouse visit id, and the cache is keyed by lead. */
-function useVisitAction<V>(fn: (v: V) => Promise<unknown>, leadId?: string) {
+function useVisitAction<V, R>(fn: (v: V) => Promise<R>, leadId?: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: fn,
@@ -778,7 +774,11 @@ export function useRescheduleVisit(leadId?: string) {
 
 export function useReassignVisit(leadId?: string) {
   return useVisitAction(
-    (v: { visitId: number; rm: string }) => api.reassignVisit(v.visitId, v.rm), leadId);
+    (v: { visitId: number; smId: number }) => api.reassignVisit(v.visitId, v.smId), leadId);
+}
+
+export function useVisitSalesManagers(visitId: number) {
+  return useQuery({ queryKey: ["visit-sales-managers", visitId], queryFn: () => api.visitSalesManagers(visitId), staleTime: 60_000 });
 }
 
 export function useRevisitVisit(leadId?: string) {

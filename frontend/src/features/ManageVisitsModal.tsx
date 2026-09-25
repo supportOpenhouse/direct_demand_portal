@@ -38,8 +38,8 @@ import {
   useCancelVisit,
   useCompleteVisit,
   useLeadCrmVisits,
-  useBookingConfig,
   useReassignVisit,
+  useVisitSalesManagers,
   useRebookProperty,
   useRescheduleVisit,
   useRevisitVisit,
@@ -48,7 +48,7 @@ import {
 import { useModalExit } from "../lib/useModalExit";
 import { useToast } from "../components/Toast";
 import { SLOTS, next7Days, isSlotDisabled } from "../lib/slots";
-import { IconX, IconCalendar, IconChevronRight } from "../components/icons";
+import { IconX, IconCalendar, IconChevronRight, IconChevronDown } from "../components/icons";
 
 interface Props {
   leadId: string;
@@ -360,20 +360,36 @@ function SlotForm({
   );
 }
 
-/* Hand an upcoming visit to another RM. The list is the same `bookable` list booking
-   uses — active users who hold an Openhouse SMID — because Core takes a SalesManager id
-   and a name without one can't be sent. Core notifies the NEW RM itself (in-app + push);
-   the previous RM is not told, so this says so before you save. */
+/* Hand an upcoming visit to another RM. The list is Core's active sales managers in the
+   visit's city (sales_manager_list), not our users. Core notifies the NEW RM itself
+   (in-app + push); the previous RM is not told, so this says so before you save. */
 function ReassignForm({ v, leadId, onDone }: { v: CrmVisitRow; leadId: string; onDone: () => void }) {
   const toast = useToast();
-  const cfg = useBookingConfig();
+  const managers = useVisitSalesManagers(v.visit_id);
   const reassign = useReassignVisit(leadId);
-  const people = cfg.data?.bookable ?? [];
-  const [rm, setRm] = useState(v.rm_accompanying ?? "");
-  const same = rm === (v.rm_accompanying ?? "");
+  // everyone Core lists as an active sales manager in THIS visit's city
+  const people = managers.data?.items ?? [];
+  const [smId, setSmId] = useState<number | null>(v.smid);
+  // A name two managers share (2× "Rahul Singh" in Gurgaon) shows its id, so the two
+  // rows can be told apart. The current RM stays listed even if not in this city's list.
+  const dup = (n: string) => people.filter((p) => p.name.toLowerCase() === n.toLowerCase()).length > 1;
+  const options = [
+    ...(v.smid != null && !people.some((p) => p.id === v.smid)
+      ? [{ id: v.smid, label: v.rm_accompanying || `SMID ${v.smid}` }] : []),
+    ...people.map((p) => ({ id: p.id, label: dup(p.name) ? `${p.name} (#${p.id})` : p.name })),
+  ];
+  // Searchable dropdown: the first click opens the WHOLE list; typing narrows it.
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const picked = options.find((o) => o.id === smId)?.label ?? "";
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  const pick = (id: number) => { setSmId(id); setOpen(false); setQuery(""); };
+  const same = smId === v.smid;
+  const rm = smId === v.smid ? v.rm_accompanying ?? "" : people.find((p) => p.id === smId)?.name ?? "";
 
   const submit = () =>
-    reassign.mutate({ visitId: v.visit_id, rm }, {
+    smId != null && reassign.mutate({ visitId: v.visit_id, smId }, {
       onSuccess: () => { toast(`Visit handed to ${rm} — they've been notified`, "green"); onDone(); },
       onError: (e: unknown) => toast(errText(e), "gold"),
     });
@@ -384,23 +400,50 @@ function ReassignForm({ v, leadId, onDone }: { v: CrmVisitRow; leadId: string; o
         Who accompanies this visit. {rm && !same ? `${rm} gets a notification on the Openhouse app; ` : ""}
         {v.rm_accompanying && !same ? `${v.rm_accompanying} isn't told.` : ""}
       </div>
+      {/* label, dropdown and both buttons on ONE line */}
+      <div className="mv-inline">
       <label className="mv-field">
         <span>RM accompanying</span>
-        <select className="ctl" value={rm} onChange={(e) => setRm(e.target.value)} disabled={cfg.isLoading}>
-          {!v.rm_accompanying && <option value="">— pick an RM —</option>}
-          {/* keep the current RM selectable even if they've since lost their SMID */}
-          {v.rm_accompanying && !people.some((p) => p.name === v.rm_accompanying) && (
-            <option value={v.rm_accompanying}>{v.rm_accompanying}</option>
-          )}
-          {people.map((p) => <option key={p.smid} value={p.name}>{p.name}</option>)}
-        </select>
+        <span className="mv-combo">
+          <input className="ctl" role="combobox" aria-expanded={open} value={open ? query : picked}
+            placeholder={open ? picked || "Search sales manager…" : "Pick a sales manager"}
+            disabled={managers.isLoading}
+            onFocus={() => setOpen(true)} onClick={() => setOpen(true)}
+            onBlur={() => setOpen(false)}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") { e.stopPropagation(); setOpen(false); }
+              if (e.key === "Enter" && shown[0]) { e.preventDefault(); pick(shown[0].id); }
+            }} />
+          <IconChevronDown className={"mv-combo-caret" + (open ? " on" : "")} aria-hidden />
+        </span>
       </label>
       <div className="mv-formfoot">
         <button className="btn ghost sm" onClick={onDone}>Back</button>
-        <button className="btn primary sm" disabled={!rm || same || reassign.isPending} onClick={submit}>
+        <button className="btn primary sm" disabled={smId == null || same || reassign.isPending} onClick={submit}>
           {reassign.isPending ? "Saving…" : "Change RM"}
         </button>
       </div>
+      </div>
+      {/* In the flow, not floating: .mv-list scrolls, and an absolute panel inside it
+          would be clipped. So the list opens downward and pushes the rows below. */}
+      {open && (
+        <div className="mselect-list mv-combo-list" role="listbox">
+          {shown.length === 0 && <div className="mselect-none">No match.</div>}
+          {shown.map((o) => (
+            /* mousedown, not click: it lands before the input's blur closes the list */
+            <div key={o.id} role="option" aria-selected={o.id === smId}
+              className={"mselect-row" + (o.id === smId ? " on" : "")}
+              onMouseDown={(e) => { e.preventDefault(); pick(o.id); }}>
+              <span className="mselect-lbl">{o.label}</span>
+              {o.id === v.smid && <span className="mselect-count">current</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {!managers.isLoading && !people.length && (
+        <div className="mv-none">No active sales managers for {managers.data?.city || "this visit’s city"}.</div>
+      )}
     </div>
   );
 }

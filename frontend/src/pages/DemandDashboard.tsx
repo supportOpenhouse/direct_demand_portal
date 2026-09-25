@@ -12,7 +12,6 @@ import { createPortal } from "react-dom";
 import { useDemandProperties } from "../lib/queries";
 import { api, DemandProperty } from "../lib/api";
 import { FilterBar, useFilterValues } from "../components/FilterBar";
-import { countedOptions, matchesOption } from "../components/Filters";
 import SlideTabs from "../components/SlideTabs";
 import { MultiSelect } from "../components/MultiSelect";
 /* No Invalid City tab: `city` is NOT NULL-in-practice here — all 398 rows are one of
@@ -33,6 +32,26 @@ import { useToast } from "../components/Toast";
    so 170 means ₹1.70 Cr — shown in lakh because that is the unit the team speaks in. */
 const money = (v: unknown): string =>
   v === null || v === undefined || v === "" ? "—" : `₹${Number(v).toLocaleString("en-IN")} L`;
+
+/* BHK filter. `configuration` is free text — "2 BHK", "2BHK", "2.0BHK" are all two
+   bedrooms — so read the leading number rather than compare strings. Anything outside
+   the four buttons (blank, 1, 5…) matches none of them; prod has none today. */
+const BHK_OPTIONS = [
+  { value: "2", label: "2 BHK" }, { value: "2.5", label: "2.5 BHK" },
+  { value: "3", label: "3 BHK" }, { value: "3.5/4", label: "3.5/4 BHK" },
+];
+const bhkOf = (p: { configuration?: unknown }): string => {
+  const n = parseFloat(String(p.configuration ?? ""));
+  return n === 2 ? "2" : n === 2.5 ? "2.5" : n === 3 ? "3" : n === 3.5 || n === 4 ? "3.5/4" : "";
+};
+/* A min/max box pair. An empty bound is open; a row with no value fails any set bound —
+   "no price" can't be claimed to sit inside a budget. */
+const inRange = (v: unknown, r: { min: string; max: string }): boolean => {
+  if (!r.min && !r.max) return true;
+  if (v === null || v === undefined || v === "") return false;
+  const n = Number(v);
+  return (!r.min || n >= Number(r.min)) && (!r.max || n <= Number(r.max));
+};
 
 /* Five columns are JSONB lists (extra_area, furnishing_details, documents_available,
    additional_images are lists of strings; balcony_details is a list of objects). A bare
@@ -490,7 +509,7 @@ export default function DemandDashboard() {
   // not a FilterBar value, so a pick isn't also a removable chip.
   const [avail, setAvail] = useState("");
   const { values: f, set, clear } = useFilterValues({
-    possession: "", source: "", poc: "", affordable: "",
+    affordable: "", bhk: [] as string[], budget: { min: "", max: "" }, size: { min: "", max: "" },
   });
 
   /* `pass(p, skip)` applies every filter except `skip`, so each dropdown counts the rows
@@ -501,10 +520,10 @@ export default function DemandDashboard() {
     // trailing space would be offered and then match nothing
     (skip === "micro_market" || !markets.length || markets.includes((p.micro_market ?? "").trim())) &&
     (skip === "availability" || !avail || p.availability_status === avail) &&
-    (skip === "possession" || matchesOption(p.possession_status ?? p.occupancy_status, f.possession)) &&
-    (skip === "source" || matchesOption(p.source, f.source)) &&
-    (skip === "poc" || matchesOption(p.poc, f.poc)) &&
-    (!f.affordable || String(p.affordable === true) === (f.affordable === "yes" ? "true" : "false")) &&
+    (skip === "affordable" || !f.affordable || String(p.affordable === true) === (f.affordable === "yes" ? "true" : "false")) &&
+    (skip === "bhk" || !f.bhk.length || f.bhk.includes(bhkOf(p))) &&
+    inRange(p.listing_price, f.budget) &&
+    inRange(p.area_sqft, f.size) &&
     matchesQuery(p, applied);
 
   /* Faceted like every other filter: each area's count is over the rows passing all the
@@ -552,10 +571,11 @@ export default function DemandDashboard() {
         </form>
         <FilterBar
           fields={[
-            { key: "possession", label: "Possession", options: countedOptions(all.filter((p) => pass(p, "possession")), (p) => p.possession_status ?? p.occupancy_status) },
-            { key: "source", label: "Source", options: countedOptions(all.filter((p) => pass(p, "source")), (p) => p.source) },
-            { key: "poc", label: "POC", options: countedOptions(all.filter((p) => pass(p, "poc")), (p) => p.poc) },
-            { key: "affordable", label: "Affordable", options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }] },
+            { key: "affordable", label: "Affordable", kind: "buttons", row: "flags", options: [{ value: "yes", label: "Yes" }, { value: "no", label: "No" }] },
+            { key: "bhk", label: "BHK", kind: "buttons", multi: true, row: "flags", options: BHK_OPTIONS.map((o) => ({ ...o,
+              label: `${o.label} (${all.filter((p) => pass(p, "bhk") && bhkOf(p) === o.value).length})` })) },
+            { key: "budget", label: "Budget (listing price, ₹ L)", kind: "range" },
+            { key: "size", label: "Size (sqft)", kind: "range" },
           ]}
           values={f} onChange={set} onClear={clear}
         />

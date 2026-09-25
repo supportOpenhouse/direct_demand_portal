@@ -41,28 +41,6 @@ export interface InventoryItem {
   raw: Record<string, unknown>; // full sheet row + images[] from the photos API
 }
 
-export interface VisitStop {
-  inventory_id?: number | null;
-  name?: string | null;
-  society?: string | null;
-  locality?: string | null;
-  price_text?: string | null;
-  lat?: number | null;
-  lng?: number | null;
-}
-export interface VisitPlan {
-  trip_date?: string | null;
-  rm?: string | null;
-  lead_rm?: string | null;
-  rm_accompanying?: string | null;
-  start_lat?: number | null;
-  start_lng?: number | null;
-  total_km?: number | null;
-  total_min?: number | null;
-  route_source?: string | null;
-  stops: VisitStop[];
-  created_at?: string | null;
-}
 
 export interface InventoryResponse {
   status: "ok" | "not_configured" | "error";
@@ -873,13 +851,10 @@ export const api = {
   societiesByLocality: (loc: string) => request<{ items: string[] }>(`/v1/societies/by-locality?locality=${encodeURIComponent(loc)}`),
   societiesByCity: (city: string) => request<{ items: string[] }>(`/v1/societies/by-city?city=${encodeURIComponent(city)}`),
   societiesAll: () => request<{ items: string[] }>("/v1/societies/all"),
-  saveVisit: (id: string, plan: VisitPlan) =>
-    request<{ status: string }>(`/v1/leads/${id}/visits`, { method: "POST", body: JSON.stringify(plan) }),
   // Openhouse app visit booking
   bookingConfig: () => request<BookingConfig>("/v1/visits/booking-config"),
   bookVisits: (payload: BookRequest) =>
     request<BookResponse>("/v1/visits/book", { method: "POST", body: JSON.stringify(payload) }),
-  latestVisit: (id: string) => request<{ plan: VisitPlan | null }>(`/v1/leads/${id}/visits`),
   // Manage visits — one Openhouse visit at a time. Reschedule keeps the visit id;
   // revisit returns a NEW one (same buyer, same property).
   visitDetails: (visitId: number) => request<VisitDetails>(`/v1/visits/${visitId}/details`),
@@ -895,12 +870,15 @@ export const api = {
   rescheduleVisit: (visitId: number, selected_date: string, selected_time: string) =>
     request<{ ok: boolean; visit_id: number }>(`/v1/visits/${visitId}/reschedule`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
   // Change the RM accompanying an upcoming visit. The server resolves the name to an SMID.
-  reassignVisit: (visitId: number, rm_accompanying: string) =>
+  reassignVisit: (visitId: number, sales_manager_id: number) =>
     request<{ ok: boolean; visit_id: number; rm_accompanying: string; changed: boolean }>(
-      `/v1/visits/${visitId}/reassign`, { method: "POST", body: JSON.stringify({ rm_accompanying }) }),
+      `/v1/visits/${visitId}/reassign`, { method: "POST", body: JSON.stringify({ sales_manager_id }) }),
+  // Change RM's options: Core's active sales managers in this visit's city (sales_manager_list)
+  visitSalesManagers: (visitId: number) =>
+    request<{ city: string | null; items: { id: number; name: string }[] }>(`/v1/visits/${visitId}/sales-managers`),
   revisitVisit: (visitId: number, selected_date: string, selected_time: string) =>
     request<{ ok: boolean; visit_id: number; revisit_of: number }>(`/v1/visits/${visitId}/revisit`, { method: "POST", body: JSON.stringify({ selected_date, selected_time }) }),
-  assignees: () => request<{ items: { name: string; email: string }[] }>("/v1/assignees"),
+  assignees: () => request<{ items: { name: string; email: string; smid: number | null }[] }>("/v1/assignees"),
   assignLead: (id: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>(`/v1/leads/${id}/assign`, { method: "POST", body: JSON.stringify({ assigned_to }) }),
   bulkAssign: (lead_ids: string[], assigned_to: string | null) =>

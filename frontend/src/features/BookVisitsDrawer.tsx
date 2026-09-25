@@ -5,8 +5,7 @@
    sales_manager_id is the RM ACCOMPANYING the visit — passed in from the planner,
    not the logged-in user. The server falls back to the caller's own smid if omitted. */
 import { useMemo, useState } from "react";
-import { formatPrice, useBookingConfig } from "../lib/queries";
-import { api } from "../lib/api";
+import { formatPrice, useBookingConfig, useRebookProperty } from "../lib/queries";
 import { useToast } from "../components/Toast";
 import { SLOTS, next7Days, isSlotDisabled, maskMobile, DayOption } from "../lib/slots";
 import { IconCheck, IconPhoneMobile, IconWarn, IconX } from "../components/icons";
@@ -33,7 +32,7 @@ const STEPS = ["Details", "Review", "Done"] as const;
 const last5 = (phone: string | null | undefined) => (phone || "").replace(/\D/g, "").slice(-5);
 
 export function BookVisitsDrawer({
-  units, onClose, leadId, leadName, leadPhone, salesManagerId, rmAccompanying,
+  units, onClose, leadId, leadName, leadPhone, salesManagerId, rmAccompanying, initialDate,
 }: {
   units: BookUnit[];
   onClose: () => void;
@@ -42,14 +41,17 @@ export function BookVisitsDrawer({
   leadPhone?: string | null;
   salesManagerId?: number | null;  // SMID of the RM accompanying — not the caller
   rmAccompanying?: string;         // their name, for the confirmation line
+  initialDate?: string;            // YYYY-MM-DD preselected chip (VisitPlanner's trip date)
 }) {
   const toast = useToast();
   const cfg = useBookingConfig();
+  // the booking mutation — refreshes the lead's visits (Visits data card, Manage visits) on success
+  const book = useRebookProperty(leadId);
   const days = useMemo(() => next7Days(), []);
   const [step, setStep] = useState(0);
 
   // step 1 state — buyer prefilled from the lead (name + last 5 phone digits)
-  const [date, setDate] = useState<DayOption>(days[0]);
+  const [date, setDate] = useState<DayOption>(days.find((d) => d.date === initialDate) ?? days[0]);
   const [slot, setSlot] = useState<string>("");
   const [oneBuyer, setOneBuyer] = useState(true);
   const [shared, setShared] = useState<Buyer>({ name: (leadName || "").trim(), mobile: last5(leadPhone) });
@@ -80,7 +82,7 @@ export function BookVisitsDrawer({
 
   const confirm = () => {
     setBooking(true);
-    api.bookVisits({
+    book.mutateAsync({
       rm_accompanying: rmAccompanying ?? null,  // server resolves this RM's smid (authoritative)
       sales_manager_id: salesManagerId ?? null, // legacy fallback
       selected_date: date.date,

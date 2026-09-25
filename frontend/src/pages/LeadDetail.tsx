@@ -2,7 +2,7 @@
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLatestVisit, useLead, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
 import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -23,7 +23,6 @@ import {
 import CallActivityCard from "../components/CallActivityCard";
 import HuvoCallCard from "../components/HuvoCallCard";
 import { useDebounce } from "../lib/useDebounce";
-import { openInMaps } from "../lib/maps";
 import { VisitPlanner } from "../features/VisitPlanner";
 import ManageVisitsModal from "../features/ManageVisitsModal";
 import { StageChip } from "../components/StageChip";
@@ -384,42 +383,32 @@ function FollowupWidget({ id, value, onChange, current }: { id: string; value: s
 /* `mobile` — same page, same behaviour, one column. The card order the phone asks for
    is the desktop set with the confirm form moved last, which is a layout concern, so
    the two columns collapse to a flex list (see .m-detail) instead of forking the JSX. */
-function SavedVisitCard({ id, onEdit, booked }: { id: string; onEdit: () => void; booked: boolean }) {
-  const { data, isLoading } = useLatestVisit(id);
-  const plan = data?.plan;
-  if (isLoading || !plan) return null;
+/* The lead's REAL visits (crm_visits — the same rows Manage visits lists), upcoming first.
+   Replaced the old saved-trip-plan card: plans are no longer saved. Renders nothing when
+   the lead has no visits. */
+function VisitsDataCard({ id, onManage }: { id: string; onManage: () => void }) {
+  const { data } = useLeadCrmVisits(id);
+  const order = { upcoming: 0, completed: 1, cancelled: 2 } as const;
+  const rows = [...(data?.items ?? [])].sort(
+    (a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || (b.selected_date ?? "").localeCompare(a.selected_date ?? ""),
+  );
+  if (!rows.length) return null;
   return (
     <div className="card panel-pad">
       <div className="panel-title" style={{ justifyContent: "space-between" }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          📅 Planned site visits
-          {/* a saved plan is internal prep, not an appointment — it no longer moves
-              the lead, so say plainly that nothing is booked yet */}
-          {!booked && (
-            <span className="fu-chip" style={{ background: "var(--amber-soft)", color: "var(--amber-deep)" }}>
-              Visit not scheduled yet
-            </span>
-          )}
-        </span>
-        <span style={{ display: "flex", gap: 6 }}>
-          <button className="btn ghost sm" onClick={() => openInMaps(plan.start_lat != null && plan.start_lng != null ? { lat: plan.start_lat, lng: plan.start_lng } : null, plan.stops)}>↗ Maps</button>
-          <button className="btn ghost sm" onClick={onEdit}>Edit plan</button>
-        </span>
+        <span>Visits data</span>
+        <button className="btn ghost sm" onClick={onManage}>Manage visits</button>
       </div>
-      <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 10 }}>
-        {plan.rm ? `${plan.rm} · ` : ""}{plan.trip_date ? formatDate(plan.trip_date) : "—"} ·{" "}
-        <b style={{ color: "var(--ink-2)" }}>
-          {plan.total_km != null ? `${plan.total_km} km` : "—"}{plan.total_min != null ? ` · ${Math.round(plan.total_min)} min` : ""}
-        </b>{" "}
-        {plan.route_source === "google" ? "(Google route)" : "(est.)"}
-      </div>
-      {plan.stops.map((s, i) => (
-        <div key={i} className="itin-stop" style={{ marginBottom: 8 }}>
+      {rows.map((v, i) => (
+        <div key={v.visit_id} className="itin-stop" style={{ marginBottom: 8, cursor: "default" }}>
           <div className="num">{i + 1}</div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sn">Visit {i + 1} · {s.name || s.society || "—"}</div>
-            <div className="sl">{[s.locality].filter(Boolean).join(", ")}{s.price_text ? ` · ${s.price_text}` : ""}</div>
+            <div className="sn">{v.society || `Home ${v.home_id ?? "—"}`}</div>
+            <div className="sl">
+              {[v.selected_date ? formatDate(v.selected_date) : null, v.selected_time, v.rm_accompanying && `RM: ${v.rm_accompanying}`].filter(Boolean).join(" · ") || "No slot recorded"}
+            </div>
           </div>
+          <span className={`mv-status mv-st-${v.status}`}>{v.status}</span>
         </div>
       ))}
     </div>
@@ -592,9 +581,6 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
 
   if (isLoading) return <div className="card"><div className="empty" style={{ padding: 40 }}>Loading lead…</div></div>;
   if (!lead) return <div className="card"><div className="empty" style={{ padding: 40 }}>Lead not found.</div></div>;
-
-  // a visit is booked — the card above shows it, and SavedVisitCard reads it
-  const isPipeline = lead.stage === "visit_scheduled" || (lead.visit_count ?? 0) > 0;
 
   // the follow-up is NOT among these: this form no longer sets one (the Follow-up card
   // beside it owns that), so the only required fields are the starred answers
@@ -824,7 +810,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
           <LeadHistory id={id} />
         </div>
         <div className="dcol">
-          {!mobile && <SavedVisitCard id={id} onEdit={() => setPlanner(true)} booked={isPipeline} />}
+          {!mobile && <VisitsDataCard id={id} onManage={() => setManaging(true)} />}
           <CallActivityCard leadId={lead.id} />
           {/* Separate from Call activity: that card is the RM's own calls via Bonvoice,
               this one is what Huvo's bot got out of the lead. Both render nothing when

@@ -364,7 +364,26 @@ async def complete(visit_id: int, req: CompleteIn, user: dict = Depends(current_
 
 
 class ReassignIn(BaseModel):
-    rm_accompanying: str
+    sales_manager_id: int  # a sales_manager_list.id (= Core SMID) in the visit's city
+
+
+# Change RM (Manage visits ONLY) offers Core's active sales managers in the VISIT's city —
+# sales_manager_list, not our users table. The reassign re-checks the pick against the
+# same rule, so a client can't hand a Noida visit to a Gurgaon manager.
+CITY_MANAGERS = text(
+    "SELECT id, name FROM sales_manager_list WHERE is_active AND city_name = :city ORDER BY name")
+MANAGER_IN_CITY = text(
+    "SELECT name FROM sales_manager_list WHERE id = :id AND is_active AND city_name = :city")
+
+
+@router.get("/visits/{visit_id}/sales-managers")
+async def visit_sales_managers(visit_id: int, user: dict = Depends(current_user)):
+    row = await _visit_row(visit_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="We have no record of that visit.")
+    async with neon_engine().connect() as conn:
+        res = await conn.execute(CITY_MANAGERS, {"city": row["city"]})
+        return {"city": row["city"], "items": [{"id": r[0], "name": r[1]} for r in res]}
 
 
 @router.post("/visits/{visit_id}/reassign")
@@ -372,17 +391,19 @@ async def reassign(visit_id: int, req: ReassignIn, user: dict = Depends(current_
     """Change the RM accompanying an upcoming visit (Core: PATCH sales_manager).
 
     POST, not PATCH/PUT, like the other visit actions — and CORS here has no PUT anyway.
-    The SMID is resolved server-side from the name, exactly as booking does, so a visit
-    can only be handed to an active user who has one. Core notifies the NEW RM itself."""
+    The pick must be an ACTIVE sales_manager_list row in the visit's own city (the same
+    list the dropdown shows); its id is the SMID Core takes. Core notifies the NEW RM itself."""
     row = await _known_visit(visit_id)
     if row["status"] != "upcoming":
         # a completed or cancelled visit records who actually went; rewriting that is
         # history, not scheduling
         raise HTTPException(status_code=409, detail="Only an upcoming visit can change its RM.")
-    smid = await _smid_for_name(req.rm_accompanying)
-    if smid is None:
+    async with neon_engine().connect() as conn:
+        name = (await conn.execute(MANAGER_IN_CITY, {"id": req.sales_manager_id, "city": row["city"]})).scalar()
+    if name is None:
         raise HTTPException(status_code=422,
-            detail=f"{req.rm_accompanying} has no Openhouse SMID — ask an admin to add it in Settings.")
+            detail=f"That sales manager isn't an active Openhouse manager in {row['city'] or 'this visit’s city'}.")
+    smid = req.sales_manager_id
     if smid == row["smid"]:
         # already theirs: skip the call rather than send Core a no-op write
         return {"ok": True, "visit_id": visit_id, "rm_accompanying": row["rm_accompanying"], "changed": False}
@@ -393,7 +414,6 @@ async def reassign(visit_id: int, req: ReassignIn, user: dict = Depends(current_
     if res["status"] == "error":
         raise HTTPException(status_code=502, detail=res["detail"])
 
-    name = req.rm_accompanying.strip()
     events = []
     if row["lead_id"]:
         events.append(activity.row_for(

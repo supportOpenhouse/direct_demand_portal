@@ -33,3 +33,4 @@ claude.md
 
 # local auth-bypass dev launcher — must never be committed
 dev.sh
+/docs

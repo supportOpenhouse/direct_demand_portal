@@ -861,6 +861,12 @@ class StagePayload(BaseModel):
     stage: str
 
 
+# Only a real booking (POST /visits/book) may put a lead here: it decides visit vs
+# revisit from whether the property repeats. A hand-set visit stage is a lead on
+# Visited Leads with no visit behind it.
+BOOKING_ONLY_STAGES = ("visit_scheduled", "revisit_scheduled")
+
+
 @router.post("/leads/{lead_id}/stage")
 async def set_stage(lead_id: UUID, payload: StagePayload,
                     user: dict = Depends(current_user)):
@@ -878,6 +884,8 @@ async def set_stage(lead_id: UUID, payload: StagePayload,
     """
     if payload.stage not in STAGES:
         raise HTTPException(status_code=422, detail={"fields": ["stage"]})
+    if payload.stage in BOOKING_ONLY_STAGES:
+        raise HTTPException(status_code=422, detail="Book a visit to move a lead to this stage")
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")

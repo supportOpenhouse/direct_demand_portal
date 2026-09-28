@@ -44,8 +44,13 @@ const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
    re-submitted on a visited lead is a no-op, which is what stops the funnel from
    being walked backwards by accident. This control is the deliberate escape hatch
    for the case that guard creates: a lead put in the wrong stage could not be put
-   back. It logs like any other stage move. */
-function StatusCard({ lead }: { lead: any }) {
+   back. It logs like any other stage move.
+
+   The two visit stages are the exception: only a booking sets them (the backend
+   refuses them here). Picking Visit Scheduled opens the planner instead, and the
+   booking moves the stage. Revisit is decided by the booking alone, so it only
+   ever shows as the current value. */
+function StatusCard({ lead, onScheduleVisit }: { lead: any; onScheduleVisit: () => void }) {
   const set = useSetLeadStage(lead.id);
   const toast = useToast();
   return (
@@ -57,13 +62,15 @@ function StatusCard({ lead }: { lead: any }) {
       <select
         value={lead.stage}
         disabled={set.isPending}
-        onChange={(e) =>
+        onChange={(e) => e.target.value === "visit_scheduled" ? onScheduleVisit() :
           set.mutate(e.target.value, {
             onSuccess: (r: { after: string }) => toast(`Moved to ${stageLabel(r.after)}`, "green"),
             onError: (err: any) => toast(err.message, "gold"),
           })}
       >
-        {ALL_STAGES.map((st: string) => <option key={st} value={st}>{stageLabel(st)}</option>)}
+        {ALL_STAGES.map((st: string) => (
+          <option key={st} value={st} disabled={st === "revisit_scheduled"}>{stageLabel(st)}</option>
+        ))}
       </select>
       </div>
     </div>
@@ -692,7 +699,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
                 CAPTURED FROM <src>  | REMARKS      what the form said, what was said back
           */}
           <div className="expand-pair">
-            <StatusCard lead={lead} />
+            <StatusCard lead={lead} onScheduleVisit={() => setPlanner(true)} />
             <FollowupWidget id={id} value={followUp} onChange={setFollowUp} current={lead.follow_up_at} />
           </div>
 

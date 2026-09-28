@@ -477,6 +477,14 @@ def test_manual_stage_reads_before_from_returning_and_skips_no_ops():
     assert "action='stage_change'" in body
 
 
+def test_visit_stages_are_set_only_by_a_booking():
+    """visit_scheduled / revisit_scheduled are decided by POST /visits/book (same
+    property twice = revisit). The manual setter must refuse both, before the UPDATE."""
+    from app.routers.leads import BOOKING_ONLY_STAGES
+    assert set(BOOKING_ONLY_STAGES) == {"visit_scheduled", "revisit_scheduled"}
+    body = _body_of("set_stage")
+    assert body.index("BOOKING_ONLY_STAGES") < body.index("UPDATE leads SET stage=:s")
+
 # --- lead view telemetry -----------------------------------------------------
 
 def test_lead_viewed_is_deduped_and_never_fails_the_page():

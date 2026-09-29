@@ -47,10 +47,14 @@ Tests: `cd backend && uv run pytest`.
 
 **Backend (Render):**
 
-1. Render dashboard → **New → Blueprint** → select this repo (it picks up `render.yaml`),
-   or create a **Web Service** manually with: root dir `backend`, build
+1. Render dashboard → **New → Web Service** (configured by hand — there is no blueprint):
+   root dir `backend`, runtime Python 3.12 (`PYTHON_VERSION=3.12`), build
    `pip install uv && uv sync --frozen`, start
    `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`, health check `/v1/health`.
+   **Region: Singapore** — it must match Neon (ap-southeast-1); every query pays the round
+   trip. Render fixes a service's region at creation, so a wrong one means a new service.
+   Run **one instance**: the cron, the auto-dialer and Live Calls events are in-process
+   (`RUN_SCHEDULER=true`, the default, on exactly one process).
 2. Set env vars in the dashboard: `DATABASE_URL`, `PROPERTIES_DATABASE_URL`,
    `GOOGLE_SERVICE_ACCOUNT_JSON` (**paste the full JSON inline** — there's no file on Render;
    the app parses values starting with `{` as JSON), `SHEET_ID`, `SYNC_INTERVAL_MINUTES`,

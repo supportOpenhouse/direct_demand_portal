@@ -526,7 +526,7 @@ export function useCreateLead() {
 export function useSetLeadStage(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (stage: string) => api.setLeadStage(id, stage),
+    mutationFn: (v: { stage: string; qualified_status?: string }) => api.setLeadStage(id, v.stage, v.qualified_status),
     // The lead moves BETWEEN segment lists, so both the old and the new list are
     // stale — invalidate every lead query rather than guessing which two.
     onSuccess: () => {

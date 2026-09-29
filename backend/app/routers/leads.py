@@ -116,6 +116,7 @@ def _lead_row(r) -> dict:
                               if r.get("last_no_timestamp") else None),
         "ever_connected": r["ever_connected"],
         "is_hot": bool(r["is_hot"]),
+        "qualified_status": r.get("qualified_status"),
         # latest booked visit (Pipeline status chip) — only present on the list query
         "visit_status": r.get("visit_status"),
         "visit_date": r.get("visit_sel_date"),
@@ -859,6 +860,11 @@ async def create_lead(payload: NewLead, user: dict = Depends(current_user)):
 
 class StagePayload(BaseModel):
     stage: str
+    # required when stage == 'qualified' (the Status card's Hot/Warm/Cold popup)
+    qualified_status: str | None = None
+
+
+QUALIFIED_STATUSES = ("hot", "warm", "cold")
 
 
 # Only a real booking (POST /visits/book) may put a lead here: it decides visit vs
@@ -886,24 +892,39 @@ async def set_stage(lead_id: UUID, payload: StagePayload,
         raise HTTPException(status_code=422, detail={"fields": ["stage"]})
     if payload.stage in BOOKING_ONLY_STAGES:
         raise HTTPException(status_code=422, detail="Book a visit to move a lead to this stage")
+    qs = (payload.qualified_status or "").strip().lower() or None
+    if payload.stage == "qualified" and qs not in QUALIFIED_STATUSES:
+        raise HTTPException(status_code=422, detail="Pick Hot, Warm or Cold to qualify a lead")
+    if payload.stage != "qualified":
+        qs = None  # only a qualify move sets it; any other move leaves the stored value alone
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
     async with engine.begin() as conn:
         res = await conn.execute(text(
-            "UPDATE leads SET stage=:s WHERE id=:id "
-            "RETURNING (SELECT stage FROM leads WHERE id=:id) AS before"),
-            {"s": payload.stage, "id": lead_id})
+            "UPDATE leads SET stage=:s, qualified_status=coalesce(CAST(:qs AS text), qualified_status) "
+            "WHERE id=:id "
+            "RETURNING (SELECT stage FROM leads WHERE id=:id) AS before, "
+            "(SELECT qualified_status FROM leads WHERE id=:id) AS qs_before"),
+            {"s": payload.stage, "qs": qs, "id": lead_id})
         row = res.first()
         if row is None:
             raise HTTPException(status_code=404, detail="lead not found")
-        before = row[0]
+        before, qs_before = row[0], row[1]
+        meta = {"manual": True} | ({"qualified_status": qs} if qs else {})
         if before != payload.stage:
             await activity.record(conn, activity.row_for(
                 activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
                 action="stage_change", field="stage", before=before, after=payload.stage,
+                metadata=meta))
+        elif qs and qs != qs_before:
+            # already qualified, re-picked with a different warmth: not a stage move,
+            # so it must not count as one on Reports — log the field change instead
+            await activity.record(conn, activity.row_for(
+                activity.Actor.of(user), entity_type="lead", entity_id=lead_id,
+                action="update", field="qualified_status", before=qs_before, after=qs,
                 metadata={"manual": True}))
-    return {"status": "ok", "before": before, "after": payload.stage}
+    return {"status": "ok", "before": before, "after": payload.stage, "qualified_status": qs}
 
 
 @router.post("/leads/{lead_id}/viewed", status_code=204)

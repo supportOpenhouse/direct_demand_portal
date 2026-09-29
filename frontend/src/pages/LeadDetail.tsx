@@ -1,6 +1,7 @@
 /* Lead Detail — source-captured data + the Q1-Q6 call-confirm form (saves to
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
 import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
@@ -19,6 +20,7 @@ import {
   IconWarn,
   IconClock,
   IconMeta,
+  IconX,
 } from "../components/icons";
 import CallActivityCard from "../components/CallActivityCard";
 import HuvoCallCard from "../components/HuvoCallCard";
@@ -26,6 +28,7 @@ import { useDebounce } from "../lib/useDebounce";
 import { VisitPlanner } from "../features/VisitPlanner";
 import ManageVisitsModal from "../features/ManageVisitsModal";
 import { StageChip } from "../components/StageChip";
+import { useModalExit } from "../lib/useModalExit";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
@@ -49,10 +52,30 @@ const CITIES = ["Noida", "Gurgaon", "Ghaziabad", "Faridabad", "Delhi"];
    The two visit stages are the exception: only a booking sets them (the backend
    refuses them here). Picking Visit Scheduled opens the planner instead, and the
    booking moves the stage. Revisit is decided by the booking alone, so it only
-   ever shows as the current value. */
+   ever shows as the current value.
+
+   Qualified asks Hot / Warm / Cold first (stored as leads.qualified_status); the stage
+   only moves once one is picked, and Cancel leaves the lead where it was. */
+const QUALIFIED_STATUSES = [
+  { v: "hot", label: "Hot", hue: "var(--coral)", soft: "var(--coral-soft)" },
+  { v: "warm", label: "Warm", hue: "var(--amber)", soft: "var(--amber-soft)" },
+  { v: "cold", label: "Cold", hue: "var(--blue)", soft: "var(--blue-soft)" },
+] as const;
+const qsHue = (v: string) => {
+  const q = QUALIFIED_STATUSES.find((x) => x.v === v);
+  return q ? ({ "--qs": q.hue, "--qs-soft": q.soft } as CSSProperties) : undefined;
+};
+
 function StatusCard({ lead, onScheduleVisit }: { lead: any; onScheduleVisit: () => void }) {
   const set = useSetLeadStage(lead.id);
   const toast = useToast();
+  const [qualifying, setQualifying] = useState(false);
+  const move = (stage: string, qualified_status?: string) =>
+    set.mutate({ stage, qualified_status }, {
+      onSuccess: (r: { after: string; qualified_status: string | null }) =>
+        toast(`Moved to ${stageLabel(r.after)}${r.qualified_status ? ` · ${r.qualified_status}` : ""}`, "green"),
+      onError: (err: any) => toast(err.message, "gold"),
+    });
   return (
     <div className="card panel-pad">
       <div className="panel-title">Status</div>
@@ -62,18 +85,59 @@ function StatusCard({ lead, onScheduleVisit }: { lead: any; onScheduleVisit: () 
       <select
         value={lead.stage}
         disabled={set.isPending}
-        onChange={(e) => e.target.value === "visit_scheduled" ? onScheduleVisit() :
-          set.mutate(e.target.value, {
-            onSuccess: (r: { after: string }) => toast(`Moved to ${stageLabel(r.after)}`, "green"),
-            onError: (err: any) => toast(err.message, "gold"),
-          })}
+        onChange={(e) => e.target.value === "visit_scheduled" ? onScheduleVisit()
+          : e.target.value === "qualified" ? setQualifying(true)
+          : move(e.target.value)}
       >
         {ALL_STAGES.map((st: string) => (
           <option key={st} value={st} disabled={st === "revisit_scheduled"}>{stageLabel(st)}</option>
         ))}
       </select>
       </div>
+      {lead.stage === "qualified" && lead.qualified_status && (
+        <button type="button" className="qs-chip" style={qsHue(lead.qualified_status)}
+                title="Change how warm this qualified lead is" onClick={() => setQualifying(true)}>
+          {lead.qualified_status}
+        </button>
+      )}
+      {qualifying && (
+        <QualifyModal current={lead.qualified_status} busy={set.isPending}
+          onPick={(v) => { move("qualified", v); setQualifying(false); }}
+          onClose={() => setQualifying(false)} />
+      )}
     </div>
+  );
+}
+
+/* Hot / Warm / Cold, asked before a lead becomes Qualified. Portaled to <body> and on
+   useModalExit, so its Escape closes only this, not the lead popup underneath. */
+function QualifyModal({ current, busy, onPick, onClose: rawClose }: {
+  current?: string | null; busy: boolean; onPick: (v: string) => void; onClose: () => void;
+}) {
+  const { onClose, overlayClass } = useModalExit(rawClose);
+  return createPortal(
+    <div className={overlayClass} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ width: "min(440px,100%)" }} role="dialog" aria-label="Qualify lead">
+        <div className="mh">
+          <h3>How warm is this lead?</h3>
+          <div className="icon-btn" onClick={onClose}><IconX /></div>
+        </div>
+        <div className="mb">
+          <div className="qs-row">
+            {QUALIFIED_STATUSES.map((q) => (
+              <button key={q.v} type="button" disabled={busy} style={qsHue(q.v)}
+                      className={"qs-btn" + (current === q.v ? " on" : "")} onClick={() => onPick(q.v)}>
+                {q.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mf">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 

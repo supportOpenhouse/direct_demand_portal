@@ -485,6 +485,32 @@ def test_visit_stages_are_set_only_by_a_booking():
     body = _body_of("set_stage")
     assert body.index("BOOKING_ONLY_STAGES") < body.index("UPDATE leads SET stage=:s")
 
+
+async def test_qualifying_requires_hot_warm_or_cold():
+    """The Status card asks Hot / Warm / Cold before qualifying. The server enforces
+    it too — refused before any DB access, so no engine is needed here."""
+    import uuid
+
+    import pytest
+    from fastapi import HTTPException
+
+    from app.routers.leads import QUALIFIED_STATUSES, StagePayload, set_stage
+    assert QUALIFIED_STATUSES == ("hot", "warm", "cold")
+    for bad in (None, "", "lukewarm"):
+        with pytest.raises(HTTPException) as e:
+            await set_stage(uuid.uuid4(), StagePayload(stage="qualified", qualified_status=bad), {})
+        assert e.value.status_code == 422
+
+
+def test_qualified_status_is_written_only_by_a_qualify_move():
+    """coalesce keeps the stored value on every other move (it records how warm the
+    lead was WHEN qualified); a re-pick on an already-qualified lead is logged as a
+    field update, never as a stage_change that Reports would count."""
+    body = _body_of("set_stage")
+    assert "qualified_status=coalesce(CAST(:qs AS text), qualified_status)" in body
+    assert "(SELECT qualified_status FROM leads WHERE id=:id)" in body
+    assert "field='qualified_status'" in body and "action='update'" in body
+
 # --- lead view telemetry -----------------------------------------------------
 
 def test_lead_viewed_is_deduped_and_never_fails_the_page():

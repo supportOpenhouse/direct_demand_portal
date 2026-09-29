@@ -306,6 +306,9 @@ class Lead(Base):
     last_no_timestamp: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
     ever_connected: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
     is_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")  # starred
+    # hot | warm | cold, asked when a person moves the lead to `qualified` (Status card).
+    # Kept when the lead moves on — it records how warm it was when qualified.
+    qualified_status: Mapped[str | None] = mapped_column(Text)
     # rejection
     reject_reason: Mapped[str | None] = mapped_column(Text)
     reject_notes: Mapped[str | None] = mapped_column(Text)

@@ -48,6 +48,19 @@ function segmentCols(segment: string): string[] {
   return [...hot, "name", "phone", "source", ...stage, "society", "notes", "assigned", "activity", "actions"];
 }
 
+/* Qualified Leads' warmth boxes. "Invalid" is anything that isn't hot/warm/cold —
+   in practice a lead qualified before the Hot/Warm/Cold popup existed (29 Sep), or one
+   set by a path that doesn't ask. Hues match the Status card's chip. */
+const WARMTH_BOXES = [
+  { key: "hot", label: "Hot", hue: "var(--coral)" },
+  { key: "warm", label: "Warm", hue: "var(--amber)" },
+  { key: "cold", label: "Cold", hue: "var(--blue)" },
+  { key: "invalid", label: "Invalid", hue: "var(--muted)" },
+];
+const warmthOf = (l: Lead) =>
+  l.qualified_status === "hot" || l.qualified_status === "warm" || l.qualified_status === "cold"
+    ? l.qualified_status : "invalid";
+
 export default function LeadsSegment({ segment }: { segment: "qualified" | "future_prospect" | "visited" | "converted" | "rejected" }) {
   const rejected = segment === "rejected";
   // Visited Leads is the only page whose rows carry a booked visit, so it owns the
@@ -77,6 +90,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   // chip, for the same reason as on Call Not Received
   const stages = SEGMENT_STAGES[segment];
   const [stage, setStage] = useState("");
+  // Qualified Leads: Hot / Warm / Cold / Invalid boxes over leads.qualified_status. Own
+  // state like the stage boxes, so a pick isn't also a removable chip.
+  const isQualified = segment === "qualified";
+  const [warmth, setWarmth] = useState("");
   const [planner, setPlanner] = useState<Lead | null>(null);
   const [managing, setManaging] = useState<Lead | null>(null);
 
@@ -97,6 +114,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
     const off = (k: string) => skip === k || (Array.isArray(skip) && skip.includes(k));
     return (
       (off("stage") || !stage || stageBox(l) === stage) &&
+      (off("warmth") || !warmth || warmthOf(l) === warmth) &&
       (off("source") || sourceMatches(l, source)) &&
       (off("city") || cityMatches(l.city, cityTab)) &&
       (off("owner") || matchesOption(l.assigned_to, owner)) &&
@@ -124,6 +142,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
     { key: "completed", label: "Visit completed", hue: "var(--emerald)" },
     { key: "cancelled", label: "Visit cancelled", hue: "var(--coral)" },
   ].map((b) => ({ ...b, count: boxScope.filter((l) => l.visit_status === b.key).length }));
+  // ALL + the four warmth boxes, counted with the warmth pick ignored so they sum to ALL
+  const warmthScope = isQualified ? all.filter((l) => pass(l, "warmth")) : [];
+  const warmthBoxes = WARMTH_BOXES.map((b) => ({
+    ...b, count: warmthScope.filter((l) => warmthOf(l) === b.key).length }));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
   // NEW-badge leads on top, the chosen sort within each group
   const list = newFirst(sortedRows);
@@ -165,6 +187,10 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
           loading={isLoading}
           extra={hasVisits ? visitBoxes : []} extraValue={visitStatus}
           onExtra={(k) => { set("visitStatus", k); if (k) setStage(""); }} />
+      )}
+      {isQualified && (
+        <StageBoxes total={warmthScope.length} loading={isLoading}
+          extra={warmthBoxes} extraValue={warmth} onExtra={setWarmth} />
       )}
 
       {selectMode && (

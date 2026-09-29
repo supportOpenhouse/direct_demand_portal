@@ -345,6 +345,7 @@ export interface Lead {
   last_no_timestamp: string | null;  // last "No" — drives the 2h spam cooldown
   ever_connected: boolean;      // have we ever connected? gates RNR escalation
   is_hot: boolean;              // starred as a hot lead
+  qualified_status?: "hot" | "warm" | "cold" | null; // asked when moved to qualified
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
   visit_date: string | null;    // its scheduled date
   visit_society: string | null; // society of the latest booked visit (shown on the chip)
@@ -629,9 +630,9 @@ export const api = {
   createLead: (body: NewLead) =>
     request<{ status: string; created: boolean; lead_id: string | null; assigned_to?: string | null }>(
       "/v1/leads", { method: "POST", body: JSON.stringify(body) }),
-  setLeadStage: (id: string, stage: string) =>
-    request<{ status: string; before: string; after: string }>(`/v1/leads/${id}/stage`, {
-      method: "POST", body: JSON.stringify({ stage }),
+  setLeadStage: (id: string, stage: string, qualified_status?: string) =>
+    request<{ status: string; before: string; after: string; qualified_status: string | null }>(`/v1/leads/${id}/stage`, {
+      method: "POST", body: JSON.stringify({ stage, qualified_status }),
     }),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
   waMessages: (phone?: string) =>

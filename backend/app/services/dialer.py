@@ -561,14 +561,12 @@ _task: asyncio.Task | None = None
 
 
 async def _loop() -> None:
-    from ..cache import try_acquire_lock
-
+    # ponytail: no cross-instance lock — start_dialer() runs only where RUN_SCHEDULER is
+    # on, i.e. one process. The DB claim already stops two processes taking the same
+    # lead, but not two ringing the same RM; add a pg_try_advisory_lock if that changes.
     while True:
         try:
-            # One instance dials per tick. The DB claim already stops two instances
-            # taking the same lead, but not two of them ringing the same RM at once.
-            if await try_acquire_lock("dialer_tick", TICK_SECONDS * 3) is not None:
-                await tick_all()
+            await tick_all()
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 — the loop must survive anything

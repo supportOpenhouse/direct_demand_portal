@@ -4,9 +4,8 @@ Deliberately uses an IN-MEMORY store (not Redis): the limiter runs on the login
 path, and a Redis hiccup with the default slowapi config raised → a 500 on sign-in
 (it happened in prod). In-memory means the limiter makes NO network call, so it can
 never take down a request. Limits are therefore per-instance — perfectly fine for
-this single-instance internal tool. (Redis is still used for the match cache + cron
-lock, which are already fail-soft.) `swallow_errors=True` is belt-and-suspenders in
-case a Redis store is ever wired in here later.
+this single-instance internal tool. `swallow_errors=True` is belt-and-suspenders in
+case a networked store is ever wired in here later.
 
 There is no global `default_limits` — only explicitly-decorated routes are limited
 (so the debounced live-match preview is never throttled). Today only /auth/google.

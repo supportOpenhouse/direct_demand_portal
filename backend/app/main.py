@@ -11,7 +11,6 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
-from .cache import close_redis
 from .config import get_settings
 from .core.observability import configure_logging, request_id_ctx
 from .core.ratelimit import limiter
@@ -53,42 +52,26 @@ async def lifespan(app: FastAPI):
 
     asyncio.create_task(ensure_priority_column())
 
-    # cron + startup syncs run only where RUN_SCHEDULER is on; the Redis lock further
-    # ensures a single instance does the work even if several have it enabled.
+    # cron + startup syncs run only where RUN_SCHEDULER is on — exactly one process
     if settings.RUN_SCHEDULER:
-        from .cache import try_acquire_lock
         from .services.inventory_sync import run_sync
         from .services.leads_sync import run_leads_sync
 
-        async def _locked_startup(name, fn):
-            if await try_acquire_lock(name, 120):
-                await fn(trigger="startup")
-            else:
-                log.info("%s startup sync skipped — another instance holds the lock", name)
-
-        asyncio.create_task(_locked_startup("inventory_sync", run_sync))
-        asyncio.create_task(_locked_startup("leads_sync", run_leads_sync))
+        asyncio.create_task(run_sync(trigger="startup"))
+        asyncio.create_task(run_leads_sync(trigger="startup"))
         start_scheduler(settings.SYNC_INTERVAL_MINUTES)
         # auto-dialer: places the next call the moment a hangup callback frees an RM
         start_dialer()
     else:
-        log.info("RUN_SCHEDULER=false — cron + startup syncs disabled on this instance")
-        if not settings.redis_configured:
-            # The dialer is in another process, so the events that drive Live Calls
-            # are published somewhere this instance can't hear. The page still works
-            # off its polling fallback; without this the silence looks like a bug.
-            log.warning("RUN_SCHEDULER=false and REDIS_URL unset — Live Calls cannot "
-                        "receive push events from the dialer process and will fall "
-                        "back to polling. Set REDIS_URL to enable the stream.")
-
-    if settings.is_prod and not settings.redis_configured:
-        log.warning("APP_ENV=prod but REDIS_URL unset — cache isn't shared and the cron "
-                    "lock is disabled across instances (fine only for a single instance)")
+        # The dialer is in another process, so the events that drive Live Calls are
+        # published somewhere this instance can't hear. The page still works off its
+        # polling fallback; without this the silence looks like a bug.
+        log.info("RUN_SCHEDULER=false — cron, startup syncs and the dialer are off here; "
+                 "Live Calls on this instance runs on its polling fallback")
 
     yield
     stop_dialer()
     stop_scheduler()
-    await close_redis()
     await dispose_engines()
 
 
@@ -100,7 +83,7 @@ app = FastAPI(
     redoc_url=None if _settings.is_prod else "/redoc",
 )
 
-# rate limiting (Redis-backed when configured, else in-memory)
+# rate limiting (in-memory, per instance — see core/ratelimit.py)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

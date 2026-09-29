@@ -139,8 +139,8 @@ def _shape_lead(row: dict) -> dict:
 async def my_calls(user: dict = Depends(current_user)):
     """Snapshot for the Live Calls page.
 
-    Doubles as the polling fallback: when the SSE stream can't run — no Redis across a
-    split scheduler process, a dropped connection — the page polls this instead, and
+    Doubles as the polling fallback: when the SSE stream can't run — an instance without
+    the dialer (RUN_SCHEDULER=false), a dropped connection — the page polls this instead, and
     degrades to a few seconds of latency rather than to nothing.
     """
     email = user.get("email") or ""
@@ -212,7 +212,7 @@ async def my_calls_stream(request: Request, user: dict = Depends(current_user)):
                     yield SSE_KEEPALIVE
                     continue
                 except StopAsyncIteration:
-                    break  # Redis path gave up; the client falls back to polling
+                    break  # stream ended; the client falls back to polling
                 yield sse_frame(event)
         finally:
             await events.aclose()

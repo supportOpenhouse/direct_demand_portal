@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Response
 from sqlalchemy import text
 
-from ..cache import redis_ping
 from ..config import get_settings
 from ..db import direct_inventory_engine, neon_engine, properties_engine
 
@@ -29,7 +28,7 @@ async def health_live():
 @router.get("/health")
 async def health(response: Response):
     """Readiness — gated on the primary DB (Neon). Returns 503 when Neon is down so
-    the platform stops routing traffic here. Properties/sheets/redis are informational
+    the platform stops routing traffic here. Properties/sheets are informational
     (external/optional, so they don't fail readiness)."""
     settings = get_settings()
     neon = await _ping(neon_engine())
@@ -41,6 +40,5 @@ async def health(response: Response):
         "properties": await _ping(properties_engine()),
         "direct_inventory": await _ping(direct_inventory_engine()),
         "sheets": "ok" if settings.sheets_configured else "not_configured",
-        "redis": await redis_ping(),
         "version": "1.0",
     }

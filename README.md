@@ -264,31 +264,24 @@ business rules and acceptance criteria when the backend build begins.
 ## Production & DevOps
 
 The app is production-hardened while staying on **Render** (backend) + **Vercel** (frontend),
-with **managed Redis** (Upstash) as the only added infra.
+with no infra beyond Neon (no Redis — removed 29 Sep).
 
 ### Local stack (Docker)
 ```bash
 cp .env.example .env   # fill in DB/Google/CRM values
-docker compose up --build        # backend :8000, frontend :5173, redis :6379
-docker compose up --scale backend=2   # prove the cron runs on only one instance
+docker compose up --build        # backend :8000, frontend :5173
 ```
-Backend uses the shared Neon/properties DBs from `.env`; `REDIS_URL` is overridden to the
-local Redis so the shared cache + cron lock are exercised. With no Redis, everything falls
-back to in-memory and behaves exactly as before.
+Backend uses the shared Neon/properties DBs from `.env`. Cache, cron and Live Calls
+events are all in-process, so **exactly one process may run with `RUN_SCHEDULER=true`**.
 
 ### New runtime env vars
 | Var | Purpose |
 |-----|---------|
 | `APP_ENV` | `dev` (default) or `prod`. In **prod** the app refuses to boot on insecure config (default `JWT_SECRET`, missing `GOOGLE_OAUTH_CLIENT_ID`, localhost `CORS_ORIGINS`). |
-| `REDIS_URL` | Upstash/Render Redis. Empty → in-memory fallback. Powers shared match cache + rate limiting + single-runner cron lock. |
-| `RUN_SCHEDULER` | `true` (default). Set `false` on extra web replicas; run one worker with it `true`. |
+| `RUN_SCHEDULER` | `true` (default). Runs the cron + auto-dialer. Must be `true` on exactly ONE process — there is no cross-instance lock. |
 | `CORS_ORIGIN_REGEX` | e.g. `https://.*\.vercel\.app$` for preview deploys. |
 | `LOG_JSON` | `true` for structured logs in prod. |
 | `MAX_BODY_BYTES` | request body cap (default 1 MB). |
-
-### Upstash Redis (2-min setup)
-upstash.com → sign in with GitHub → **Create Database** (Redis), region near Render →
-copy the **`rediss://`** URL → set it as `REDIS_URL` in Render (and GitHub Secrets).
 
 ### Health probes
 - `GET /v1/health/live` — liveness (no DB), use for container restart checks.

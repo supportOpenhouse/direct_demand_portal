@@ -47,8 +47,8 @@ export function useEventStream(path: string, onEvent: (event: any) => void) {
       if (!res.ok || !res.body) throw new Error(`stream ${res.status}`);
 
       // Only a connection that LASTS counts as recovery. Resetting on connect alone
-      // means a server that accepts then immediately closes — Redis down, so the
-      // subscribe ends at once — gets reconnected every 2s forever, by every RM, at
+      // means a server that accepts then immediately closes — the stream
+      // ends at once — gets reconnected every 2s forever, by every RM, at
       // exactly the moment it's least able to take it.
       const settle = setTimeout(() => { failures = 0; }, STABLE_AFTER_MS);
       setHealthy(true);

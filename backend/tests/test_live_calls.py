@@ -58,7 +58,7 @@ class _FakeEngine:
 
 @pytest.fixture
 def published(monkeypatch):
-    """Capture what each transition publishes instead of touching Redis."""
+    """Capture what each transition publishes."""
     sent = []
 
     async def _fake_publish(channel, payload):

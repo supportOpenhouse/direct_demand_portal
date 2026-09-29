@@ -42,8 +42,6 @@ services:
         sync: false               # REQUIRED in prod: a strong random secret (>=16 chars)
       - key: GOOGLE_OAUTH_CLIENT_ID
         sync: false               # REQUIRED in prod: enforces login (no open-access)
-      - key: REDIS_URL
-        sync: false               # Upstash rediss:// URL — shared cache + rate-limit + cron lock
       - key: LOG_JSON
         value: "true"
       - key: CRM_BOOKING_API_BASE_URL
@@ -87,9 +85,10 @@ services:
         sync: false               # ?token= on the call-log callback URL
       - key: LEADS_SHEET_ID
         sync: false               # leads source sheet (or rely on the in-code default)
-      # RUN_SCHEDULER defaults true. If you scale this web service to >1 instance,
-      # set it "false" here and add a separate Background Worker service (same repo,
-      # RUN_SCHEDULER=true) so the cron runs on exactly one instance.
+      # RUN_SCHEDULER defaults true and must be true on EXACTLY one process: the cron,
+      # the auto-dialer and Live Calls events are all in-process (no Redis). Scaling this
+      # service to >1 instance runs every job once per instance and splits Live Calls
+      # onto its polling fallback — add a pg_try_advisory_lock per job before doing that.
 
 # To run the same image as local compose, switch the service to the Docker runtime:
 #   runtime: docker  /  dockerfilePath: backend/Dockerfile  /  dockerContext: backend

@@ -13,7 +13,7 @@ open public issues for security reports. We aim to acknowledge within 3 business
 - **Transport/headers**: HSTS (prod), `X-Frame-Options: DENY`, `X-Content-Type-Options`,
   `Referrer-Policy`, `Permissions-Policy`, and a strict `Content-Security-Policy`.
 - **Rate limiting** (slowapi): global default + a strict limit on `/v1/auth/google`.
-  Redis-backed across instances when `REDIS_URL` is set, else in-memory.
+  In-memory, per instance.
 - **CORS**: explicit methods/headers, no credentials (Bearer-token auth), Vercel
   previews via `CORS_ORIGIN_REGEX`.
 - **Input**: Pydantic validation; SQL is fully parameterized; request bodies capped

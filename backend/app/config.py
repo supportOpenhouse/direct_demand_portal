@@ -50,13 +50,10 @@ class Settings(BaseSettings):
     # --- runtime / ops ---
     # "dev" | "prod". In prod the app fail-closes on insecure config (see validator below).
     APP_ENV: str = "dev"
-    # managed Redis (Upstash / Render KV) for shared cache + rate limit + cron lock.
-    # Empty → graceful fallback to in-memory behavior (dev/single-instance).
-    REDIS_URL: str = ""
     # emit JSON logs (for log aggregation) instead of the human format
     LOG_JSON: bool = False
-    # run the APScheduler cron in this process. Set False on web replicas when the
-    # scheduler runs as its own single-instance worker (Redis lock is the backstop).
+    # run the APScheduler cron + auto-dialer in this process. Must be on in EXACTLY one
+    # process — there is no cross-instance lock (see workers/scheduler.py).
     RUN_SCHEDULER: bool = True
     # reject request bodies larger than this many bytes (basic DoS guard)
     MAX_BODY_BYTES: int = 1_000_000
@@ -233,10 +230,6 @@ class Settings(BaseSettings):
     def gupshup_send_configured(self) -> bool:
         """Receiving works with no config at all; sending needs all three."""
         return bool(self.GUPSHUP_API_KEY and self.GUPSHUP_SOURCE_NUMBER and self.GUPSHUP_APP_NAME)
-
-    @property
-    def redis_configured(self) -> bool:
-        return bool(self.REDIS_URL)
 
     @property
     def is_prod(self) -> bool:

@@ -1,8 +1,7 @@
 """The event bus behind Live Calls.
 
-Redis is optional here exactly as it is in cache.py, so the in-process fan-out is
-the path that runs in dev and on a single instance — these cover it directly. The
-Redis path is a thin PUBLISH/SUBSCRIBE wrapper over the same interface.
+The bus is in-process only (Redis was removed 29 Sep): the dialer, the Bonvoice
+webhook and the SSE endpoint share one process, so a queue per connection is enough.
 
 The property that matters: a publish must never break the caller. Every publish
 site is inside a call-lifecycle transition (place_bridge, the Bonvoice hangup, the
@@ -12,16 +11,12 @@ import asyncio
 
 import pytest
 
-from app.events import _subscribers, publish, pubsub_connect_kwargs, rm_channel, subscribe
+from app.events import _subscribers, publish, rm_channel, subscribe
 
 
 @pytest.fixture(autouse=True)
 def _empty_bus():
-    """A leaked queue from one test would otherwise receive another test's publishes.
-
-    conftest.py already forces the in-process path — without it these would assert
-    against an empty queue while every publish went to the developer's real Redis.
-    """
+    """A leaked queue from one test would otherwise receive another test's publishes."""
     _subscribers.clear()
     yield
     _subscribers.clear()
@@ -39,19 +34,6 @@ async def _drain(channel: str, count: int, timeout: float = 1.0) -> list[dict]:
     return got
 
 
-def test_the_subscriber_connection_has_no_read_timeout():
-    """A subscriber's whole job is to sit idle waiting for an event, so it must not
-    reuse cache.py's shared client — that one sets socket_timeout=2, which turns every
-    quiet stretch into a read timeout. In production this killed the stream every two
-    seconds: the log filled with 'redis SUBSCRIBE failed' and every RM silently ran on
-    the polling fallback."""
-    kwargs = pubsub_connect_kwargs()
-
-    assert kwargs["socket_timeout"] is None
-    # a half-open connection must still be noticed, just not on a 2s read deadline
-    assert kwargs.get("health_check_interval")
-
-
 def test_rm_channel_is_case_and_whitespace_insensitive():
     """The publisher reads rm_email off dial_queue; the subscriber reads it off the
     JWT. Those two disagree on case — `_dial_next` matches users with lower(email),
@@ -59,11 +41,6 @@ def test_rm_channel_is_case_and_whitespace_insensitive():
     an RM stored as 'A@x.com' would publish to a channel their own page never joins,
     and Live Calls would silently never update for them."""
     assert rm_channel("  Asha@X.com ") == rm_channel("asha@x.com")
-
-
-def test_rm_channel_namespaces_its_keys():
-    """Shares a Redis with the cache and the cron locks, which both use ddp:*."""
-    assert rm_channel("a@x.com").startswith("ddp:")
 
 
 async def test_a_subscriber_receives_a_published_event():

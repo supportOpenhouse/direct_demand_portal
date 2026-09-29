@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..core.auth import assignment_aliases, force_logout_all, forget_user, require_admin
 from ..db import neon_engine
 from ..services import activity
+from ..services.normalize import normalize_city
 from ..models import User
 
 router = APIRouter(tags=["users"], dependencies=[Depends(require_admin)])
@@ -43,7 +44,7 @@ async def list_users():
         return {"items": []}
     async with engine.connect() as conn:
         res = await conn.execute(text(
-            "SELECT id, email, name, picture, role, assignment_name, phone, smid, active, last_login_at, created_at "
+            "SELECT id, email, name, picture, role, assignment_name, phone, smid, city, active, last_login_at, created_at "
             "FROM users ORDER BY created_at"
         ))
         users = [dict(m) for m in res.mappings()]
@@ -52,7 +53,7 @@ async def list_users():
         {
             "id": str(u["id"]), "email": u["email"], "name": u["name"], "picture": u["picture"],
             "role": u["role"], "maps_to": _first_name(u["name"]),  # the name we match in the sheet
-            "smid": u["smid"], "phone": u["phone"], "active": u["active"],
+            "smid": u["smid"], "phone": u["phone"], "city": u["city"] or [], "active": u["active"],
             "last_login_at": u["last_login_at"].isoformat() if u["last_login_at"] else None,
             "matched_leads": _matched(u, counts),
         }
@@ -96,6 +97,9 @@ class UserUpdate(BaseModel):
     active: bool | None = None
     smid: int | None = None
     phone: str | None = None
+    # the cities this RM takes NEW leads for (services/lead_assign.py). [] = none, which
+    # leaves them only the leads whose city no active RM covers.
+    city: list[str] | None = None
 
 
 @router.patch("/users/{user_id}")
@@ -103,8 +107,12 @@ async def update_user(user_id: UUID, payload: UserUpdate,
                       actor: dict = Depends(require_admin)):
     if payload.role is not None and payload.role not in ROLES:
         raise HTTPException(status_code=422, detail=f"role must be one of {sorted(ROLES)}")
+    if payload.city is not None:
+        # canonical spelling ("gurugram" → "Gurgaon") so it matches leads.city, which the
+        # sync normalises the same way; de-duplicated, blanks dropped, order kept
+        payload.city = [c for c in dict.fromkeys(normalize_city(x) for x in payload.city) if c]
     sets, params = [], {"id": user_id}
-    for field in ("name", "role", "active", "smid", "phone"):
+    for field in ("name", "role", "active", "smid", "phone", "city"):
         val = getattr(payload, field)
         if val is not None:
             sets.append(f"{field} = :{field}")
@@ -116,7 +124,7 @@ async def update_user(user_id: UUID, payload: UserUpdate,
         # Read first: "who made whom an admin" is the question an audit trail exists to
         # answer, and it needs the prior role, not just the new one.
         before = (await conn.execute(text(
-            "SELECT email, name, role, active FROM users WHERE id = :id"),
+            "SELECT email, name, role, active, smid, phone, city FROM users WHERE id = :id"),
             {"id": user_id})).mappings().first()
         res = await conn.execute(text(f"UPDATE users SET {', '.join(sets)} WHERE id = :id"), params)
         if res.rowcount == 0:

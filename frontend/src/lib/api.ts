@@ -932,7 +932,7 @@ export const api = {
     }),
   createUser: (u: { email: string; name: string; role: string; smid?: number | null; phone?: string | null }) =>
     request<{ id: string; status: string }>("/v1/users", { method: "POST", body: JSON.stringify(u) }),
-  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null; phone: string | null }>) =>
+  updateUser: (id: string, patch: Partial<{ name: string; role: string; active: boolean; smid: number | null; phone: string | null; city: string[] }>) =>
     request<{ status: string }>(`/v1/users/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
   deleteUser: (id: string) => request<{ status: string }>(`/v1/users/${id}`, { method: "DELETE" }),
   reassignUserLeads: (id: string, toUserId: string) =>
@@ -1242,6 +1242,7 @@ export interface ManagedUser {
   maps_to: string | null; // first name we match against the sheet's "Assigned to"
   smid: number | null; // Openhouse SalesManager id (required to book visits)
   phone: string | null; // mobile that click-to-call rings first
+  city: string[]; // cities this RM takes NEW leads for (auto-assignment); [] = none
   active: boolean;
   last_login_at: string | null;
   matched_leads: number;

@@ -23,11 +23,11 @@ def test_continuity_beats_balance():
 
 
 def test_rotation_is_load_based_not_turn_based():
-    """Rules 2+3: fewest open conversations, then longest-since-assigned. That gives
+    """Rules 2+3: fewest assigned today, then longest-since-assigned. That gives
     round-robin when load is level and self-corrects when it isn't."""
     src = _sql(wa_assign._LEAST_LOADED)
     order = src.split("ORDER BY", 1)[1]
-    assert order.index("count(c.phone10)") < order.index("max(c.assigned_at)"), \
+    assert order.index("count(c.phone10)") < order.index("max(x.assigned_at)"), \
         "load must outrank recency, or an idle RM keeps collecting work"
     assert "NULLS FIRST" in order, "a never-assigned RM must sort first"
     assert order.rstrip().endswith("u.name LIMIT 1") or "u.name" in order, \
@@ -82,3 +82,20 @@ def test_assignment_still_happens_when_something_asks_for_it():
     import inspect
     from app.routers import gupshup
     assert "assign_if_unassigned" in inspect.getsource(gupshup._designated_rm)
+
+
+def test_the_balance_is_today_not_lifetime():
+    """A lifetime count hands a new RM every new conversation until they catch up. The
+    count is today's on the IST calendar, and the window is in the JOIN — a WHERE on
+    the LEFT JOIN's right side would drop the RMs with nothing today."""
+    src = _sql(wa_assign._LEAST_LOADED)
+    join = src.split("LEFT JOIN wa_contacts c", 1)[1].split("WHERE u.active", 1)[0]
+    assert "(now() AT TIME ZONE 'Asia/Kolkata')::date" in join
+    assert "c.assigned_at" in join
+
+
+def test_the_tie_break_is_last_assignment_ever_not_today():
+    """Read inside the day window, every RM at zero would tie on NULL and the same
+    alphabetically-first RM would open every morning."""
+    order = _sql(wa_assign._LEAST_LOADED).split("ORDER BY", 1)[1]
+    assert "FROM wa_contacts x" in order and "Asia/Kolkata" not in order

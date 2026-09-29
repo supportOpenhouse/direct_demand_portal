@@ -6,6 +6,7 @@ import { api, ManagedUser } from "../lib/api";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
 import { IconEdit, IconX } from "../components/icons";
+import { CITIES } from "../lib/leads";
 
 const ROLES = [
   { v: "admin", label: "Admin", desc: "All leads · manage users & source data" },
@@ -240,6 +241,12 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
   const [role, setRole] = useState(u.role);
   const [smid, setSmid] = useState(u.smid != null ? String(u.smid) : "");
   const [phone, setPhone] = useState(u.phone ?? "");
+  const [cities, setCities] = useState<string[]>(u.city ?? []);
+  // the three we sell in, plus anything already stored (e.g. Faridabad set by hand) —
+  // an option that isn't offered is one a save would silently delete
+  const cityOptions = [...CITIES, ...(u.city ?? []).filter((c) => !CITIES.includes(c))];
+  const toggleCity = (c: string) =>
+    setCities((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]));
 
   const submit = () => {
     if (!name.trim()) {
@@ -248,7 +255,7 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
     }
     update.mutate(
       { id: u.id, patch: { name: name.trim(), role, smid: smid.trim() ? Number(smid) : null,
-        phone: phone.trim() || null } },
+        phone: phone.trim() || null, city: cities } },
       { onSuccess: () => { toast("User updated", "green"); onClose(); }, onError: (e: any) => toast(e.message, "gold") }
     );
   };
@@ -274,6 +281,23 @@ function EditUserForm({ u, onClose }: { u: ManagedUser; onClose: () => void }) {
           </div>
           <div className="field"><label>Mobile <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— rings first on click-to-call</span></label>
             <input value={phone} placeholder="e.g. 98765 43210" onChange={(e) => setPhone(e.target.value)} /></div>
+          <div className="field">
+            <label>Takes new leads for <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— auto-assignment</span></label>
+            {/* there is no .btn.active — a picked city has to CHANGE class to show */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {cityOptions.map((c) => (
+                <button key={c} type="button" className={"btn sm " + (cities.includes(c) ? "primary" : "ghost")}
+                        aria-pressed={cities.includes(c)} onClick={() => toggleCity(c)}>{c}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>
+              {role !== "rm"
+                ? "Only RMs are auto-assigned leads — this has no effect for this role."
+                : cities.length
+                  ? <>Gets new {cities.join(", ")} leads, balanced by leads assigned today.</>
+                  : "No city picked — gets only leads whose city no RM covers (blank or invalid)."}
+            </div>
+          </div>
           <div className="note" style={{ marginTop: 0 }}>
             Mapped to <b>{u.matched_leads}</b> leads by matching <b>{name.trim().split(" ")[0] || u.maps_to}</b> in the sheet's “Assigned to”.
             {smid.trim() ? <> · books visits as SMID <b>{smid.trim()}</b></> : <> · <b>no SMID</b> — can't book visits</>}

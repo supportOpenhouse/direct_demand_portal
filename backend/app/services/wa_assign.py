@@ -9,16 +9,17 @@ that choice is made, not WHEN.
 Three rules, in order:
 
   1. The number already has a lead with an owner  → the same RM.
-  2. Otherwise, the active RM with the fewest open conversations.
-  3. Ties → whoever was assigned longest ago (never-assigned first).
+  2. Otherwise, the active RM given the fewest conversations TODAY (IST calendar).
+  3. Ties → whoever was assigned longest ago, ever (never-assigned first).
 
 Rule 1 is the important one. Plain round-robin would hand a thread to a different RM
 than the one already working that customer's lead, so two people end up talking to the
 same buyer on two channels — worse than an uneven split.
 
-Rules 2+3 give round-robin behaviour whenever load is level, and self-correct when it
-isn't: an RM who is inactive, on leave, or sitting on a pile of conversations stops
-collecting new ones, which a turn-counter never notices.
+Rules 2+3 give round-robin behaviour within the day. The count is TODAY's, not the
+conversations an RM owns in total (changed 29 Sep): a lifetime count hands a new joinee
+every new conversation until they catch up on everyone's history — the same reason the
+lead sweep (services/lead_assign.py) balances on today.
 
 Contacts tagged `rejected` are never assigned — dead numbers shouldn't consume anyone's
 share — and tagging an existing one clears its owner.
@@ -46,14 +47,22 @@ _LEAST_LOADED = text("""
     LEFT JOIN wa_contacts c
       ON lower(c.assigned_to) = lower(u.name)
      AND (c.tag IS NULL OR c.tag <> 'rejected')
+     -- The day window lives in the JOIN, not the WHERE: an RM given nothing today is
+     -- exactly who this looks for, and a WHERE on the LEFT JOIN's right side drops them.
+     AND (c.assigned_at AT TIME ZONE 'Asia/Kolkata')::date
+         = (now() AT TIME ZONE 'Asia/Kolkata')::date
     -- Exactly 'rm', deliberately NOT core.auth.CALLING_ROLES: a test_rm is dialled by
     -- campaigns but must never be handed a real customer conversation. A test account
     -- silently owning a live WhatsApp thread is worse than leaving it unassigned.
     WHERE u.active AND u.role = 'rm' AND u.name IS NOT NULL AND btrim(u.name) <> ''
     GROUP BY u.name
-    -- fewest conversations first; then longest since last assigned (never-assigned
-    -- sorts first via NULLS FIRST); then name, so the choice is deterministic
-    ORDER BY count(c.phone10), max(c.assigned_at) NULLS FIRST, u.name
+    -- fewest TODAY first; then longest since their last conversation EVER — read
+    -- outside the day window, or every RM at zero ties on NULL and the alphabetically
+    -- first one opens every morning; never-assigned sorts first; then name
+    ORDER BY count(c.phone10),
+             (SELECT max(x.assigned_at) FROM wa_contacts x
+               WHERE lower(x.assigned_to) = lower(u.name)) NULLS FIRST,
+             u.name
     LIMIT 1
 """)
 

@@ -549,7 +549,7 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
             if owner:
                 await activity.record(conn, activity.row_for(
                     activity.Actor.of(user), entity_type="lead", entity_id=row[0],
-                    action="assigned", after_value=owner,
+                    action="assigned", after=owner,
                     metadata={"source": "whatsapp"}))
     return {"status": "ok", "lead_id": str(row[0]) if row else None, "assigned_to": owner}
 

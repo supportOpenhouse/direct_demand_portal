@@ -167,3 +167,22 @@ def test_the_backfill_records_the_current_source_and_marks_itself():
     assert "'source', l.source" in src
     assert "'backfilled', true" in src
     assert "'lead_created'" in src
+
+
+def test_every_row_for_call_uses_keywords_row_for_accepts():
+    # row_for runs INSIDE the caller's transaction, so a wrong keyword doesn't lose a
+    # log line — it raises and rolls back the change it was describing. gupshup's
+    # create-lead passed `after_value=` (the column name) and every WhatsApp→lead with
+    # an owner 500'd and created nothing.
+    import ast
+    import inspect
+    import pathlib
+
+    accepted = set(inspect.signature(row_for).parameters)
+    bad = []
+    for path in pathlib.Path(__file__).parent.parent.joinpath("app").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text())):
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", getattr(node.func, "id", None)) == "row_for":
+                bad += [f"{path.name}:{node.lineno} {k.arg}" for k in node.keywords
+                        if k.arg and k.arg not in accepted]
+    assert not bad, bad

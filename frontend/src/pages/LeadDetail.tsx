@@ -1,9 +1,9 @@
 /* Lead Detail — source-captured data + the Q1-Q6 call-confirm form (saves to
    POST /v1/leads/:id/confirm). Mirrors the prototype's lead-detail left column. */
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage } from "../lib/queries";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useWaLeadTranscript } from "../lib/queries";
 import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -19,6 +19,7 @@ import {
   IconStar,
   IconWarn,
   IconClock,
+  WhatsAppIcon,
   IconMeta,
   IconX,
 } from "../components/icons";
@@ -29,6 +30,7 @@ import { VisitPlanner } from "../features/VisitPlanner";
 import ManageVisitsModal from "../features/ManageVisitsModal";
 import { StageChip } from "../components/StageChip";
 import { useModalExit } from "../lib/useModalExit";
+import { Bubble } from "../components/WaThread";
 
 const PURPOSES = ["Self-use", "Investment"];
 const CONFIGS = ["2 BHK", "2.5 BHK", "3 BHK", "3.5 BHK", "4 BHK"];
@@ -336,6 +338,33 @@ function MetaFormCard({ deliveries, landscape = false }: {
 
    Capped and scrolling like the note thread: a worked lead carries dozens of rows, and
    an uncapped list pushes every card below it off the bottom of the popup. */
+/* The lead's WhatsApp conversation, read-only, above Lead history. Renders NOTHING when
+   there is no conversation (or while it loads) — an empty card on every lead that never
+   messaged would be noise on most popups. Scoped by the lead server-side, so the lead's
+   RM sees it even when the WhatsApp thread itself is unowned or someone else's. */
+function WaTranscriptCard({ id }: { id: string }) {
+  const { data } = useWaLeadTranscript(id);
+  const messages = useMemo(() => [...(data?.items ?? [])].reverse(), [data]);  // oldest first
+  const list = useRef<HTMLDivElement>(null);
+  // open at the latest message, like a chat — the newest exchange is what you came for
+  useEffect(() => { if (list.current) list.current.scrollTop = list.current.scrollHeight; }, [messages.length]);
+  if (!messages.length) return null;
+  return (
+    <div className="card panel-pad">
+      <div className="panel-title">
+        <span style={{ width: 15, height: 15, color: "var(--wa-green-2)", display: "inline-flex" }}><WhatsAppIcon /></span>
+        WhatsApp transcript
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 500, color: "var(--muted)" }}>
+          {messages.length} message{messages.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="lh-list" ref={list} style={{ gap: 0 }}>
+        {messages.map((m) => <Bubble key={m.id} m={m} />)}
+      </div>
+    </div>
+  );
+}
+
 function LeadHistory({ id }: { id: string }) {
   const { data, isLoading } = useEntityActivity("lead", id);
   const items = data?.items ?? [];
@@ -878,6 +907,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             </div>
           </div>
 
+          <WaTranscriptCard id={id} />
           <LeadHistory id={id} />
         </div>
         <div className="dcol">

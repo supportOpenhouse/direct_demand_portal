@@ -518,6 +518,19 @@ export interface WaPending {
 export type WaTag = "broker" | "buyer" | "seller" | "rejected";
 export const WA_TAGS: WaTag[] = ["broker", "buyer", "seller", "rejected"];
 
+export interface WaThreadRow {
+  phone: string;
+  name: string | null;
+  last_body: string | null;
+  last_direction: "in" | "out";
+  last_msg_type: string;
+  last_at: string;
+  last_inbound_at: string | null;
+  lead: { id: string; name: string | null } | null;
+  tag: WaTag | null;
+  owner: string | null;
+}
+
 export interface WaMessage {
   id: string;
   direction: "in" | "out";
@@ -635,6 +648,9 @@ export const api = {
       method: "POST", body: JSON.stringify({ stage, qualified_status }),
     }),
   gupshupRecent: () => request<{ count: number; items: GupshupEvent[] }>("/v1/gupshup/recent"),
+  // one lead's WhatsApp conversation, scoped by the LEAD (the popup's read-only transcript)
+  waLeadTranscript: (leadId: string) =>
+    request<{ items: WaMessage[] }>(`/v1/gupshup/lead/${leadId}/transcript`),
   waMessages: (phone?: string) =>
     request<{
       status: string; send_enabled: boolean;
@@ -671,6 +687,12 @@ export const api = {
      conversations to convert. Already-lead contacts are skipped, not duplicated.
      `assign` copies each conversation's RM onto its lead (assigning an unowned thread
      first); omitted, the leads land unassigned. */
+  // one row per conversation, paged — the Chat page's list (real totals, not a 500-message window)
+  waThreads: (offset: number, limit = 100) =>
+    request<{ total: number; convertible_total: number; send_enabled: boolean; items: WaThreadRow[] }>(
+      `/v1/gupshup/threads?offset=${offset}&limit=${limit}`),
+  // every conversation with no lead yet, in list order — bulk "Create leads" picks from this
+  waConvertible: () => request<{ phones: string[] }>("/v1/gupshup/threads/convertible"),
   waBulkCreateLeads: (phones: string[], assign = false) =>
     request<{ status: string; created: number; skipped_existing: number;
               requested: number; assigned: number }>("/v1/gupshup/leads/bulk", {

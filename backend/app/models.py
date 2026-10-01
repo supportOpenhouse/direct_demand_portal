@@ -650,6 +650,11 @@ class WaMessage(Base):
     status: Mapped[str | None] = mapped_column(Text)        # submitted|sent|delivered|read|failed
     author: Mapped[str | None] = mapped_column(Text)        # portal user who sent it
     raw: Mapped[dict | None] = mapped_column(JSONB)         # full callback, for anything unmodelled
+    # which Gupshup app (business number) carried it: NULL = the main chat app,
+    # 'template' = the template-campaign app. One customer = one thread across both, but
+    # WhatsApp's 24h reply window is per business number, so a reply must go back out
+    # through the app the customer wrote to.
+    source_app: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

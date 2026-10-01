@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     # Shared secret appended to the callback URL as ?token=... . Empty = no check
     # (fine in dev; set it in prod — the endpoint is public by definition).
     GUPSHUP_WEBHOOK_SECRET: str = ""
+    # ?token= for the SECOND Gupshup app — the one that sends template campaigns from its
+    # own number (POST /v1/gupshup/template-webhook). Empty = open in dev, 503 in prod.
+    GUPSHUP_TEMPLATE_WEBHOOK_SECRET: str = ""
     GUPSHUP_API_KEY: str = ""
     # the registered WhatsApp Business number, country code included, digits only
     GUPSHUP_SOURCE_NUMBER: str = ""

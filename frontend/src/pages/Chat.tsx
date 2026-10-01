@@ -12,10 +12,10 @@ import { SelectFirst } from "../components/SelectFirst";
 import { CITIES } from "../lib/leads";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
-  useSocietiesByCity, useBulkCreateWaLeads, useBackfillWaAssign,
+  useSocietiesByCity, useBulkCreateWaLeads, useBackfillWaAssign, useWaThreads, useWaConvertible,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
-import { WaMessage, WaTag, WA_TAGS } from "../lib/api";
+import { WaTag, WA_TAGS } from "../lib/api";
 import { useAuth } from "../components/AuthContext";
 import { useToast } from "../components/Toast";
 import {
@@ -31,15 +31,6 @@ import { useSearchParams } from "react-router-dom";
 // bottom of the viewport, so the page keeps a normal, predictable shape
 const PANEL_H = 560;
 
-interface Thread {
-  phone: string;
-  name: string | null;
-  messages: WaMessage[];   // oldest first, for rendering
-  lastAt: number;
-  lastInboundAt: number | null;
-}
-
-/* One flat list from the server → per-phone threads, most recently active first. */
 /* Red for rejected, blue for everything else — matching the row background. */
 function TagChip({ tag }: { tag: WaTag }) {
   const rejected = tag === "rejected";
@@ -57,28 +48,16 @@ function TagChip({ tag }: { tag: WaTag }) {
   );
 }
 
-function toThreads(items: WaMessage[]): Thread[] {
-  const by = new Map<string, Thread>();
-  for (const m of items) {
-    const t = by.get(m.phone) ?? { phone: m.phone, name: null, messages: [], lastAt: 0, lastInboundAt: null };
-    t.messages.push(m);
-    if (m.direction === "in") {
-      t.name = t.name ?? m.name;
-      t.lastInboundAt = Math.max(t.lastInboundAt ?? 0, +new Date(m.created_at));
-    }
-    t.lastAt = Math.max(t.lastAt, +new Date(m.created_at));
-    by.set(m.phone, t);
-  }
-  const threads = [...by.values()];
-  threads.forEach((t) => t.messages.reverse()); // server sends newest first
-  return threads.sort((a, b) => b.lastAt - a.lastAt);
-}
-
 export default function Chat() {
   const { enabled, user } = useAuth();
   const isAdmin = !enabled || user?.role === "admin";
 
-  const { data, isLoading, error } = useWaMessages();
+  /* The list is CONVERSATIONS, paged 100 at a time with more loaded on scroll — it used
+     to be the newest 500 messages grouped here, which capped it at ~100 threads and
+     made every count on the page count only those. */
+  const list = useWaThreads();
+  const { isLoading, error } = list;
+  const first = list.data?.pages[0];
   const toast = useToast();
   /* `?phone=` lets the notification bell open a specific conversation instead of
      dropping you at the top of a 127-thread list. Read once as the INITIAL value, not
@@ -93,21 +72,32 @@ export default function Chat() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
 
   // keep marking seen while the page is open, so the dot doesn't reappear behind you
-  useEffect(() => { if (data) markWaSeen(); }, [data]);
+  useEffect(() => { if (list.data) markWaSeen(); }, [list.data]);
 
-  const threads = useMemo(() => toThreads(data?.items ?? []), [data]);
-  const thread = threads.find((t) => t.phone === active) ?? threads[0] ?? null;
+  const threads = useMemo(() => list.data?.pages.flatMap((p) => p.items) ?? [], [list.data]);
+  // the open conversation can be one not scrolled into view yet (a ?phone= from the bell)
+  const activePhone = active ?? threads[0]?.phone ?? null;
+  const row = threads.find((t) => t.phone === activePhone);
+  // gated: with no phone this would fetch the old all-messages list every 5s
+  const convo = useWaMessages(activePhone ?? undefined, !!activePhone);
+  const data = convo.data;
+  const messages = useMemo(() => [...(data?.items ?? [])].reverse(), [data]);  // oldest first
+  const inbound = messages.filter((m) => m.direction === "in");
+  const lastInbound = inbound[inbound.length - 1];
+  const thread = activePhone ? {
+    phone: activePhone,
+    name: row?.name ?? lastInbound?.name ?? null,
+    lastInboundAt: lastInbound ? +new Date(lastInbound.created_at) : null,
+  } : null;
   // leads are keyed by the last 10 digits — leads store "+91 98715 78484", WhatsApp "919871578484"
   const lead = thread ? data?.leads?.[thread.phone.slice(-10)] : undefined;
   const tag = thread ? data?.tags?.[thread.phone.slice(-10)] : undefined;
   const owner = thread ? data?.owners?.[thread.phone.slice(-10)] : undefined;
 
-  /* Only conversations without a lead can be converted — the endpoint skips the rest
-     anyway, but offering a checkbox that does nothing is worse than not offering it. */
-  const convertible = useMemo(
-    () => threads.filter((t) => !data?.leads?.[t.phone.slice(-10)]).map((t) => t.phone),
-    [threads, data],
-  );
+  /* Only conversations without a lead can be converted. The count is the SERVER's, over
+     every conversation; the list to pick from is fetched only once bulk mode opens. */
+  const convertibleTotal = first?.convertible_total ?? 0;
+  const convertible = useWaConvertible(bulk).data?.phones ?? [];
   const bulkCreate = useBulkCreateWaLeads();
   const [bulkAssign, setBulkAssign] = useState(false);   // unassigned by default
   const toggleOne = (phone: string) => setPicked((prev) => {
@@ -130,7 +120,14 @@ export default function Chat() {
     onError: (e: any) => toast(e.message, "gold"),
   });
 
-  const sendEnabled = data?.send_enabled ?? false;
+  const sendEnabled = first?.send_enabled ?? false;
+  const total = first?.total ?? 0;
+  // load the next 100 when the list is scrolled to (near) its end
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120
+        && list.hasNextPage && !list.isFetchingNextPage) list.fetchNextPage();
+  };
 
   if (isLoading) return <div className="card"><SkeletonRows rows={7} /></div>;
   if (error) {
@@ -148,7 +145,7 @@ export default function Chat() {
     <div>
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{threads.length}</b> conversation{threads.length === 1 ? "" : "s"}
+          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> conversation{total === 1 ? "" : "s"}
         </p>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {bulk ? (
@@ -175,11 +172,11 @@ export default function Chat() {
             </>
           ) : (
             <>
-              <button className="btn sm" onClick={() => setBulk(true)} disabled={!convertible.length}
-                title={convertible.length
+              <button className="btn sm" onClick={() => setBulk(true)} disabled={!convertibleTotal}
+                title={convertibleTotal
                   ? "Turn conversations into leads in bulk"
                   : "Every conversation already has a lead"}>
-                Create leads ({convertible.length})
+                Create leads ({convertibleTotal.toLocaleString("en-IN")})
               </button>
               {isAdmin && <BackfillButton />}
             </>
@@ -206,13 +203,12 @@ export default function Chat() {
           height: PANEL_H,
         }}>
           {/* thread list */}
-          <div className="card" style={{ padding: 0, overflowY: "auto" }}>
+          <div className="card" style={{ padding: 0, overflowY: "auto" }} onScroll={onListScroll}>
             {threads.map((t, i) => {
-              const last = t.messages[t.messages.length - 1];
               const selected = t.phone === thread?.phone;
-              const hasLead = !!data?.leads?.[t.phone.slice(-10)];
-              const rowTag = data?.tags?.[t.phone.slice(-10)];
-              const rowOwner = data?.owners?.[t.phone.slice(-10)];
+              const hasLead = !!t.lead;
+              const rowTag = t.tag;
+              const rowOwner = t.owner;
               return (
                 <div key={t.phone} style={{
                   display: "flex", alignItems: "center",
@@ -260,13 +256,18 @@ export default function Chat() {
                       )}
                     </div>
                     <div style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      {last?.direction === "out" ? "You: " : ""}{last?.body || `[${last?.msg_type}]`}
+                      {t.last_direction === "out" ? "You: " : ""}{t.last_body || `[${t.last_msg_type}]`}
                     </div>
                   </div>
                 </button>
                 </div>
               );
             })}
+            {list.hasNextPage && (
+              <div style={{ padding: 12, textAlign: "center", fontSize: 12, color: "var(--muted)" }}>
+                {list.isFetchingNextPage ? "Loading more…" : `${threads.length} of ${total} — scroll for more`}
+              </div>
+            )}
           </div>
 
           {/* conversation */}
@@ -302,7 +303,7 @@ export default function Chat() {
 
                 <WaThread
                   phone={thread.phone}
-                  messages={thread.messages}
+                  messages={messages}
                   lastInboundAt={thread.lastInboundAt}
                   sendEnabled={sendEnabled}
                 />

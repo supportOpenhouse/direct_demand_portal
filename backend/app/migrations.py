@@ -74,6 +74,7 @@ _ADD_COLUMNS = [
     ("inventory_units", "lng", "NUMERIC"),
     ("leads", "reject_reason", "TEXT"),
     ("leads", "qualified_status", "TEXT"),
+    ("wa_messages", "source_app", "TEXT"),
     ("leads", "reject_notes", "TEXT"),
     ("leads", "rejected_at", "TIMESTAMPTZ"),
     # call worklist / follow-up flow

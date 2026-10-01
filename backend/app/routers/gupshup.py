@@ -78,6 +78,22 @@ def _check_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="invalid token")
 
 
+def _check_template_token(request: Request) -> None:
+    """The template app's own secret. Stricter than the chat one, like Huvo/Meta: unset is
+    open in dev but a 503 in prod — a public URL that writes into wa_messages must not
+    be left open by forgetting an env var."""
+    settings = get_settings()
+    secret = settings.GUPSHUP_TEMPLATE_WEBHOOK_SECRET.strip()
+    if not secret:
+        if settings.is_prod:
+            log.error("GUPSHUP_TEMPLATE_WEBHOOK_SECRET unset in prod — refusing callbacks")
+            raise HTTPException(status_code=503,
+                                detail="webhook not configured — set GUPSHUP_TEMPLATE_WEBHOOK_SECRET")
+        return
+    if not secrets.compare_digest(request.query_params.get("token", ""), secret):
+        raise HTTPException(status_code=403, detail="invalid token")
+
+
 def _text_of(inner: dict, kind: str | None) -> str | None:
     """Readable body for the thread — the text itself, or a caption/label for media."""
     if kind == "text":
@@ -127,6 +143,7 @@ async def _persist(entry: dict) -> None:
                     msg_type=kind or "text",
                     gupshup_id=payload.get("id"),
                     raw=body,
+                    source_app=entry.get("app"),
                     **_media_of(inner),
                 ))
                 # Deliberately NOT assigned here. An inbound message used to hand the
@@ -161,6 +178,28 @@ async def gupshup_webhook(request: Request):
     """Gupshup wants 2xx with an EMPTY body inside 10s (<500ms recommended), or it
     retries and eventually disables the callback. Nothing here blocks on I/O."""
     _check_token(request)
+    return await _accept(request, app=None)
+
+
+@router.get("/gupshup/template-webhook")
+async def gupshup_template_verify(request: Request):
+    """The template-campaign app's callback URL — verification GET."""
+    _check_template_token(request)
+    return {"status": "ok"}
+
+
+@router.post("/gupshup/template-webhook", status_code=200, response_class=Response)
+async def gupshup_template_webhook(request: Request):
+    """Callback for the SECOND Gupshup app (template campaigns, its own number). Same
+    contract and same storage as /gupshup/webhook — replies land in the customer's one
+    thread — with each inbound row stamped source_app='template'. Delivery events need
+    no stamp: they update the outbound row by its unique gupshup_id."""
+    _check_template_token(request)
+    return await _accept(request, app="template")
+
+
+async def _accept(request: Request, app: str | None) -> Response:
+    """Record one Gupshup callback and answer 200 at once; the DB write runs after."""
     try:
         body = parse_body(await request.body(), request.headers.get("content-type", ""))
     except Exception:  # noqa: BLE001 — a 500 here makes Gupshup disable the callback
@@ -170,10 +209,12 @@ async def gupshup_webhook(request: Request):
     entry = {
         "received_at": datetime.now(timezone.utc).isoformat(),
         "type": body.get("type") if isinstance(body, dict) else None,
+        "app": app,
         "body": body,
     }
     _RECENT.appendleft(entry)
-    log.info("gupshup callback type=%s body=%s", entry["type"], json.dumps(body, default=str)[:2000])
+    log.info("gupshup callback app=%s type=%s body=%s", app or "chat", entry["type"],
+             json.dumps(body, default=str)[:2000])
     asyncio.create_task(_persist(entry))
     return Response(status_code=200)
 
@@ -247,27 +288,8 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
             q.order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
         )).mappings().all()
 
-        # which of these numbers already have a lead. Leads store a formatted phone
-        # ("+91 98715 78484") while WhatsApp gives "919871578484", so both sides are
-        # reduced to the last 10 digits — the same key leads_sync dedupes on.
-        phones10 = sorted({r["phone"][-10:] for r in rows if r["phone"]})
-        leads = {}
-        if phones10:
-            p10 = func.right(func.regexp_replace(Lead.phone, r"\D", "", "g"), 10)
-            found = (await conn.execute(
-                select(Lead.id, Lead.name, p10.label("p10")).where(p10.in_(phones10))
-            )).mappings().all()
-            leads = {f["p10"]: {"id": str(f["id"]), "name": f["name"]} for f in found}
-
-        # hand-applied marks (broker / buyer / seller / rejected), same phone10 key
-        tags = {}
-        if phones10:
-            trows = (await conn.execute(
-                select(WaContact.phone10, WaContact.tag, WaContact.assigned_to)
-                .where(WaContact.phone10.in_(phones10))
-            )).mappings().all()
-            tags = {t["phone10"]: t["tag"] for t in trows if t["tag"]}
-            owners = {t["phone10"]: t["assigned_to"] for t in trows if t["assigned_to"]}
+        leads, tags, owners = await _annotate(
+            conn, sorted({r["phone"][-10:] for r in rows if r["phone"]}))
 
     return {
         "status": "ok",
@@ -277,6 +299,147 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
         "owners": owners,  # last-10-digits → the RM who owns the conversation
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
+
+
+# Leads store a formatted phone ("+91 98715 78484") while WhatsApp gives "919871578484",
+# so both sides are reduced to the last 10 digits — the same key leads_sync dedupes on.
+_LEAD_P10 = func.right(func.regexp_replace(Lead.phone, r"\D", "", "g"), 10)
+
+
+async def _annotate(conn, phones10: list[str]) -> tuple[dict, dict, dict]:
+    """last-10-digits → (the lead that exists for it, its mark, its owning RM)."""
+    if not phones10:
+        return {}, {}, {}
+    found = (await conn.execute(
+        select(Lead.id, Lead.name, _LEAD_P10.label("p10")).where(_LEAD_P10.in_(phones10))
+    )).mappings().all()
+    leads = {f["p10"]: {"id": str(f["id"]), "name": f["name"]} for f in found}
+    # hand-applied marks (broker / buyer / seller / rejected), same phone10 key
+    trows = (await conn.execute(
+        select(WaContact.phone10, WaContact.tag, WaContact.assigned_to)
+        .where(WaContact.phone10.in_(phones10))
+    )).mappings().all()
+    tags = {t["phone10"]: t["tag"] for t in trows if t["tag"]}
+    owners = {t["phone10"]: t["assigned_to"] for t in trows if t["assigned_to"]}
+    return leads, tags, owners
+
+
+def _scoped(q, user: dict):
+    scope = _thread_scope(user)
+    return q.where(scope) if scope is not None else q
+
+
+THREADS_PAGE_MAX = 200
+# a conversation whose number has no lead yet — what "Create leads" can act on
+_NO_LEAD = func.right(WaMessage.phone, 10).not_in(
+    select(_LEAD_P10).where(Lead.phone.isnot(None)))
+
+
+@router.get("/gupshup/threads")
+async def gupshup_threads(offset: int = 0, limit: int = 100, user: dict = Depends(current_user)):
+    """One row per CONVERSATION, most recently active first, paged.
+
+    The Chat page used to group /gupshup/messages client-side, and that endpoint stops at
+    THREAD_LIMIT (500) MESSAGES — so it showed ~100 conversations however many existed,
+    and its header count and "Create leads (N)" counted only those. This pages
+    conversations themselves and returns the real totals. The open thread's messages
+    still come from /gupshup/messages?phone=. Same `_thread_scope` as every read here."""
+    settings = get_settings()
+    engine = neon_engine()
+    if engine is None:
+        return {"total": 0, "convertible_total": 0, "send_enabled": False, "items": []}
+    offset, limit = max(0, offset), max(1, min(limit, THREADS_PAGE_MAX))
+    # each conversation's latest message
+    last = _scoped(select(
+        WaMessage.phone, WaMessage.body, WaMessage.direction, WaMessage.msg_type,
+        WaMessage.created_at,
+    ).distinct(WaMessage.phone).order_by(WaMessage.phone, desc(WaMessage.created_at)), user).subquery()
+    async with engine.connect() as conn:
+        rows = (await conn.execute(
+            select(last).order_by(desc(last.c.created_at)).offset(offset).limit(limit)
+        )).mappings().all()
+        total = (await conn.execute(
+            _scoped(select(func.count(func.distinct(WaMessage.phone))), user))).scalar() or 0
+        convertible = (await conn.execute(
+            _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_NO_LEAD), user)
+        )).scalar() or 0
+        phones = [r["phone"] for r in rows]
+        last_in, names = {}, {}
+        if phones:  # already scope-checked: these phones came out of the scoped query
+            last_in = dict((await conn.execute(
+                select(WaMessage.phone, func.max(WaMessage.created_at))
+                .where(WaMessage.direction == "in", WaMessage.phone.in_(phones))
+                .group_by(WaMessage.phone))).all())
+            # the sender name off their newest inbound message that carried one
+            names = dict((await conn.execute(
+                select(WaMessage.phone, WaMessage.name)
+                .where(WaMessage.direction == "in", WaMessage.name.isnot(None),
+                       WaMessage.phone.in_(phones))
+                .distinct(WaMessage.phone).order_by(WaMessage.phone, desc(WaMessage.created_at)))).all())
+        leads, tags, owners = await _annotate(conn, sorted({p[-10:] for p in phones}))
+    iso = lambda d: d.isoformat() if d else None  # noqa: E731
+    return {
+        "total": total,
+        "convertible_total": convertible,
+        "send_enabled": settings.gupshup_send_configured,
+        "items": [{
+            "phone": r["phone"], "name": names.get(r["phone"]),
+            "last_body": r["body"], "last_direction": r["direction"],
+            "last_msg_type": r["msg_type"], "last_at": iso(r["created_at"]),
+            "last_inbound_at": iso(last_in.get(r["phone"])),
+            "lead": leads.get(r["phone"][-10:]), "tag": tags.get(r["phone"][-10:]),
+            "owner": owners.get(r["phone"][-10:]),
+        } for r in rows],
+    }
+
+
+@router.get("/gupshup/threads/convertible")
+async def gupshup_convertible(user: dict = Depends(current_user)):
+    """EVERY conversation with no lead yet, in the list's order — what bulk "Create
+    leads" selects from, so it covers conversations not yet scrolled into view."""
+    engine = neon_engine()
+    if engine is None:
+        return {"phones": []}
+    async with engine.connect() as conn:
+        rows = (await conn.execute(_scoped(
+            select(WaMessage.phone).where(_NO_LEAD).group_by(WaMessage.phone)
+            .order_by(desc(func.max(WaMessage.created_at))), user))).all()
+    return {"phones": [r[0] for r in rows]}
+
+
+@router.get("/gupshup/lead/{lead_id}/transcript")
+async def lead_transcript(lead_id: uuid.UUID, user: dict = Depends(current_user)):
+    """The WhatsApp conversation for one lead — the lead popup's read-only transcript.
+
+    Scoped by the LEAD, not the thread: anyone who can open this lead sees it (same split
+    as /meta/lead/{id}/form). _thread_scope would hide it from the lead's RM whenever the
+    WhatsApp thread is unowned or owned by someone else. A lead the caller can't see
+    returns nothing, exactly like a lead with no conversation.
+
+    Newest THREAD_LIMIT messages, newest first (the client reverses), matched on the
+    phone's last 10 digits."""
+    from .leads import _role_scope  # local: avoids a router↔router import at load time
+
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    where, params = _role_scope(user)
+    async with engine.connect() as conn:
+        row = (await conn.execute(text(
+            f"SELECT phone FROM leads WHERE id = :id AND {where}"),
+            {**params, "id": lead_id})).first()
+        p10 = re.sub(r"\D", "", (row[0] if row else "") or "")[-10:]
+        if len(p10) != 10:
+            return {"items": []}
+        rows = (await conn.execute(
+            select(WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
+                   WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
+                   WaMessage.media_url, WaMessage.media_expiry, WaMessage.media_name,
+                   WaMessage.created_at)
+            .where(func.right(WaMessage.phone, 10) == p10)
+            .order_by(desc(WaMessage.created_at)).limit(THREAD_LIMIT)
+        )).mappings().all()
+    return {"items": [dict(r) | {"id": str(r["id"])} for r in rows]}
 
 
 @router.get("/gupshup/pending")

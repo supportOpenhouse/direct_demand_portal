@@ -165,10 +165,11 @@ export function useInventory() {
 
 /* Polls — the webhook has no push channel to the browser, so an interval is the
    whole sync mechanism. 5s on the conversation, since someone is watching it. */
-export function useWaMessages(phone?: string) {
+export function useWaMessages(phone?: string, enabled = true) {
   return useQuery({
     queryKey: ["wa-messages", phone ?? "all"],
     queryFn: () => api.waMessages(phone),
+    enabled,
     refetchInterval: 5_000,
   });
 }
@@ -259,11 +260,55 @@ export function useCreateWaLead() {
   });
 }
 
+/* The Chat list, 100 conversations a page, more on scroll. Keyed under "wa-messages" on
+   purpose: every WhatsApp mutation already invalidates that prefix, so the list refreshes
+   after a lead/tag/owner change with no extra wiring. */
+/* The lead popup's WhatsApp transcript. Under "wa-messages" so a send or a new inbound
+   refresh refreshes it too; polled gently — it's a record, not the live chat. */
+export function useWaLeadTranscript(leadId: string) {
+  return useQuery({
+    queryKey: ["wa-messages", "lead", leadId],
+    queryFn: () => api.waLeadTranscript(leadId),
+    enabled: !!leadId,
+    refetchInterval: 30_000,
+  });
+}
+
+export function useWaThreads() {
+  return useInfiniteQuery({
+    queryKey: ["wa-messages", "threads"],
+    queryFn: ({ pageParam }) => api.waThreads(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (last, pages) => {
+      const loaded = pages.reduce((n, p) => n + p.items.length, 0);
+      return loaded < last.total && last.items.length ? loaded : undefined;
+    },
+    refetchInterval: 10_000,
+  });
+}
+
+export function useWaConvertible(enabled: boolean) {
+  return useQuery({ queryKey: ["wa-messages", "convertible"], queryFn: api.waConvertible, enabled });
+}
+
+// the bulk endpoint caps one call at 500 phones
+const WA_BULK_CHUNK = 500;
+
 export function useBulkCreateWaLeads() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ phones, assign }: { phones: string[]; assign: boolean }) =>
-      api.waBulkCreateLeads(phones, assign),
+    /* "All" can be more than one call's worth (425 today), so send it in chunks, in
+       order, and add the results up. A failing chunk stops the rest — what already went
+       through is real and stays. */
+    mutationFn: async ({ phones, assign }: { phones: string[]; assign: boolean }) => {
+      const sum = { status: "ok", created: 0, skipped_existing: 0, requested: 0, assigned: 0 };
+      for (let i = 0; i < phones.length; i += WA_BULK_CHUNK) {
+        const r = await api.waBulkCreateLeads(phones.slice(i, i + WA_BULK_CHUNK), assign);
+        sum.created += r.created; sum.skipped_existing += r.skipped_existing;
+        sum.requested += r.requested; sum.assigned += r.assigned;
+      }
+      return sum;
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["wa-messages"] });  // rows become lead-tagged
       qc.invalidateQueries({ queryKey: ["leads"] });

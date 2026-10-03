@@ -360,14 +360,25 @@ async def confirm_lead(lead_id: UUID, payload: ConfirmPayload,
     # would wipe the answer already on file for every lead the next time it's saved. Left
     # out, the columns keep whatever they held.
     async with engine.begin() as conn:
-        exists = await conn.execute(text("SELECT stage FROM leads WHERE id = :id"), {"id": lead_id})
-        if exists.first() is None:
+        exists = (await conn.execute(text(
+            "SELECT l.stage, c.remark FROM leads l "
+            "LEFT JOIN lead_confirmed_data c ON c.lead_id = l.id WHERE l.id = :id"),
+            {"id": lead_id})).first()
+        if exists is None:
             raise HTTPException(status_code=404, detail="lead not found")
         stmt = pg_insert(LeadConfirmedData).values(**values).on_conflict_do_update(
             index_elements=[LeadConfirmedData.lead_id],
             set_={k: v for k, v in values.items() if k != "lead_id"},
         )
         await conn.execute(stmt)
+        # The remark also lands in the Conversation & remarks thread — but only when it
+        # CHANGED: the form re-sends the stored remark on every save, and a copy per save
+        # would fill the thread with repeats.
+        remark = (payload.remark or "").strip()
+        if remark and remark != (exists[1] or "").strip():
+            await conn.execute(pg_insert(LeadNote).values(
+                lead_id=lead_id, body=remark, source="confirm",
+                author=user.get("name") or user.get("email") or "You"))
         # reaching this form means the call connected → never RNR.
         if payload.qualify:
             # → Qualified. follow_up_at is kept so the Qualified page can badge a due

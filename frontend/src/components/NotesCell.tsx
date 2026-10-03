@@ -2,6 +2,7 @@
    the full thread (newest first), fetched lazily only when opened. */
 import { useState } from "react";
 import { useLeadNotes, formatDateTime } from "../lib/queries";
+import { noteOrigin } from "../lib/leads";
 import { IconChevronDown, IconChevronUp } from "./icons";
 
 export function NotesCell({ leadId, latest, count }: { leadId: string; latest: string | null; count: number }) {
@@ -31,7 +32,7 @@ export function NotesCell({ leadId, latest, count }: { leadId: string; latest: s
               <div key={n.id ?? `${i}`} className={"note-line" + (i === 0 ? " first" : "")}>
                 <div className="nl-body">{n.body}</div>
                 <div className="nl-meta">
-                  {n.author || (n.source === "remarks" ? "source" : "—")}
+                  {n.author || "—"}{noteOrigin(n.source) && ` (${noteOrigin(n.source)})`}
                   {n.created_at ? ` · ${formatDateTime(n.created_at)}` : ""}
                 </div>
               </div>

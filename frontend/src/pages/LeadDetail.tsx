@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useWaLeadTranscript } from "../lib/queries";
-import { ALL_STAGES, initials, leadSources, metaQuestionLabel, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { ALL_STAGES, initials, leadSources, metaQuestionLabel, noteOrigin, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { actionStyle, Details, pretty } from "../lib/activity";
@@ -419,8 +419,8 @@ function NotesThread({ id }: { id: string }) {
             <div key={n.id || `seed-${i}`} className={"note-item" + (n.source === "remarks" ? " imported" : "")}>
               <div className="note-text">{n.body}</div>
               <div className="note-meta">
-                {n.author || "—"}{n.created_at ? ` · ${formatDateTime(n.created_at)}` : ""}
-                {n.source === "remarks" && " · imported"}
+                {n.author || "—"}{noteOrigin(n.source) && ` (${noteOrigin(n.source)})`}
+                {n.created_at ? ` · ${formatDateTime(n.created_at)}` : ""}
               </div>
             </div>
           ))

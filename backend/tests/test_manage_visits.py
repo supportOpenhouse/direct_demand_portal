@@ -246,3 +246,41 @@ def test_every_entry_point_normalises_before_it_writes_anything():
         assert 'req.model_copy(update={"selected_time": slot})' in src, \
             f"{fn.__name__} normalises but keeps using the raw value"
         assert "if req.selected_time not in SLOT_VALUES" not in src, f"{fn.__name__} still rejects a spelling"
+
+
+async def test_visit_feedback_is_added_to_the_remarks_thread(monkeypatch):
+    """Completing a visit with feedback writes it into the lead's Conversation & remarks
+    thread (source 'visit'), in the same transaction as the crm_visits mirror. Blank
+    feedback, or a visit with no lead, writes nothing."""
+    import uuid
+
+    from app.services import crm_booking
+
+    lead_id = uuid.uuid4()
+    captured = []
+
+    async def known(_v):
+        return {"lead_id": lead_id, "society": "X"}
+
+    async def core_ok(*_a):
+        return {"status": "ok", "visit": {}}
+
+    async def apply(_v, _sets, _params, _events, note=None):
+        captured.append(note)
+
+    monkeypatch.setattr(visits_router, "_known_visit", known)
+    monkeypatch.setattr(crm_booking, "complete_visit", core_ok)
+    monkeypatch.setattr(visits_router, "_apply", apply)
+    user = {"name": "Asha"}
+
+    await visits_router.complete(1, visits_router.CompleteIn(sales_feedback="  liked the view "), user)
+    assert captured[-1] == {"lead_id": lead_id, "body": "liked the view", "source": "visit", "author": "Asha"}
+
+    await visits_router.complete(1, visits_router.CompleteIn(sales_feedback="   "), user)
+    assert captured[-1] is None
+
+    async def orphan(_v):
+        return {"lead_id": None, "society": "X"}
+    monkeypatch.setattr(visits_router, "_known_visit", orphan)
+    await visits_router.complete(1, visits_router.CompleteIn(sales_feedback="ok"), user)
+    assert captured[-1] is None

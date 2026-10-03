@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..config import get_settings
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
-from ..models import AppVisitData, CrmVisit
+from ..models import AppVisitData, CrmVisit, LeadNote
 from ..services import activity
 from ..services.crm_booking import (
     BROKER_BY_CITY, DEFAULT_SOURCE, SLOT_VALUES, book_visits, canonical_slot,
@@ -295,10 +295,12 @@ async def _known_visit(visit_id: int) -> dict:
     return row
 
 
-async def _apply(visit_id: int, sets: str, params: dict, events: list) -> None:
+async def _apply(visit_id: int, sets: str, params: dict, events: list,
+                 note: dict | None = None) -> None:
     """Mirror a Core change into crm_visits and log it. Fail-soft: the Core call already
     succeeded, and losing our copy must not report the whole action as failed — the sheet
-    sync reconciles it within 30 minutes either way."""
+    sync reconciles it within 30 minutes either way. `note` = a lead_notes row to add in
+    the same transaction."""
     try:
         engine = neon_engine()
         async with engine.begin() as conn:
@@ -306,6 +308,8 @@ async def _apply(visit_id: int, sets: str, params: dict, events: list) -> None:
                                {"v": visit_id, **params})
             if events:
                 await activity.record(conn, events)
+            if note:
+                await conn.execute(pg_insert(LeadNote).values(**note))
     except Exception:  # noqa: BLE001
         log.exception("visit %s: Core updated but our copy didn't", visit_id)
 
@@ -353,12 +357,17 @@ async def complete(visit_id: int, req: CompleteIn, user: dict = Depends(current_
             action="visit_completed",
             metadata={"visit_id": visit_id, "society": row["society"],
                       "lead_status": req.lead_status}))
+    # the feedback also lands in the lead's Conversation & remarks thread
+    feedback = req.sales_feedback.strip()
+    note = ({"lead_id": row["lead_id"], "body": feedback, "source": "visit",
+             "author": user.get("name") or user.get("email") or "You"}
+            if row["lead_id"] and feedback else None)
     # visit_date is Core's — it stamps the day the visit was marked done
     await _apply(visit_id,
                  "status = 'completed', sales_feedback = :f, "
                  "visit_date = coalesce(:d, visit_date), synced_at = now()",
                  {"f": req.sales_feedback or None,
-                  "d": (res.get("visit") or {}).get("visitDate")}, events)
+                  "d": (res.get("visit") or {}).get("visitDate")}, events, note)
     log.info("complete visit=%s lead_status=%s by=%s", visit_id, req.lead_status, user.get("email"))
     return {"ok": True, "visit_id": visit_id, "status": "completed"}
 

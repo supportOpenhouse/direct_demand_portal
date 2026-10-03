@@ -542,6 +542,7 @@ export function useConfirmLead(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["lead", id] });
       qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-notes", id] });  // a changed remark writes a note
     },
   });
 }
@@ -799,6 +800,7 @@ function useVisitAction<V, R>(fn: (v: V) => Promise<R>, leadId?: string) {
       if (leadId) {
         qc.invalidateQueries({ queryKey: ["crm-visits", leadId] });
         qc.invalidateQueries({ queryKey: ["lead", leadId] });
+        qc.invalidateQueries({ queryKey: ["lead-notes", leadId] });  // visit feedback writes a note
       }
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead-counts"] });

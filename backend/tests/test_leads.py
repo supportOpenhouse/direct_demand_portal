@@ -533,6 +533,27 @@ def test_qualified_status_is_written_only_by_a_qualify_move():
     assert "(SELECT qualified_status FROM leads WHERE id=:id)" in body
     assert "field='qualified_status'" in body and "action='update'" in body
 
+def test_confirm_remark_reaches_the_thread_only_when_it_changes():
+    """The confirm form re-sends its stored remark on every save. A note per save would
+    fill Conversation & remarks with repeats, so only a changed, non-blank remark is
+    copied in — compared against the remark on file, read in the same transaction."""
+    body = _body_of("confirm_lead")
+    assert "LEFT JOIN lead_confirmed_data c ON c.lead_id = l.id" in body
+    assert "if remark and remark != (exists[1] or '').strip():" in body
+    assert "source='confirm'" in body
+
+
+def test_every_note_source_has_a_label_in_the_thread():
+    """Conversation & remarks shows where a remark was typed, in brackets, from
+    NOTE_ORIGIN in lib/leads.ts. A source written here without a label there renders as
+    its raw key."""
+    import re
+    from pathlib import Path
+    ts = (Path(__file__).parents[2] / "frontend" / "src" / "lib" / "leads.ts").read_text()
+    block = ts.split("const NOTE_ORIGIN", 1)[1].split("};", 1)[0]
+    assert set(re.findall(r"^\s*(\w+):", block, re.M)) == {"call", "confirm", "visit", "remarks"}
+
+
 # --- lead view telemetry -----------------------------------------------------
 
 def test_lead_viewed_is_deduped_and_never_fails_the_page():

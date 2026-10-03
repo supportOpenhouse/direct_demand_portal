@@ -194,6 +194,18 @@ const STAGE_CLASS: Record<string, string> = {
   rnr: "lost",
 };
 export const stageLabel = (s: string) => STAGE_LABEL[s] || s;
+
+/* Where a Conversation & remarks entry was typed, shown in brackets after the author.
+   Keyed by lead_notes.source. 'note' (typed in the thread itself) has no label — that's
+   where you are reading it. Shared by the popup thread and the table's NotesCell. */
+const NOTE_ORIGIN: Record<string, string> = {
+  call: "Call not connected",
+  confirm: "Lead data confirmed on call",
+  visit: "Visit feedback",
+  remarks: "Source remarks",
+};
+export const noteOrigin = (source: string | null | undefined) =>
+  !source || source === "note" ? null : NOTE_ORIGIN[source] ?? source;
 export const stageClass = (s: string) => STAGE_CLASS[s] || "new";
 
 /* Every lead worklist, in funnel order. A lead lives in exactly one of these

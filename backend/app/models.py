@@ -554,7 +554,7 @@ class LeadNote(Base):
     )
     body: Mapped[str] = mapped_column(Text, nullable=False)
     author: Mapped[str | None] = mapped_column(Text)
-    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="note")  # 'remarks' | 'note'
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="note")  # where it was typed — 'note' (the thread) | 'call' | 'confirm' | 'visit' | 'remarks'; labels in lib/leads.ts NOTE_ORIGIN
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )

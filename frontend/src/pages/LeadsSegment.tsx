@@ -194,7 +194,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
       )}
 
       {selectMode && (
-        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />
+        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount}
+          onSelectAll={sel.selectAll} />
       )}
 
       <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}

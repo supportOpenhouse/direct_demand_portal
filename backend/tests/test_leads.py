@@ -482,8 +482,30 @@ def test_visit_stages_are_set_only_by_a_booking():
     property twice = revisit). The manual setter must refuse both, before the UPDATE."""
     from app.routers.leads import BOOKING_ONLY_STAGES
     assert set(BOOKING_ONLY_STAGES) == {"visit_scheduled", "revisit_scheduled"}
+    assert "BOOKING_ONLY_STAGES" in _body_of("_validate_stage")
     body = _body_of("set_stage")
-    assert body.index("BOOKING_ONLY_STAGES") < body.index("UPDATE leads SET stage=:s")
+    assert body.index("_validate_stage(") < body.index("UPDATE leads SET stage=:s")
+
+
+async def test_bulk_assign_stage_follows_the_manual_stage_rules():
+    """The bulk bar's stage picker goes through the same validator as the Status card —
+    refused before any DB access, so no engine is needed here."""
+    import uuid
+
+    import pytest
+    from fastapi import HTTPException
+
+    from app.routers.leads import BulkAssign, bulk_assign
+    for stage, qs in (("visit_scheduled", None), ("revisit_scheduled", None),
+                      ("qualified", None), ("qualified", "lukewarm"), ("closed", None)):
+        with pytest.raises(HTTPException) as e:
+            await bulk_assign(BulkAssign(lead_ids=[uuid.uuid4()], assigned_to="X",
+                                         stage=stage, qualified_status=qs), {})
+        assert e.value.status_code == 422
+    body = _body_of("bulk_assign")
+    # no stage picked → each lead keeps its own; the column is never blanked
+    assert "stage = coalesce(CAST(:s AS text), stage)" in body
+    assert body.index("_validate_stage(") < body.index("UPDATE leads SET")
 
 
 async def test_qualifying_requires_hot_warm_or_cold():

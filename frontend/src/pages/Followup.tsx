@@ -146,7 +146,8 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
       )}
 
       {selectMode && (
-        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />
+        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount}
+          onSelectAll={sel.selectAll} />
       )}
 
       <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}

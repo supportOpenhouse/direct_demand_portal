@@ -11,8 +11,7 @@ import { COLUMN_BY_ID, type LeadColCtx } from "./columns";
 interface Selection {
   has: (id: string) => boolean;
   toggle: (id: string) => void;
-  toggleAll: () => void;
-  allChecked: boolean;
+  togglePage: (ids: string[]) => void;
 }
 
 export function LeadTable({
@@ -37,6 +36,8 @@ export function LeadTable({
   const columns = cols.map((id) => COLUMN_BY_ID[id]).filter(Boolean);
   const checkbox = selectMode && sel;
   const span = columns.length + (checkbox ? 1 : 0);
+  const pageIds = rows.map((l) => l.id);
+  const pageChecked = !!sel && pageIds.length > 0 && pageIds.every(sel.has);
 
   return (
     <table>
@@ -44,8 +45,8 @@ export function LeadTable({
         <tr>
           {checkbox && (
             <th style={{ width: 30 }}>
-              <input type="checkbox" checked={sel.allChecked} onChange={sel.toggleAll}
-                style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select all" />
+              <input type="checkbox" checked={pageChecked} onChange={() => sel.togglePage(pageIds)}
+                style={{ accentColor: "var(--emerald)", cursor: "pointer" }} title="Select this page" />
             </th>
           )}
           {columns.map((c) => c.sort

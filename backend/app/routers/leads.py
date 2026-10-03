@@ -873,6 +873,20 @@ QUALIFIED_STATUSES = ("hot", "warm", "cold")
 BOOKING_ONLY_STAGES = ("visit_scheduled", "revisit_scheduled")
 
 
+def _validate_stage(stage: str, qualified_status: str | None) -> str | None:
+    """The manual stage rules, shared by the single and the bulk setter. Returns the
+    qualified_status to write — None unless this is a qualify move."""
+    if stage not in STAGES:
+        raise HTTPException(status_code=422, detail={"fields": ["stage"]})
+    if stage in BOOKING_ONLY_STAGES:
+        raise HTTPException(status_code=422, detail="Book a visit to move a lead to this stage")
+    qs = (qualified_status or "").strip().lower() or None
+    if stage == "qualified" and qs not in QUALIFIED_STATUSES:
+        raise HTTPException(status_code=422, detail="Pick Hot, Warm or Cold to qualify a lead")
+    # only a qualify move sets it; any other move leaves the stored value alone
+    return qs if stage == "qualified" else None
+
+
 @router.post("/leads/{lead_id}/stage")
 async def set_stage(lead_id: UUID, payload: StagePayload,
                     user: dict = Depends(current_user)):
@@ -888,15 +902,7 @@ async def set_stage(lead_id: UUID, payload: StagePayload,
     RETURNING rather than from what the client thought the stage was — and a
     no-op (same stage) is not logged at all, or the Reports counts inflate.
     """
-    if payload.stage not in STAGES:
-        raise HTTPException(status_code=422, detail={"fields": ["stage"]})
-    if payload.stage in BOOKING_ONLY_STAGES:
-        raise HTTPException(status_code=422, detail="Book a visit to move a lead to this stage")
-    qs = (payload.qualified_status or "").strip().lower() or None
-    if payload.stage == "qualified" and qs not in QUALIFIED_STATUSES:
-        raise HTTPException(status_code=422, detail="Pick Hot, Warm or Cold to qualify a lead")
-    if payload.stage != "qualified":
-        qs = None  # only a qualify move sets it; any other move leaves the stored value alone
+    qs = _validate_stage(payload.stage, payload.qualified_status)
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
@@ -1227,12 +1233,17 @@ async def assign_lead(lead_id: UUID, payload: AssignPayload,
 class BulkAssign(BaseModel):
     lead_ids: list[UUID]
     assigned_to: str | None = None  # null → unassign all
+    # null → every lead keeps its own stage. Same rules as POST /leads/{id}/stage.
+    stage: str | None = None
+    qualified_status: str | None = None
 
 
 @router.post("/leads/bulk-assign")
 async def bulk_assign(payload: BulkAssign, user: dict = Depends(current_user)):
     if not payload.lead_ids:
         raise HTTPException(status_code=422, detail="no leads selected")
+    stage = payload.stage or None
+    qs = _validate_stage(stage, payload.qualified_status) if stage else None
     engine = neon_engine()
     if engine is None:
         raise HTTPException(status_code=503, detail="Set DATABASE_URL")
@@ -1240,25 +1251,42 @@ async def bulk_assign(payload: BulkAssign, user: dict = Depends(current_user)):
     async with engine.begin() as conn:
         # Read first, so each row's own prior owner is logged — a bulk assign that
         # recorded only "42 leads reassigned" can't answer "who had this one before?".
-        prior = dict((await conn.execute(text(
-            "SELECT id, assigned_to FROM leads WHERE id = ANY(:ids)"),
-            {"ids": payload.lead_ids})).all())
+        prior = {r[0]: r[1:] for r in (await conn.execute(text(
+            "SELECT id, assigned_to, stage, qualified_status FROM leads WHERE id = ANY(:ids)"),
+            {"ids": payload.lead_ids})).all()}
         res = await conn.execute(
             text("UPDATE leads SET assigned_to = :a, "
-                 "assigned_at = CASE WHEN CAST(:a AS text) IS NULL THEN NULL ELSE now() END WHERE id = ANY(:ids)"),
-            {"a": name, "ids": payload.lead_ids},
+                 "assigned_at = CASE WHEN CAST(:a AS text) IS NULL THEN NULL ELSE now() END, "
+                 "stage = coalesce(CAST(:s AS text), stage), "
+                 "qualified_status = coalesce(CAST(:qs AS text), qualified_status) "
+                 "WHERE id = ANY(:ids)"),
+            {"a": name, "s": stage, "qs": qs, "ids": payload.lead_ids},
         )
         actor = activity.Actor.of(user)
-        await activity.record(conn, [
+        # marks each row as part of one action, so the Logs page can collapse 42 rows
+        # into one line if it ever wants to
+        bulk = {"bulk": len(payload.lead_ids)}
+        rows = [
             activity.row_for(actor, entity_type="lead", entity_id=lid,
                              action="assigned", field="assigned_to",
-                             before=before, after=name,
-                             # marks the row as part of one action, so the Logs page can
-                             # collapse 42 rows into one line if it ever wants to
-                             metadata={"bulk": len(payload.lead_ids)})
-            for lid, before in prior.items() if before != name
-        ])
-    return {"status": "ok", "updated": res.rowcount, "assigned_to": name}
+                             before=owner, after=name, metadata=bulk)
+            for lid, (owner, _, _) in prior.items() if owner != name
+        ]
+        if stage:
+            # logged exactly as the single setter logs: a real move is a stage_change
+            # (Reports counts those), a warmth re-pick on a qualified lead is an update
+            meta = bulk | {"manual": True} | ({"qualified_status": qs} if qs else {})
+            for lid, (_, before, qs_before) in prior.items():
+                if before != stage:
+                    rows.append(activity.row_for(
+                        actor, entity_type="lead", entity_id=lid, action="stage_change",
+                        field="stage", before=before, after=stage, metadata=meta))
+                elif qs and qs != qs_before:
+                    rows.append(activity.row_for(
+                        actor, entity_type="lead", entity_id=lid, action="update",
+                        field="qualified_status", before=qs_before, after=qs, metadata=bulk))
+        await activity.record(conn, rows)
+    return {"status": "ok", "updated": res.rowcount, "assigned_to": name, "stage": stage}
 
 
 # --- master_societies autocomplete -------------------------------------------

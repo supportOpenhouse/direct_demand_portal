@@ -125,7 +125,8 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
 
       {/* Same reason as the boxes: "of N" climbed while segments were still arriving. */}
       {selectMode && (
-        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount} />
+        <BulkAssignBar ids={sel.activeIds} onDone={sel.clear} total={sel.visibleCount}
+          onSelectAll={sel.selectAll} />
       )}
 
       {!isLoading && <Pager page={pg.page} pages={pg.pages} size={pg.size} total={list.length} onPage={pg.setPage}

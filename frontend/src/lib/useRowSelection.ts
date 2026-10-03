@@ -7,7 +7,6 @@ export function useRowSelection(visibleIds: string[]) {
   const visibleSet = useMemo(() => new Set(visibleIds), [visibleIds]);
   // only count selections that are still visible under the current filters
   const activeIds = useMemo(() => [...selected].filter((id) => visibleSet.has(id)), [selected, visibleSet]);
-  const allChecked = visibleIds.length > 0 && activeIds.length === visibleIds.length;
 
   const toggle = (id: string) =>
     setSelected((s) => {
@@ -16,13 +15,17 @@ export function useRowSelection(visibleIds: string[]) {
       return n;
     });
 
-  const toggleAll = () =>
+  /* The header checkbox: ticks / unticks only the ids passed — the page on screen —
+     and leaves the rest of the selection alone. `selectAll` is the whole filtered list. */
+  const togglePage = (ids: string[]) =>
     setSelected((s) => {
       const n = new Set(s);
-      if (allChecked) visibleIds.forEach((id) => n.delete(id));
-      else visibleIds.forEach((id) => n.add(id));
+      const on = ids.every((id) => n.has(id));
+      ids.forEach((id) => (on ? n.delete(id) : n.add(id)));
       return n;
     });
+
+  const selectAll = () => setSelected(new Set(visibleIds));
 
   const clear = () => setSelected(new Set());
 
@@ -33,6 +36,6 @@ export function useRowSelection(visibleIds: string[]) {
   const selectFirst = (n: number) => setSelected(new Set(visibleIds.slice(0, n)));
 
   return { selected, activeIds, count: activeIds.length, visibleCount: visibleIds.length,
-           allChecked, toggle, toggleAll, clear, selectFirst,
+           toggle, togglePage, selectAll, clear, selectFirst,
            has: (id: string) => selected.has(id) };
 }

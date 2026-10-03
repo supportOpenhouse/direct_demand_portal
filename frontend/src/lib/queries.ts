@@ -513,9 +513,12 @@ export function useAssignLead() {
 export function useBulkAssign() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ ids, assigned_to }: { ids: string[]; assigned_to: string | null }) => api.bulkAssign(ids, assigned_to),
+    mutationFn: ({ ids, assigned_to, stage, qualified_status }:
+      { ids: string[]; assigned_to: string | null; stage?: string; qualified_status?: string }) =>
+      api.bulkAssign(ids, assigned_to, stage, qualified_status),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leads"] });
+      qc.invalidateQueries({ queryKey: ["lead-counts"] });  // a stage move shifts the page counts
     },
   });
 }

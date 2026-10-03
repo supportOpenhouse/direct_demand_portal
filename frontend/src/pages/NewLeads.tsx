@@ -59,8 +59,8 @@ export default function NewLeads() {
     leadMatchesQuery(q, l);
   const filtered = all.filter((l) => pass(l));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
-  // NEW-badge leads on top, the chosen sort within each group
-  const list = newFirst(sortedRows);
+  // NEW-badge leads on top in the default order only; a column sort is applied as-is
+  const list = sortKey ? sortedRows : newFirst(sortedRows);
   const rowOpen = useRowOpen();
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();

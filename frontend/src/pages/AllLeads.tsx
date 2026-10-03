@@ -63,8 +63,8 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
 
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort(filtered, LEAD_SORTERS);
 
-  // NEW-badge leads on top, the chosen sort within each group
-  const list = newFirst(sortedRows);
+  // NEW-badge leads on top in the default order only; a column sort is applied as-is
+  const list = sortKey ? sortedRows : newFirst(sortedRows);
 
   const totalPassing = all.filter((l) => pass(l, "seg")).length;
   /* 4,000 rows in one DOM table is a scroll nobody finishes and a slow first

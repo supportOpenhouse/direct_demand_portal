@@ -147,8 +147,8 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   const warmthBoxes = WARMTH_BOXES.map((b) => ({
     ...b, count: warmthScope.filter((l) => warmthOf(l) === b.key).length }));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
-  // NEW-badge leads on top, the chosen sort within each group
-  const list = newFirst(sortedRows);
+  // NEW-badge leads on top in the default order only; a column sort is applied as-is
+  const list = sortKey ? sortedRows : newFirst(sortedRows);
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();
   const pg = usePaging(list);

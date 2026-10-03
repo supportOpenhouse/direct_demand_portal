@@ -93,34 +93,26 @@ const STAGE_LABEL: Record<string, string> = {
 /* Every stage a lead can hold, in funnel order. Mirrors the backend's STAGES
    tuple in routers/leads.py — the manual stage setter validates against that, so
    a value here that is missing there is a 422 the user cannot explain. */
-/* The starburst NEW badge: this lead ARRIVED or was ASSIGNED today.
+/* The starburst NEW badge: this lead was ASSIGNED today — nothing else (3 Oct).
+   Arriving today or moving into its current stage today no longer counts: a lead handed
+   to you this morning is the row you want marked, and the other two put the badge on
+   leads nobody had just been given.
 
    On the IST calendar, not the browser's — a UTC boundary rolls the day at 05:30
-   IST, mid-shift, so an RM abroad would see a different "today" than Delhi does.
-
-   Assigned counts as well as received: a lead handed to you this morning is new TO
-   YOU even if it came in last week, and that is the row you want marked. */
+   IST, mid-shift, so an RM abroad would see a different "today" than Delhi does. */
 const IST_OFFSET_MIN = 330;
 const istDayOf = (iso: string) =>
   new Date(new Date(iso).getTime() + IST_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
 const todayIST = () =>
   new Date(Date.now() + IST_OFFSET_MIN * 60_000).toISOString().slice(0, 10);
 
-export function isNewToday(l: {
-  received_at?: string | null; assigned_at?: string | null;
-  stage?: string; stage_changed_at?: string | null;
-}): boolean {
-  const t = todayIST();
-  return (!!l.received_at && istDayOf(l.received_at) === t)
-      || (!!l.assigned_at && istDayOf(l.assigned_at) === t)
-      // moved into its CURRENT stage today — any stage: a lead that reached Qualified this
-      // morning is new to the Qualified list, and a repeat arrival reset to New keeps its
-      // old received_at, so without this both would read as stale leads
-      || (!!l.stage_changed_at && istDayOf(l.stage_changed_at) === t);
+export function isNewToday(l: { assigned_at?: string | null }): boolean {
+  return !!l.assigned_at && istDayOf(l.assigned_at) === todayIST();
 }
 
-/** Rows carrying the NEW badge first, the rest after. Each group keeps the order it
-    arrived in — the page's own sort — so a column sort still applies within both. */
+/** Rows carrying the NEW badge first, the rest after, each group in the order it arrived.
+    The page's DEFAULT order only — a column sort must be applied without it, or the
+    badged rows sit on top of e.g. a "Created on" sort. */
 export const newFirst = <T extends Parameters<typeof isNewToday>[0]>(rows: T[]): T[] =>
   [...rows.filter((r) => isNewToday(r)), ...rows.filter((r) => !isNewToday(r))];
 

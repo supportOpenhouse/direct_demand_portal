@@ -80,7 +80,7 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
        1 follow-up due today
        2 overdue  — due before today, latest → oldest (freshest misses first)
        3 upcoming — due later, soonest first
-     Picking a column header still overrides all of this. */
+     Picking a column header drops all of this (and the NEW-first grouping). */
   const dayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()).getTime();
   const rank = (l: Lead): number => {
     if (isToday(l.follow_up_since)) return 0;
@@ -95,9 +95,10 @@ export default function Followup({ segment = "followup" }: { segment?: string } 
     const tb = b.follow_up_at ? Date.parse(b.follow_up_at) : 0;
     return ra === 2 ? tb - ta : ta - tb; // overdue: latest first · others: soonest first
   });
-  const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(ordered, LEAD_SORTERS);
-  // NEW-badge leads on top; the callback ranking above still orders each group
-  const list = newFirst(sortedRows);
+  const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
+  // NEW-badge leads on top + the callback ranking above: the DEFAULT order only. A column
+  // sort is applied to the plain filtered list, so neither leaks in even as a tie-break.
+  const list = sortKey ? sortedRows : newFirst(ordered);
   const rowOpen = useRowOpen();
   // every assignable RM, so the filter can ask about one with no rows here
   const assignees = useAssignees();

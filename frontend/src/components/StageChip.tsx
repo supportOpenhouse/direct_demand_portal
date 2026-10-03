@@ -36,9 +36,9 @@ export function NewBadge({ size = 22, className = "", style }: {
    A component rather than a repeated span — the chip was written out at six call
    sites, so any change to it had six places to miss.
 
-   NOTE: the starburst NewBadge is NOT a stage. It marks a lead that arrived or was
-   assigned TODAY, which is true of leads in several stages and false of most leads
-   in stage `new`. See `isNewToday` in lib/leads.ts. */
+   NOTE: the starburst NewBadge is NOT a stage. It marks a lead that was ASSIGNED
+   TODAY, which is true of leads in several stages and false of most leads in stage
+   `new`. See `isNewToday` in lib/leads.ts. */
 export function StageChip({ stage, className = "", style }: {
   stage: string;
   className?: string;

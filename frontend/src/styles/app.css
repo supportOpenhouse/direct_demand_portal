@@ -657,6 +657,9 @@ tr.lead-row:hover{background-color:var(--panel-2)}
   background:var(--panel-2);color:var(--ink);outline:0;transition:var(--t);
 }
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--emerald);background:var(--panel);box-shadow:0 0 0 3px var(--emerald-soft)}
+/* A disabled box has to LOOK locked: the rule above sets background and colour, which override the
+   browser's own disabled styling, so without this a locked field reads as editable. */
+.field input:disabled,.field textarea:disabled{color:var(--muted);cursor:not-allowed}
 .field.invalid input,.field.invalid select{border-color:var(--coral);background:var(--coral-soft)}
 /* minmax(0,…): a bare 1fr column can't shrink below its content, so one long value
    widens the whole grid — same fix .three already had */
@@ -2752,3 +2755,66 @@ td.lead-cell .nm{
   background: var(--qs-soft); color: var(--qs); font: inherit; font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em; cursor: pointer;
 }
+
+/* WhatsApp Campaigns page (.wc-*) — spec §9 */
+.wc-head{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.wc-bar{display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px}
+.wc-sub{font-size:11.5px;color:var(--muted);max-width:420px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wc-hint{font-size:11.5px;color:var(--muted);margin-top:5px}
+.wc-hint.bad{color:var(--coral)}
+.wc-preview{margin-top:10px;padding:10px 12px;border-radius:var(--radius);background:var(--panel-2);font-size:13px;white-space:pre-wrap;color:var(--ink-2)}
+.wc-check{display:flex;align-items:center;gap:6px;font-size:13px}
+.wc-chip{display:inline-block;margin-left:4px;padding:2px 8px;border-radius:999px;font-size:10.5px;font-weight:700;background:var(--panel-2);color:var(--ink-2)}
+.wc-chip.on{background:var(--emerald-soft);color:var(--emerald)}
+.wc-chip.off{background:var(--coral-soft);color:var(--coral)}
+/* the Gupshup id: a 36-character UUID reads as an identifier, so mono like a phone number
+   (.ph only styles under .who / .phone-cell, so it can't be reused on a td) */
+.wc-id{font-family:var(--font-mono);font-size:12px;color:var(--ink-2)}
+
+/* Campaigns tab + the New campaign panel (.wc-*) */
+.wc-new{margin-bottom:14px}
+.wc-new-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:6px}
+.wc-step{margin-top:20px}
+.wc-step > h4{margin:0 0 10px;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+.wc-src{margin-top:14px}
+.wc-radios{display:flex;gap:18px;flex-wrap:wrap;margin-bottom:4px}
+/* a hint that sits on the same line as the button it explains (.wc-hint alone is a block under its field) */
+.wc-inline{display:inline-block;margin:0 0 0 12px}
+/* The file picker: the real <input type=file> laid transparently over a button, so it keeps its focus ring
+   and keyboard operation (a display:none input can't be tabbed to) and the label shows the focus instead. */
+.wc-file{display:flex;align-items:center;gap:12px}
+.wc-file-btn{position:relative;cursor:pointer}
+.wc-file-btn input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+.wc-file-btn:focus-within{outline:2px solid var(--brand);outline-offset:2px}
+.wc-file-name{font-size:13px;color:var(--ink-2)}
+/* the check's results. The count boxes are .count-pill, which is a BUTTON elsewhere — these only display, so
+   they drop the pointer and the hover border that say "click me". A result for inputs that have since changed
+   is faded: still readable, visibly not what Save would use. */
+.wc-results{margin-top:14px;transition:opacity var(--t)}
+.wc-stale{opacity:.5}
+.wc-count{cursor:default}
+.wc-count:hover{border-color:var(--line)}
+.wc-warn{margin-top:10px;padding:10px 12px;border-radius:var(--radius);border-left:3px solid var(--amber);
+  background:var(--amber-soft);color:var(--amber-deep);font-size:12.5px}
+.wc-rows{margin-top:8px;max-height:340px}
+.wc-table .wc-chip{margin-left:0}
+.wc-chip.blue{background:var(--blue-soft);color:var(--blue)}
+.wc-chip.amber{background:var(--amber-soft);color:var(--amber-deep)}
+th.wc-num,td.wc-num{text-align:right;font-variant-numeric:tabular-nums}
+td.wc-num.zero{color:var(--muted)}
+td.wc-num.bad{color:var(--coral);font-weight:700}
+.wc-link{font-weight:700;color:var(--ink);text-decoration:none}
+.wc-link:hover{color:var(--brand);text-decoration:underline}
+/* a campaign message inside a chat thread: marked, so it isn't mistaken for something an RM typed */
+.wa-tpl-tag{display:block;margin-bottom:3px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+.wc-detail-head{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.wc-detail-head .sec-title{margin:0}
+.wc-row{cursor:pointer;transition:background-color var(--t)}
+.wc-row:hover{background-color:var(--panel-2)}
+.wc-chip.gold{background:var(--gold-soft);color:var(--gold-deep)}
+.wc-chip.slate{background:var(--slate-soft);color:var(--slate)}
+a.back{text-decoration:none}
+
+/* WhatsApp page: the +1 tag (this number also writes to the other app) and the campaign line in template view */
+.wa-plus1{margin-left:6px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:800;background:var(--coral-soft);color:var(--coral);border:1px solid var(--coral)}
+.wa-campaign-line{font-size:11px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

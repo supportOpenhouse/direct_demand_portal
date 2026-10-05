@@ -515,8 +515,10 @@ export interface WaPending {
 }
 
 /* What a WhatsApp number turned out to be, marked by hand from the chat. */
-export type WaTag = "broker" | "buyer" | "seller" | "rejected";
-export const WA_TAGS: WaTag[] = ["broker", "buyer", "seller", "rejected"];
+export type WaTag = "broker" | "buyer" | "seller" | "rejected" | "opted_out";
+export const WA_TAGS: WaTag[] = ["broker", "buyer", "seller", "rejected", "opted_out"];
+// the tags that paint red (the row, the chip): both mean "do not work this number"
+export const WA_RED_TAGS: WaTag[] = ["rejected", "opted_out"];
 
 export interface WaThreadRow {
   phone: string;
@@ -529,7 +531,267 @@ export interface WaThreadRow {
   lead: { id: string; name: string | null } | null;
   tag: WaTag | null;
   owner: string | null;
+  both: boolean;                       // wrote to us through BOTH numbers (the +1 tag)
+  last_campaign: string | null;        // template view only: the newest campaign that messaged them
 }
+
+export type WaView = "chat" | "template";
+
+export interface WaTemplate {
+  id: string;
+  gupshup_template_id: string;
+  name: string;
+  language: string;
+  category: string | null;
+  body: string;
+  variable_count: number;
+  variable_labels: string[];
+  variable_defaults: (string | null)[];
+  buttons: string[];
+  active: boolean;
+  used: boolean;          // ANY campaign references it, drafts included (not "was sent") → body / gupshup id are locked
+}
+export type WaTemplateIn = Omit<WaTemplate, "id" | "variable_count" | "used">;
+
+/* The ONE definition of a template slot — {{1}}, {{ 2 }} — shared by the counter below and by the
+   form's preview, so the preview can never fill a slot the counter says isn't there. ASCII-only
+   like the backend's VAR_RE (re.ASCII): JS \d already is, and the whitespace inside the braces is
+   spelled out because JS \s also matches NBSP and friends. A function, not a constant: a global
+   RegExp keeps `lastIndex` between .test() / .exec() calls, so each caller gets a fresh one.
+   Capture group 1 is the slot number. */
+export const slotRe = () => /\{\{[ \t\n\r\f\v]*(\d+)[ \t\n\r\f\v]*\}\}/g;
+
+/* Same rule as services/wa_templates.variable_count: the distinct slots, in order of FIRST
+   appearance, must be exactly {{1}}, {{2}}, … {{n}} — no gap, no {{0}}, and no {{2}} before {{1}}
+   (Gupshup fills `params` in the order the placeholders occur — contract §1.3). A slot may repeat
+   once it has appeared. Returns -1 when the rule fails so the form can say so before the server
+   does. Pinned to the server by scripts/wa-template-cases.json (see check-wa-templates.mjs and
+   backend/tests/test_wa_template_mirror.py). */
+export function templateVars(body: string): number {
+  const first: number[] = [];   // distinct slots, in the order each first appears
+  for (const m of body.matchAll(slotRe())) {
+    const k = Number(m[1]);
+    if (!first.includes(k)) first.push(k);
+  }
+  return first.every((k, i) => k === i + 1) ? first.length : -1;
+}
+
+/* Same shape check as services/wa_templates.GUPSHUP_ID_RE (contract Delta 17): the Gupshup
+   template UUID — never the template's name and never Meta's numeric id. Pinned to the server by
+   the same case table as templateVars. */
+export const isGupshupTemplateId = (v: string) => /^[0-9a-fA-F-]{32,40}$/.test(v.trim());
+
+/* ── WhatsApp template campaigns: building a list, and the campaigns list (spec §5, §9) ──
+   Every shape below is the same contract written twice — here, and as the pydantic model / SQL that serves it —
+   and backend/tests/test_wa_campaigns.py fails when the two drift. Nested shapes are named interfaces (one key per
+   line) so that test can read them. */
+
+// the four ways a manual list is built; an auto run (source "auto") only ever appears on a campaign ROW
+export type WaSource = "upload" | "paste" | "wa_contacts" | "repeat";
+
+// POST /v1/wa-campaigns/preview — routers/wa_campaigns.PreviewIn
+export interface WaPreviewIn {
+  template_id: string;
+  source: WaSource;
+  file_name: string | null;
+  file_b64: string | null;                         // the whole file, base64 (the server caps it at ~10 MB of file)
+  paste: string | null;
+  repeat_of: string | null;                        // the campaign whose list to copy
+  repeat_mode: "everyone" | "non_responders";
+  phone_col: number;                               // 0-based column indices into the upload's rows
+  name_col: number | null;
+  var_cols: (number | null)[];                     // per template slot: its column, or null = use `fixed`
+  fixed: (string | null)[];                        // per template slot: the same text for everyone
+  cooldown_days: number;
+}
+
+// POST /v1/wa-campaigns — the same body plus the draft's own settings (routers/wa_campaigns.CreateIn)
+export interface WaCreateIn extends WaPreviewIn {
+  name: string;
+  send_window_start: string;                       // "HH:MM", zero-padded, IST — compared as text server-side
+  send_window_end: string;
+  rate_per_minute: number;
+}
+
+export type WaRowStatus = "valid" | "invalid" | "duplicate" | "skipped";
+
+export interface WaPreviewRow {
+  phone10: string | null;                          // null when the phone could not be read at all
+  name: string | null;
+  variables: (string | null)[];
+  status: WaRowStatus;
+  reason: string | null;                           // a WA_REASON_LABEL key; null for a valid row
+}
+
+export interface WaPreviewCounts {
+  valid: number;
+  invalid: number;
+  duplicate: number;
+  skipped: number;
+}
+
+export interface WaPreview {
+  headers: string[];                               // the upload's header row ([] for every other source)
+  counts: WaPreviewCounts;                         // over EVERY row of the list
+  rows: WaPreviewRow[];                            // only the first 200, in list order
+  samples: string[];                               // up to 5 messages, rendered exactly as recipients will see them
+  over_daily_limit: boolean;
+  daily_limit: number;
+}
+
+/* Why a row is not "valid" — the ONE wording, so the preview and any later screen can't describe a reason two
+   ways. The keys are the server's: build() gives invalid_phone / missing_variable / duplicate, EXCLUDE_SQL the
+   five skip reasons. "N" in the cooldown label is the cooldown in days (waReasonLabel fills it in). */
+export const WA_REASON_LABEL: Record<string, string> = {
+  invalid_phone: "Not a valid Indian mobile",
+  missing_variable: "A variable is blank",
+  duplicate: "Already in this list",
+  opted_out: "Opted out",
+  rejected: "Marked rejected",
+  is_lead: "Already a lead",
+  no_whatsapp: "Not on WhatsApp",
+  cooldown: "Messaged in the last N days",
+};
+
+export function waReasonLabel(reason: string | null, cooldownDays: number | null): string {
+  if (reason == null) return "";
+  const label = WA_REASON_LABEL[reason] ?? reason;      // a reason added server-side shows as itself, not as nothing
+  if (reason !== "cooldown") return label;
+  // null = a stored campaign (its cooldown isn't sent with it): say "recently" rather than print a number that may be wrong
+  return cooldownDays == null ? label.replace("in the last N days", "recently")
+    : label.replace("N days", cooldownDays === 1 ? "1 day" : `${cooldownDays} days`);
+}
+
+/* GET /v1/wa-campaigns: the funnel of one campaign, computed from its recipients on every read (never stored).
+   sent ⊇ delivered ⊇ read. `accepted` = Gupshup took the send (2xx) and no `sent` receipt has arrived yet — a
+   column that never drains means the template app isn't subscribed to the sent / delivered / read events
+   (contract §0 rule 4). `unknown` = rows stuck in `submitted`: claimed, the outcome never recorded. */
+export interface WaFunnel {
+  recipients: number;
+  queued: number;
+  accepted: number;
+  sent: number;
+  delivered: number;
+  read: number;
+  failed: number;
+  skipped: number;
+  unknown: number;
+  replied: number;
+  no_reply: number;   // accepted/sent/delivered/read with no reply credited — the server decides, same rule as the table filter
+}
+
+// one campaign in the list: a manual one, or one run of an auto campaign (source "auto")
+export interface WaCampaignRow {
+  id: string;
+  name: string;
+  template_name: string;
+  source: WaSource | "auto";
+  status: string;                                  // draft | sending | paused | done | cancelled
+  created_at: string;
+  launched_at: string | null;
+  finished_at: string | null;
+  auto_campaign_id: string | null;
+  repeat_of: string | null;
+  counts: WaFunnel;
+}
+
+/* GET /v1/wa-campaigns/{id} — one campaign, its funnel, and the per-button tallies of quick-reply taps. */
+export interface WaCampaignInfo {
+  id: string;
+  name: string;
+  source: WaSource | "auto";
+  status: string;                                  // draft | sending | paused | done | cancelled
+  status_note: string | null;                      // why Gupshup's error auto-paused it (contract Delta 11)
+  created_at: string;
+  launched_at: string | null;
+  finished_at: string | null;
+  auto_campaign_id: string | null;
+  repeat_of: string | null;
+  send_window_start: string;
+  send_window_end: string;
+  rate_per_minute: number;
+  template_name: string;
+  template_body: string;
+  template_buttons: string[];
+}
+
+export interface WaCampaignDetail {
+  campaign: WaCampaignInfo;
+  counts: WaFunnel;
+  buttons: Record<string, number>;                 // button text → taps
+}
+
+/* One row of GET /v1/wa-campaigns/{id}/recipients. `status` is the ladder queued → submitted ("Unknown — check")
+   → accepted → sent → delivered → read, plus failed / skipped. */
+export interface WaRecipientRow {
+  id: string;
+  phone10: string;
+  name: string | null;
+  variables: string[];
+  status: string;
+  skip_reason: string | null;
+  error: string | null;
+  owner: string | null;
+  sent_at: string | null;
+  status_at: string | null;
+  first_reply: string | null;
+  replied_at: string | null;
+  replies: number;
+  button: string | null;
+}
+
+// the box keys on the detail page = the server's ?status= values
+export type WaRecipientFilter =
+  "accepted" | "sent" | "delivered" | "read" | "replied" | "no_reply" | "failed" | "skipped" | "submitted";
+export type WaCampaignAction = "launch" | "pause" | "resume" | "cancel";
+
+/* GET /v1/wa-campaigns/auto — one auto-campaign definition. `next_slot` is a date ("YYYY-MM-DD", IST) and `run_at`
+   the time of day it fires; the cron turns a due slot into an ordinary campaign run (its funnel is `last_run.counts`).
+   `status_note` says why it switched itself off ("finished — no one left to message"). */
+export interface WaAuto {
+  id: string;
+  name: string;
+  template_id: string;
+  template_name: string;
+  seed_campaign_id: string;
+  repeat_mode: "everyone" | "non_responders";
+  every_days: number;
+  run_at: string;                                  // "HH:MM"
+  next_slot: string;
+  cooldown_days: number;
+  max_runs: number | null;
+  send_window_start?: string;
+  send_window_end?: string;
+  rate_per_minute?: number;
+  active: boolean;
+  status_note: string | null;
+  last_run: { id: string; name: string; counts: WaFunnel } | null;
+}
+
+// POST /v1/wa-campaigns/auto, PATCH /auto/{id} — routers/wa_campaigns.AutoIn (a new one is saved inactive)
+export interface WaAutoIn {
+  name: string;
+  template_id: string;
+  seed_campaign_id: string;
+  repeat_mode: "everyone" | "non_responders";
+  every_days: number;
+  run_at: string;
+  start_on: string;                                // the first slot, "YYYY-MM-DD"
+  cooldown_days: number;
+  max_runs: number | null;
+  send_window_start: string;
+  send_window_end: string;
+  rate_per_minute: number;
+}
+
+// POST /auto/dry-run — who the next run WOULD message under the form's CURRENT values; writes nothing
+export interface WaAutoDryRun {
+  counts: Partial<WaPreviewCounts>;
+  samples: string[];
+  over_daily_limit: boolean;
+  daily_limit: number;
+}
+export type WaAutoAction = "activate" | "deactivate" | "run-now";
 
 export interface WaMessage {
   id: string;
@@ -544,6 +806,9 @@ export interface WaMessage {
   media_expiry: string | null;
   media_name: string | null;     // documents carry a filename
   created_at: string;
+  // which Gupshup app the message went through: "template" = the template number, null = the chat number.
+  // Optional: a backend that predates the template app doesn't send it.
+  source_app?: string | null;
 }
 
 /* One Meta lead-ads webhook delivery, and what became of it.
@@ -658,6 +923,9 @@ export const api = {
       tags: Record<string, WaTag>;                                 // last-10-digits → mark
       owners: Record<string, string>;                              // last-10-digits → owning RM
       items: WaMessage[];
+      // which of our two numbers a reply to this thread leaves from — the one the customer last wrote to
+      // (WhatsApp's 24 h window is per business number). Sent only when `phone` is given.
+      reply_app?: "template" | "chat";
     }>("/v1/gupshup/messages" + (phone ? `?phone=${encodeURIComponent(phone)}` : "")),
   waAssign: (phone: string, assigned_to: string | null) =>
     request<{ status: string; assigned_to: string | null }>("/v1/gupshup/assign", {
@@ -688,11 +956,64 @@ export const api = {
      `assign` copies each conversation's RM onto its lead (assigning an unowned thread
      first); omitted, the leads land unassigned. */
   // one row per conversation, paged — the Chat page's list (real totals, not a 500-message window)
-  waThreads: (offset: number, limit = 100) =>
+  waThreads: (offset: number, limit = 100, view: WaView = "chat") =>
     request<{ total: number; convertible_total: number; send_enabled: boolean; items: WaThreadRow[] }>(
-      `/v1/gupshup/threads?offset=${offset}&limit=${limit}`),
+      `/v1/gupshup/threads?offset=${offset}&limit=${limit}&view=${view}`),
   // every conversation with no lead yet, in list order — bulk "Create leads" picks from this
-  waConvertible: () => request<{ phones: string[] }>("/v1/gupshup/threads/convertible"),
+  waConvertible: (view: WaView = "chat") => request<{ phones: string[] }>(`/v1/gupshup/threads/convertible?view=${view}`),
+  // --- WhatsApp template campaigns (admin) ---
+  waTemplates: () => request<{ items: WaTemplate[] }>("/v1/wa-campaigns/templates"),
+  waTemplateCreate: (t: WaTemplateIn) =>
+    request<{ id: string }>("/v1/wa-campaigns/templates", { method: "POST", body: JSON.stringify(t) }),
+  waTemplateEdit: (id: string, t: WaTemplateIn) =>
+    request<{ status: string }>(`/v1/wa-campaigns/templates/${id}`, { method: "PATCH", body: JSON.stringify(t) }),
+  // validate a list and count it — writes nothing (a draft is only created by waCreateCampaign)
+  waPreview: (p: WaPreviewIn) =>
+    request<WaPreview>("/v1/wa-campaigns/preview", { method: "POST", body: JSON.stringify(p) }),
+  waCreateCampaign: (p: WaCreateIn) =>
+    request<{ id: string }>("/v1/wa-campaigns", { method: "POST", body: JSON.stringify(p) }),
+  // the newest 200 campaigns (manual + auto runs), each with its funnel
+  waCampaigns: () => request<{ items: WaCampaignRow[] }>("/v1/wa-campaigns"),
+  waCampaign: (id: string) => request<WaCampaignDetail>(`/v1/wa-campaigns/${id}`),
+  waCampaignRecipients: async (id: string, status?: WaRecipientFilter) => {
+    const qs = status ? `?status=${status}` : "";
+    return (await request<{ items: WaRecipientRow[] }>(`/v1/wa-campaigns/${id}/recipients${qs}`)).items;
+  },
+  // a 503 names the missing template-app env vars; a 409 is an illegal move (e.g. pausing a draft)
+  waCampaignAction: (id: string, action: WaCampaignAction) =>
+    request<{ status: string }>(`/v1/wa-campaigns/${id}/${action}`, { method: "POST" }),
+  // --- auto campaigns ---
+  waAutos: () => request<{ items: WaAuto[] }>("/v1/wa-campaigns/auto"),
+  waAutoSave: (id: string | undefined, body: WaAutoIn) =>
+    id ? request<{ status: string }>(`/v1/wa-campaigns/auto/${id}`, { method: "PATCH", body: JSON.stringify(body) })
+       : request<{ id: string }>("/v1/wa-campaigns/auto", { method: "POST", body: JSON.stringify(body) }),
+  waAutoDryRun: (body: WaAutoIn) =>
+    request<WaAutoDryRun>("/v1/wa-campaigns/auto/dry-run", { method: "POST", body: JSON.stringify(body) }),
+  waAutoAction: (id: string, action: WaAutoAction) =>
+    request<Record<string, unknown>>(`/v1/wa-campaigns/auto/${id}/${action}`, { method: "POST" }),
+  // a 409 carries the reason the server won't retry it (opted out, no WhatsApp, Meta's 24 h marketing cap)
+  waRetryRecipient: (id: string, rid: string) =>
+    request<{ status: string }>(`/v1/wa-campaigns/${id}/recipients/${rid}/retry`, { method: "POST" }),
+  /* CSV via fetch → blob with the Bearer header, like the Activity Logs export — never a ?token= link. */
+  waCampaignExport: async (id: string, fallbackName: string) => {
+    const token = getToken();
+    const res = await fetch(`${API_URL}/v1/wa-campaigns/${id}/export`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(typeof body?.detail === "string" ? body.detail : `export failed (${res.status})`);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    const star = cd.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+    const plain = cd.match(/filename="([^"]+)"/i)?.[1];
+    const url = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = star ? decodeURIComponent(star) : plain || `${fallbackName}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
   waBulkCreateLeads: (phones: string[], assign = false) =>
     request<{ status: string; created: number; skipped_existing: number;
               requested: number; assigned: number }>("/v1/gupshup/leads/bulk", {

@@ -21,9 +21,10 @@ from .routers import (
     activity, app_settings, auth, bonvoice, demand_dashboard, dialer, external_analytics,
     gupshup, health,
     huvo, huvo_calls, inventory, leads, live_calls, logs, meta, reports,
-    sheet_leads, supply, users, visits,
+    sheet_leads, supply, users, visits, wa_campaigns,
 )
 from .services.dialer import start_dialer, stop_dialer
+from .services.wa_campaigns import start_campaign_sender, stop_campaign_sender
 from .workers.scheduler import start_scheduler, stop_scheduler
 
 _settings = get_settings()
@@ -62,6 +63,8 @@ async def lifespan(app: FastAPI):
         start_scheduler(settings.SYNC_INTERVAL_MINUTES)
         # auto-dialer: places the next call the moment a hangup callback frees an RM
         start_dialer()
+        # template campaigns: same single RUN_SCHEDULER process as the dialer
+        start_campaign_sender()
     else:
         # The dialer is in another process, so the events that drive Live Calls are
         # published somewhere this instance can't hear. The page still works off its
@@ -71,6 +74,7 @@ async def lifespan(app: FastAPI):
 
     yield
     stop_dialer()
+    stop_campaign_sender()
     stop_scheduler()
     await dispose_engines()
 
@@ -178,6 +182,7 @@ app.include_router(reports.router, prefix="/v1")
 app.include_router(sheet_leads.router, prefix="/v1")
 app.include_router(meta.router, prefix="/v1")
 app.include_router(gupshup.router, prefix="/v1")
+app.include_router(wa_campaigns.router, prefix="/v1")
 app.include_router(bonvoice.router, prefix="/v1")
 app.include_router(dialer.router, prefix="/v1")
 # same /dialer prefix, but RM-scoped rather than admin-only — mounted after so the

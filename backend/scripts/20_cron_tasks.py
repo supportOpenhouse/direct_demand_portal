@@ -1,7 +1,7 @@
 """The recurring jobs, for a Render Cron Job.
 
     cd backend
-    uv run python scripts/20_cron_tasks.py                 # all three
+    uv run python scripts/20_cron_tasks.py                 # all four
     uv run python scripts/20_cron_tasks.py --task leads    # just one
     uv run python scripts/20_cron_tasks.py --dry-run       # say what would run, do nothing
 
@@ -27,6 +27,9 @@ Tasks, in the order they run:
             nothing — but set LEAD_ASSIGN_INTERVAL_MINUTES high, or drop the in-app job,
             rather than leaving both on a tight interval.
 
+  wa_auto   Turn every due auto-campaign slot into a campaign run (it only queues; the web
+            process sends). Schedule every 15 minutes.
+
 Exit code is non-zero if any task failed, so Render marks the run failed instead of
 reporting a green tick over a job that did nothing. One task failing does not stop the
 others — they are independent, and a Core outage shouldn't hold up lead assignment.
@@ -43,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import get_settings  # noqa: E402
 from app.db import dispose_engines, neon_engine  # noqa: E402
 
-TASKS = ("visits", "whatsapp", "leads")
+TASKS = ("visits", "whatsapp", "leads", "wa_auto")
 
 
 async def task_visits() -> dict:
@@ -66,7 +69,13 @@ async def task_leads() -> dict:
     return await run_assignment_sweep(trigger="cron")
 
 
-RUNNERS = {"visits": task_visits, "whatsapp": task_whatsapp, "leads": task_leads}
+async def task_wa_auto() -> dict:
+    from app.services.wa_campaigns import run_auto_campaigns
+
+    return await run_auto_campaigns(trigger="cron")
+
+
+RUNNERS = {"visits": task_visits, "whatsapp": task_whatsapp, "leads": task_leads, "wa_auto": task_wa_auto}
 
 
 async def main(which: list[str], dry_run: bool) -> int:
@@ -98,7 +107,7 @@ async def main(which: list[str], dry_run: bool) -> int:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--task", action="append", choices=TASKS,
-                    help="run only this task (repeatable); default is all three")
+                    help="run only this task (repeatable); default is all four")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and exit")
     a = ap.parse_args()
     raise SystemExit(asyncio.run(main(a.task or list(TASKS), a.dry_run)))

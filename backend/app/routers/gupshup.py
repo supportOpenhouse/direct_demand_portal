@@ -23,7 +23,8 @@ from typing import Literal
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import desc, func, select, text, update
+from sqlalchemy import desc, func, select, text
+from sqlalchemy.orm import aliased
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from urllib.parse import parse_qsl
 
@@ -35,12 +36,60 @@ from ..db import neon_engine
 import uuid
 
 from ..services import activity, wa_assign
+from ..services.gupshup_events import WA_STATUS_RANK, event_code, event_ids, inbound_kind
 from ..models import Lead, WaContact, WaMessage
 
 log = logging.getLogger("gupshup")
 router = APIRouter(tags=["gupshup"])
 
 SEND_URL = "https://api.gupshup.io/wa/api/v1/msg"
+EVENT_RETRY_SECONDS = 10  # an enqueued/failed event can beat our own write of that messageId (contract Delta 19)
+INBOUND_EXISTS_SQL = text("SELECT 1 FROM wa_messages WHERE gupshup_id = :id AND direction = 'in' LIMIT 1")
+# Receipts match our messageId (gsId) OR the WhatsApp id, and only ever move status forward —
+# they arrive out of order (contract Delta 14).
+WA_EVENT_SQL = text("""
+    UPDATE wa_messages
+       SET status = CASE WHEN :rank > (CASE status WHEN 'submitted' THEN 0 WHEN 'enqueued' THEN 1
+                                       WHEN 'sent' THEN 2 WHEN 'delivered' THEN 3 WHEN 'read' THEN 4
+                                       WHEN 'failed' THEN 5 ELSE -1 END)
+                         THEN CAST(:status AS text) ELSE status END,
+           whatsapp_id = COALESCE(whatsapp_id, CAST(:learn AS text))
+     WHERE direction = 'out' AND (gupshup_id = :key OR whatsapp_id = CAST(:wa_id AS text))
+""")
+STOP_REPLY_BY = "STOP reply"
+META_STOP_BY = "WhatsApp: stopped offers"  # Meta's stop control, or a send refused with 131050
+OPTED_OUT_CODE = 131050
+
+
+def is_stop(body: str | None) -> bool:
+    return re.sub(r"[^a-z]", "", (body or "").lower()) == "stop"
+
+
+def opt_out_changes(payload: dict) -> list[tuple[str, str]]:
+    """(phone10, 'stop'|'resume') from a Gupshup v2 `preference-event` payload (contract §7). Meta sends
+    this only when someone stops or resumes MARKETING messages; anything else is ignored."""
+    prefs = ((payload or {}).get("payload") or {}).get("user_preferences") or []
+    out = []
+    for p in prefs:
+        phone = re.sub(r"\D", "", str(p.get("wa_id") or ""))
+        if p.get("category") == "marketing_messages" and p.get("value") in ("stop", "resume") and len(phone) >= 10:
+            out.append((phone[-10:], p["value"]))
+    return out
+
+
+# Opts the number out of every future campaign (spec §10). Keeps any existing owner (the spec only
+# tags + skips), and never overwrites 'rejected', which already excludes the number everywhere and
+# also drives assignment + the bell. marked_by says WHO opted them out — a Meta resume only undoes Meta's.
+OPT_OUT_SQL = text("""
+    INSERT INTO wa_contacts (phone10, tag, marked_by, marked_at, assigned_to, assigned_at)
+    VALUES (:p, 'opted_out', :by, now(), NULL, NULL)
+    ON CONFLICT (phone10) DO UPDATE SET tag = 'opted_out', marked_by = :by, marked_at = now()
+     WHERE wa_contacts.tag IS DISTINCT FROM 'rejected'
+""")
+OPT_IN_SQL = text(f"""
+    UPDATE wa_contacts SET tag = NULL, marked_by = 'WhatsApp: resumed offers', marked_at = now()
+     WHERE phone10 = :p AND tag = 'opted_out' AND marked_by = '{META_STOP_BY}'
+""")
 THREAD_LIMIT = 500  # ponytail: one flat fetch, grouped client-side. Paginate if it bites.
 
 # ponytail: raw-callback ring for reading shapes that aren't modelled yet (billing,
@@ -96,6 +145,9 @@ def _check_template_token(request: Request) -> None:
 
 def _text_of(inner: dict, kind: str | None) -> str | None:
     """Readable body for the thread — the text itself, or a caption/label for media."""
+    if kind in ("quick_reply", "button_reply", "button") or inner.get("type") == "button":
+        # a template button tap: show the button's text (contract §6), not an empty bubble
+        return inner.get("text") or inner.get("title") or inner.get("postbackText")
     if kind == "text":
         return inner.get("text")
     if kind == "location":
@@ -133,19 +185,28 @@ async def _persist(entry: dict) -> None:
     try:
         if entry["type"] == "message":
             inner = payload.get("payload") or {}
-            kind = payload.get("type")
+            kind = inbound_kind(payload)
             async with engine.begin() as conn:
+                # a callback not acked inside 10 s is retried by Gupshup — store it once (Delta 13)
+                if payload.get("id") and (await conn.execute(INBOUND_EXISTS_SQL, {"id": payload["id"]})).first():
+                    return
+                phone = normalize_phone(payload.get("sender", {}).get("phone") or payload.get("source"))
+                text_body = _text_of(inner, kind)
                 await conn.execute(WaMessage.__table__.insert().values(
                     direction="in",
-                    phone=normalize_phone(payload.get("sender", {}).get("phone") or payload.get("source")),
+                    phone=phone,
                     name=payload.get("sender", {}).get("name"),
-                    body=_text_of(inner, kind),
-                    msg_type=kind or "text",
+                    body=text_body,
+                    msg_type=kind,
                     gupshup_id=payload.get("id"),
                     raw=body,
                     source_app=entry.get("app"),
                     **_media_of(inner),
                 ))
+                # Our own policy on top of Meta's (contract §7): a typed STOP — or a template button that
+                # says STOP — opts the number out of every campaign, on either number.
+                if is_stop(text_body) and len(phone) >= 10:
+                    await conn.execute(OPT_OUT_SQL, {"p": phone[-10:], "by": STOP_REPLY_BY})
                 # Deliberately NOT assigned here. An inbound message used to hand the
                 # conversation to the least-loaded RM on arrival; it no longer does.
                 # Ownership is now only ever taken on purpose — an admin picking an RM
@@ -154,16 +215,40 @@ async def _persist(entry: dict) -> None:
                 # Consequence, on purpose: _thread_scope shows an RM only the threads
                 # assigned to them, so an unowned conversation is visible to ADMINS
                 # ONLY until somebody assigns it.
-        elif entry["type"] == "message-event" and payload.get("id"):
-            # delivery receipts arrive minutes later, keyed by the id /send stored
+        elif entry["type"] == "message-event":
+            if not await _apply_event(engine, payload) and payload.get("type") in ("enqueued", "failed"):
+                # a sync event can beat our own write of that messageId (contract Delta 19)
+                await asyncio.sleep(EVENT_RETRY_SECONDS)
+                await _apply_event(engine, payload)
+        elif entry["type"] == "preference-event":
+            # Meta's real opt-out: the user's "Offers and announcements → Stop/Resume" (contract §7)
             async with engine.begin() as conn:
-                await conn.execute(
-                    update(WaMessage)
-                    .where(WaMessage.gupshup_id == payload["id"])
-                    .values(status=payload.get("type"))
-                )
+                for p10, value in opt_out_changes(payload):
+                    if value == "stop":
+                        await conn.execute(OPT_OUT_SQL, {"p": p10, "by": META_STOP_BY})
+                    else:
+                        await conn.execute(OPT_IN_SQL, {"p": p10})
     except Exception:  # noqa: BLE001 — logging only; the callback already answered 200
         log.exception("gupshup: failed to persist callback")
+
+
+async def _apply_event(engine, ev: dict) -> int:
+    """Apply one message-event to the chat bubble AND any campaign recipient. Returns rows matched."""
+    from ..services.wa_campaigns import apply_receipt  # local: router <-> service import order
+
+    ids = event_ids(ev)
+    rank = WA_STATUS_RANK.get(ev.get("type"))
+    async with engine.begin() as conn:
+        n = 0
+        if rank is not None and (ids["key"] or ids["wa_id"]):
+            n = (await conn.execute(WA_EVENT_SQL, {"rank": rank, "status": ev.get("type"), **ids})).rowcount
+        n += len(await apply_receipt(conn, ev))
+        # 131050 = they stopped marketing messages; Meta says never retry (contract §3.5) — so don't message again
+        if ev.get("type") == "failed" and event_code(ev) == OPTED_OUT_CODE:
+            p10 = re.sub(r"\D", "", str(ev.get("destination") or ""))[-10:]
+            if len(p10) == 10:
+                await conn.execute(OPT_OUT_SQL, {"p": p10, "by": META_STOP_BY})
+    return n
 
 
 @router.get("/gupshup/webhook")
@@ -206,6 +291,8 @@ async def _accept(request: Request, app: str | None) -> Response:
         log.exception("gupshup: unreadable callback body")
         return Response(status_code=200)
 
+    if isinstance(body, dict) and "type" not in body and ("entry" in body or "object" in body):
+        log.warning("gupshup callback looks like payload version 3 (Meta format) — set the app's webhook to version 2")
     entry = {
         "received_at": datetime.now(timezone.utc).isoformat(),
         "type": body.get("type") if isinstance(body, dict) else None,
@@ -236,6 +323,16 @@ async def _assert_owns(conn, user: dict, phone10: str) -> None:
     )).first()
     if not aliases or not owner or not owner[0] or owner[0] not in aliases:
         raise HTTPException(status_code=403, detail="this conversation is assigned to someone else")
+
+
+async def _reply_app(conn, phone10: str) -> str | None:
+    """Which app the customer last wrote to. WhatsApp's 24h window is per business
+    number, so a reply must leave from that number (spec §13.5). None = the chat app."""
+    row = (await conn.execute(
+        select(WaMessage.source_app).where(func.right(WaMessage.phone, 10) == phone10,
+                                           WaMessage.direction == "in")
+        .order_by(desc(WaMessage.created_at)).limit(1))).first()
+    return row[0] if row else None
 
 
 def _thread_scope(user: dict):
@@ -272,11 +369,12 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
         WaMessage.id, WaMessage.direction, WaMessage.phone, WaMessage.name,
         WaMessage.body, WaMessage.msg_type, WaMessage.status, WaMessage.author,
         WaMessage.media_url, WaMessage.media_expiry, WaMessage.media_name,
-        WaMessage.created_at,
+        WaMessage.source_app, WaMessage.created_at,
     )
     scope = _thread_scope(user)
     if scope is not None:
         q = q.where(scope)
+    want = None
     if phone is not None:
         want = normalize_phone(phone)[-10:]
         if not want:
@@ -290,8 +388,9 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
 
         leads, tags, owners = await _annotate(
             conn, sorted({r["phone"][-10:] for r in rows if r["phone"]}))
+        reply_app = (await _reply_app(conn, want)) or "chat" if want else None
 
-    return {
+    out = {
         "status": "ok",
         "send_enabled": settings.gupshup_send_configured,
         "leads": leads,  # last-10-digits → the lead that already exists for it
@@ -299,6 +398,9 @@ async def gupshup_messages(phone: str | None = None, user: dict = Depends(curren
         "owners": owners,  # last-10-digits → the RM who owns the conversation
         "items": [dict(r) | {"id": str(r["id"])} for r in rows],
     }
+    if reply_app:  # only for ONE conversation: which number a reply would leave from
+        out["reply_app"] = reply_app
+    return out
 
 
 # Leads store a formatted phone ("+91 98715 78484") while WhatsApp gives "919871578484",
@@ -335,8 +437,27 @@ _NO_LEAD = func.right(WaMessage.phone, 10).not_in(
     select(_LEAD_P10).where(Lead.phone.isnot(None)))
 
 
+def _view_filter(view: str):
+    """Conversations whose customer wrote to us through this app (spec §9.1): `chat` = the main app
+    (source_app NULL), `template` = the campaign app. A number that wrote through both is in both views.
+    The inner SELECT reads an ALIAS of wa_messages: on the same table SQLAlchemy would correlate it to the
+    outer query and drop its FROM, making the filter match everything."""
+    inbound = aliased(WaMessage)
+    want = inbound.source_app == "template" if view == "template" else inbound.source_app.is_(None)
+    return WaMessage.phone.in_(select(inbound.phone).where(inbound.direction == "in", want))
+
+
+LAST_CAMPAIGN_SQL = text("""
+    SELECT DISTINCT ON (r.phone10) r.phone10, c.name
+      FROM wa_campaign_recipients r JOIN wa_campaigns c ON c.id = r.campaign_id
+     WHERE r.phone10 = ANY(CAST(:p AS text[]))
+     ORDER BY r.phone10, r.sent_at DESC NULLS LAST, c.created_at DESC
+""")
+
+
 @router.get("/gupshup/threads")
-async def gupshup_threads(offset: int = 0, limit: int = 100, user: dict = Depends(current_user)):
+async def gupshup_threads(offset: int = 0, limit: int = 100, view: Literal["chat", "template"] = "chat",
+                          user: dict = Depends(current_user)):
     """One row per CONVERSATION, most recently active first, paged.
 
     The Chat page used to group /gupshup/messages client-side, and that endpoint stops at
@@ -353,18 +474,19 @@ async def gupshup_threads(offset: int = 0, limit: int = 100, user: dict = Depend
     last = _scoped(select(
         WaMessage.phone, WaMessage.body, WaMessage.direction, WaMessage.msg_type,
         WaMessage.created_at,
-    ).distinct(WaMessage.phone).order_by(WaMessage.phone, desc(WaMessage.created_at)), user).subquery()
+    ).where(_view_filter(view)).distinct(WaMessage.phone)
+        .order_by(WaMessage.phone, desc(WaMessage.created_at)), user).subquery()
     async with engine.connect() as conn:
         rows = (await conn.execute(
             select(last).order_by(desc(last.c.created_at)).offset(offset).limit(limit)
         )).mappings().all()
         total = (await conn.execute(
-            _scoped(select(func.count(func.distinct(WaMessage.phone))), user))).scalar() or 0
+            _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_view_filter(view)), user))).scalar() or 0
         convertible = (await conn.execute(
-            _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_NO_LEAD), user)
+            _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_NO_LEAD, _view_filter(view)), user)
         )).scalar() or 0
         phones = [r["phone"] for r in rows]
-        last_in, names = {}, {}
+        last_in, names, both, camp = {}, {}, set(), {}
         if phones:  # already scope-checked: these phones came out of the scoped query
             last_in = dict((await conn.execute(
                 select(WaMessage.phone, func.max(WaMessage.created_at))
@@ -376,6 +498,13 @@ async def gupshup_threads(offset: int = 0, limit: int = 100, user: dict = Depend
                 .where(WaMessage.direction == "in", WaMessage.name.isnot(None),
                        WaMessage.phone.in_(phones))
                 .distinct(WaMessage.phone).order_by(WaMessage.phone, desc(WaMessage.created_at)))).all())
+            # wrote to us through BOTH numbers (a "+1" in the list)
+            both = {r[0] for r in await conn.execute(
+                select(WaMessage.phone).where(WaMessage.phone.in_(phones), WaMessage.direction == "in")
+                .group_by(WaMessage.phone)
+                .having(func.count(func.distinct(func.coalesce(WaMessage.source_app, "chat"))) > 1))}
+            if view == "template":  # the campaign each number was last sent
+                camp = dict((await conn.execute(LAST_CAMPAIGN_SQL, {"p": [p[-10:] for p in phones]})).all())
         leads, tags, owners = await _annotate(conn, sorted({p[-10:] for p in phones}))
     iso = lambda d: d.isoformat() if d else None  # noqa: E731
     return {
@@ -389,12 +518,14 @@ async def gupshup_threads(offset: int = 0, limit: int = 100, user: dict = Depend
             "last_inbound_at": iso(last_in.get(r["phone"])),
             "lead": leads.get(r["phone"][-10:]), "tag": tags.get(r["phone"][-10:]),
             "owner": owners.get(r["phone"][-10:]),
+            "both": r["phone"] in both,
+            "last_campaign": camp.get(r["phone"][-10:]),
         } for r in rows],
     }
 
 
 @router.get("/gupshup/threads/convertible")
-async def gupshup_convertible(user: dict = Depends(current_user)):
+async def gupshup_convertible(view: Literal["chat", "template"] = "chat", user: dict = Depends(current_user)):
     """EVERY conversation with no lead yet, in the list's order — what bulk "Create
     leads" selects from, so it covers conversations not yet scrolled into view."""
     engine = neon_engine()
@@ -402,7 +533,7 @@ async def gupshup_convertible(user: dict = Depends(current_user)):
         return {"phones": []}
     async with engine.connect() as conn:
         rows = (await conn.execute(_scoped(
-            select(WaMessage.phone).where(_NO_LEAD).group_by(WaMessage.phone)
+            select(WaMessage.phone).where(_NO_LEAD, _view_filter(view)).group_by(WaMessage.phone)
             .order_by(desc(func.max(WaMessage.created_at))), user))).all()
     return {"phones": [r[0] for r in rows]}
 
@@ -590,7 +721,7 @@ async def gupshup_backfill():
 
 class MarkRequest(BaseModel):
     phone: str
-    tag: Literal["broker", "buyer", "seller", "rejected"]
+    tag: Literal["broker", "buyer", "seller", "rejected", "opted_out"]
 
 
 @router.post("/gupshup/mark")
@@ -840,22 +971,33 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(current_user)):
     if len(destination) < 10:
         raise HTTPException(status_code=400, detail="invalid phone number")
     engine = neon_engine()
+    app = None
     if engine is not None:
         async with engine.connect() as conn:
             await _assert_owns(conn, user, destination[-10:])
+            app = await _reply_app(conn, destination[-10:])
+
+    if app == "template":
+        if not settings.gupshup_template_configured:
+            raise HTTPException(status_code=503, detail="This customer wrote to the template number, "
+                                "and its sending isn't configured — set " + ", ".join(settings.gupshup_template_missing))
+        api_key, source, src_name = (settings.GUPSHUP_TEMPLATE_API_KEY, settings.GUPSHUP_TEMPLATE_SOURCE_NUMBER,
+                                     settings.GUPSHUP_TEMPLATE_APP_NAME)
+    else:
+        api_key, source, src_name = settings.GUPSHUP_API_KEY, settings.GUPSHUP_SOURCE_NUMBER, settings.GUPSHUP_APP_NAME
 
     form = {
         "channel": "whatsapp",
-        "source": settings.GUPSHUP_SOURCE_NUMBER,
+        "source": source,
         "destination": destination,
-        "src.name": settings.GUPSHUP_APP_NAME,
+        "src.name": src_name,
         "message": json.dumps({"type": "text", "text": req.text}),
     }
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             r = await client.post(
                 SEND_URL, data=form,
-                headers={"apikey": settings.GUPSHUP_API_KEY,
+                headers={"apikey": api_key,
                          "Content-Type": "application/x-www-form-urlencoded"},
             )
     except httpx.HTTPError as e:
@@ -864,7 +1006,8 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(current_user)):
 
     detail = r.text[:300]
     if r.status_code >= 300:
-        # the usual cause is the 24-hour window having closed — Gupshup says so here
+        # the request itself was refused (bad number, app or key). A closed 24-hour window is NOT reported here —
+        # it arrives later as a failed callback (131047) keyed by gsId (contract Delta 15).
         log.warning("gupshup send rejected (%s): %s", r.status_code, detail)
         raise HTTPException(status_code=502, detail=f"Gupshup rejected the message: {detail}")
 
@@ -885,7 +1028,7 @@ async def gupshup_send(req: SendRequest, user: dict = Depends(current_user)):
         async with engine.begin() as conn:
             await conn.execute(WaMessage.__table__.insert().values(
                 direction="out", phone=destination, body=req.text, msg_type="text",
-                gupshup_id=gupshup_id, status="submitted", author=author,
+                gupshup_id=gupshup_id, status="submitted", author=author, source_app=app,
             ))
             # An RM messaging a customer is real work that was entirely invisible.
             # The body is deliberately NOT stored here — wa_messages already has it,

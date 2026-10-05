@@ -35,6 +35,7 @@ const TITLES: Record<string, string> = {
   "/call-log": "Bonvoice Call Log",
   "/huvo-calls": "Huvo Call Log",
   "/chat": "WhatsApp",
+  "/wa-campaigns": "WhatsApp Campaigns",
   "/meta-leads": "Meta Leads",
   "/live-calls": "Live Calls",
 };
@@ -43,7 +44,8 @@ export default function Topbar() {
   const { pathname } = useLocation();
   const title =
     TITLES[pathname] ||
-    (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details" : "Home");
+    (/^\/leads\/[^/]+$/.test(pathname) ? "Lead Details"
+      : /^\/wa-campaigns\/[^/]+$/.test(pathname) ? "Campaign" : "Home");
   // a "(…)" tail on a title is a clarifier, not part of the name — render it lighter
   const paren = title.indexOf(" (");
 

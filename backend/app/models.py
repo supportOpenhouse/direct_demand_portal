@@ -12,7 +12,9 @@ from sqlalchemy import (
     Numeric,
     Text,
     TIMESTAMP,
+    UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -655,11 +657,119 @@ class WaMessage(Base):
     # WhatsApp's 24h reply window is per business number, so a reply must go back out
     # through the app the customer wrote to.
     source_app: Mapped[str | None] = mapped_column(Text)
+    # the WhatsApp (Meta) message id — Gupshup's later receipts carry it in payload.id and may
+    # omit gsId (>1 week after the send, MM Lite), so it is a second lookup key (contract Delta 5)
+    whatsapp_id: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), nullable=False, server_default=func.now()
     )
 
     __table_args__ = (Index("ix_wa_messages_phone_created", phone, created_at.desc()),)
+
+
+class WaTemplate(Base):
+    """An approved WhatsApp template, stored on OUR side (spec §4.1). Gupshup only ever
+    receives `gupshup_template_id` + values; `body` is what we preview and render."""
+
+    __tablename__ = "wa_templates"
+    __table_args__ = (Index("uq_wa_templates_active_gupshup_id", "gupshup_template_id", unique=True, postgresql_where=text("active")),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid())
+    gupshup_template_id: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    language: Mapped[str] = mapped_column(Text, nullable=False, server_default="en")
+    category: Mapped[str | None] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    variable_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    variable_labels: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    variable_defaults: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    buttons: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    created_by: Mapped[str | None] = mapped_column(Text)
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class WaAutoCampaign(Base):
+    """A recurring definition: each due slot becomes a WaCampaign run that repeats the
+    previous run's list (spec §7)."""
+
+    __tablename__ = "wa_auto_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid())
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    template_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_templates.id"), nullable=False)
+    seed_campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_campaigns.id", use_alter=True, name="fk_wa_auto_seed_campaign"), nullable=False)
+    repeat_mode: Mapped[str] = mapped_column(Text, nullable=False)  # everyone | non_responders
+    every_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    run_at: Mapped[str] = mapped_column(Text, nullable=False, server_default="11:00")
+    next_slot: Mapped[str] = mapped_column(Date, nullable=False)
+    cooldown_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="7")
+    max_runs: Mapped[int | None] = mapped_column(Integer)
+    send_window_start: Mapped[str] = mapped_column(Text, nullable=False, server_default="10:00")
+    send_window_end: Mapped[str] = mapped_column(Text, nullable=False, server_default="19:00")
+    rate_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    status_note: Mapped[str | None] = mapped_column(Text)  # "finished — no one left", "template inactive"
+    created_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+
+
+class WaCampaign(Base):
+    """One send: a manual campaign, or one run of an auto campaign (spec §4.2). Counts are
+    never stored — computed from recipients so they can't drift."""
+
+    __tablename__ = "wa_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid())
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    template_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_templates.id"), nullable=False)
+    source: Mapped[str] = mapped_column(Text, nullable=False)  # upload|paste|wa_contacts|repeat|auto
+    repeat_of: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_campaigns.id"))
+    auto_campaign_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_auto_campaigns.id"))
+    run_slot: Mapped[str | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
+    created_by: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
+    launched_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    finished_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    send_window_start: Mapped[str] = mapped_column(Text, nullable=False, server_default="10:00")
+    send_window_end: Mapped[str] = mapped_column(Text, nullable=False, server_default="19:00")
+    rate_per_minute: Mapped[int] = mapped_column(Integer, nullable=False, server_default="30")
+    status_note: Mapped[str | None] = mapped_column(Text)  # why it was auto-paused (a campaign-level Gupshup error)
+
+    __table_args__ = (UniqueConstraint("auto_campaign_id", "run_slot", name="uq_wa_campaign_auto_slot"),)
+
+
+class WaCampaignRecipient(Base):
+    """One number in one campaign (spec §4.3). `gupshup_id` ties receipts and button
+    answers to this row; replies are derived from wa_messages, never stored here."""
+
+    __tablename__ = "wa_campaign_recipients"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, server_default=func.gen_random_uuid())
+    campaign_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("wa_campaigns.id"), nullable=False, index=True)
+    phone10: Mapped[str] = mapped_column(Text, nullable=False)
+    name: Mapped[str | None] = mapped_column(Text)
+    variables: Mapped[list] = mapped_column(JSONB, nullable=False, server_default="[]")
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="queued")
+    skip_reason: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    gupshup_id: Mapped[str | None] = mapped_column(Text, index=True)
+    whatsapp_id: Mapped[str | None] = mapped_column(Text, index=True)  # learnt from the receipts
+    owner: Mapped[str | None] = mapped_column(Text)
+    sent_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    status_at: Mapped[str | None] = mapped_column(TIMESTAMP(timezone=True))
+    # the number's place in the list it came from (0 = first). Ids are random uuids, so without this
+    # a list comes back in an arbitrary order — and under the daily cap, order decides who is messaged.
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+    __table_args__ = (
+        UniqueConstraint("campaign_id", "phone10", name="uq_wa_recipient_campaign_phone"),
+        Index("ix_wa_recipients_phone_sent", "phone10", "sent_at"),
+    )
 
 
 class DialCampaign(Base):

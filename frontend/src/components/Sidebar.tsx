@@ -163,6 +163,13 @@ export default function Sidebar({ collapsed, onToggle }: { collapsed: boolean; o
             sitting among the stage pages made the sequence read wrong. */}
         <LiveCallsNav />
         <WhatsAppNav />
+        {/* Template campaigns sit under WhatsApp, which is where their responses land (/chat).
+            Admin-only here and server-side: it sends to real customers. */}
+        {isAdmin && (
+          <NavLink to="/wa-campaigns" className={navClass} title="WhatsApp Campaigns">
+            <WhatsAppIcon /> <span className="nav-t">WA Campaigns</span>
+          </NavLink>
+        )}
         {/* Discovery — Live Inventory + Supply Pipeline, hidden 15 Sep on request.
             Commented out, not deleted: the pages, their CSS and the poster are all
             untouched, so restoring is uncommenting this block and the routes in

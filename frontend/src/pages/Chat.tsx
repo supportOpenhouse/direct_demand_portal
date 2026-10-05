@@ -15,7 +15,8 @@ import {
   useSocietiesByCity, useBulkCreateWaLeads, useBackfillWaAssign, useWaThreads, useWaConvertible,
 } from "../lib/queries";
 import WaThread from "../components/WaThread";
-import { WaTag, WA_TAGS } from "../lib/api";
+import { WaTag, WaView, WA_RED_TAGS, WA_TAGS } from "../lib/api";
+import SlideTabs from "../components/SlideTabs";
 import { useAuth } from "../components/AuthContext";
 import { useToast } from "../components/Toast";
 import {
@@ -33,7 +34,7 @@ const PANEL_H = 560;
 
 /* Red for rejected, blue for everything else — matching the row background. */
 function TagChip({ tag }: { tag: WaTag }) {
-  const rejected = tag === "rejected";
+  const rejected = WA_RED_TAGS.includes(tag);
   return (
     <span
       className="bucket-tag"
@@ -43,7 +44,7 @@ function TagChip({ tag }: { tag: WaTag }) {
         color: rejected ? "var(--coral)" : "var(--blue)",
       }}
     >
-      {tag}
+      {tag.replace("_", " ")}
     </span>
   );
 }
@@ -55,7 +56,11 @@ export default function Chat() {
   /* The list is CONVERSATIONS, paged 100 at a time with more loaded on scroll — it used
      to be the newest 500 messages grouped here, which capped it at ~100 threads and
      made every count on the page count only those. */
-  const list = useWaThreads();
+  // Chat = people who wrote to the main number; Template responses = people who answered a campaign.
+  const [view, setViewState] = useState<WaView>(() => {
+    try { return localStorage.getItem("dd_wa_view") === "template" ? "template" : "chat"; } catch { return "chat"; }
+  });
+  const list = useWaThreads(view);
   const { isLoading, error } = list;
   const first = list.data?.pages[0];
   const toast = useToast();
@@ -97,7 +102,7 @@ export default function Chat() {
   /* Only conversations without a lead can be converted. The count is the SERVER's, over
      every conversation; the list to pick from is fetched only once bulk mode opens. */
   const convertibleTotal = first?.convertible_total ?? 0;
-  const convertible = useWaConvertible(bulk).data?.phones ?? [];
+  const convertible = useWaConvertible(bulk, view).data?.phones ?? [];
   const bulkCreate = useBulkCreateWaLeads();
   const [bulkAssign, setBulkAssign] = useState(false);   // unassigned by default
   const toggleOne = (phone: string) => setPicked((prev) => {
@@ -106,6 +111,20 @@ export default function Chat() {
     return next;
   });
   const exitBulk = () => { setBulk(false); setPicked(new Set()); setBulkAssign(false); };
+  // a thread or a selection from the other view means nothing here — drop both
+  const setView = (v: WaView) => {
+    if (v === view) return;
+    try { localStorage.setItem("dd_wa_view", v); } catch { /* private mode: the choice just isn't remembered */ }
+    setViewState(v);
+    setActive(null);
+    exitBulk();
+  };
+  const viewToggle = (
+    <SlideTabs className="view-toggle">
+      <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>Chat</button>
+      <button className={view === "template" ? "on" : ""} onClick={() => setView("template")}>Template responses</button>
+    </SlideTabs>
+  );
   const runBulk = () => bulkCreate.mutate({ phones: [...picked], assign: bulkAssign }, {
     onSuccess: (r) => {
       const skipped = r.skipped_existing ? ` · ${r.skipped_existing} already had one` : "";
@@ -129,25 +148,21 @@ export default function Chat() {
         && list.hasNextPage && !list.isFetchingNextPage) list.fetchNextPage();
   };
 
-  if (isLoading) return <div className="card"><SkeletonRows rows={7} /></div>;
-  if (error) {
-    return (
-      <div className="card">
-        <div className="empty" style={{ padding: 48 }}>
-          <div style={{ fontWeight: 600, color: "var(--coral)" }}>Couldn’t load messages</div>
-          <div style={{ fontSize: 12.5, marginTop: 4 }}>{(error as Error).message}</div>
-        </div>
-      </div>
-    );
-  }
-
+  // ONE return: the toggle sits in the same spot of the same tree through loading, error and loaded,
+  // so SlideTabs never remounts (its sliding pill restarts on a remount)
+  const ready = !isLoading && !error;
   return (
     <div>
       <div className="section-head" style={{ marginBottom: 10 }}>
-        <p className="sec-sub" style={{ margin: 0 }}>
-          <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> conversation{total === 1 ? "" : "s"}
-        </p>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {viewToggle}
+          {ready && (
+            <p className="sec-sub" style={{ margin: 0 }}>
+              <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> conversation{total === 1 ? "" : "s"}
+            </p>
+          )}
+        </div>
+        {ready && <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {bulk ? (
             <>
               <span style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -181,10 +196,18 @@ export default function Chat() {
               {isAdmin && <BackfillButton />}
             </>
           )}
-        </div>
+        </div>}
       </div>
 
-      {threads.length === 0 ? (
+      {isLoading ? <div className="card"><SkeletonRows rows={7} /></div> : error ? (
+        <div className="card">
+          <div className="empty" style={{ padding: 48 }}>
+            <div style={{ fontWeight: 600, color: "var(--coral)" }}>Couldn’t load messages</div>
+            <div style={{ fontSize: 12.5, marginTop: 4 }}>{(error as Error).message}</div>
+          </div>
+        </div>
+      ) : threads.length === 0 ? (
+
         <div className="card">
           <div className="empty" style={{ padding: 48, textAlign: "center" }}>
             <div style={{ width: 40, height: 40, margin: "0 auto 10px", color: "var(--wa-green-2)" }}><WhatsAppIcon /></div>
@@ -239,7 +262,7 @@ export default function Chat() {
                     // With no mark, the background falls back to amber so lead-created
                     // still reads on its own.
                     background: selected ? "var(--panel-2)"
-                      : rowTag === "rejected" ? "var(--coral-soft)"
+                      : rowTag && WA_RED_TAGS.includes(rowTag) ? "var(--coral-soft)"
                       : rowTag ? "var(--blue-soft)"
                       : hasLead ? "var(--amber-soft)" : "transparent",
                     borderLeft: hasLead ? "3px solid var(--amber)" : "3px solid transparent",
@@ -249,6 +272,7 @@ export default function Chat() {
                     <div style={{ fontWeight: 600, fontSize: 13, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {t.name || t.phone}
                       {rowTag && <TagChip tag={rowTag} />}
+                      {t.both && <span className="wa-plus1" title="Also talks to us on the other number">+1</span>}
                       {isAdmin && rowOwner && (
                         <span style={{ marginLeft: 6, fontSize: 10.5, fontWeight: 500, color: "var(--muted)" }}>
                           {rowOwner.split(" ")[0]}
@@ -258,6 +282,9 @@ export default function Chat() {
                     <div style={{ fontSize: 11.5, color: "var(--muted)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                       {t.last_direction === "out" ? "You: " : ""}{t.last_body || `[${t.last_msg_type}]`}
                     </div>
+                    {view === "template" && t.last_campaign && (
+                      <div className="wa-campaign-line" title={`Campaign: ${t.last_campaign}`}>{t.last_campaign}</div>
+                    )}
                   </div>
                 </button>
                 </div>
@@ -306,6 +333,7 @@ export default function Chat() {
                   messages={messages}
                   lastInboundAt={thread.lastInboundAt}
                   sendEnabled={sendEnabled}
+                  replyApp={data?.reply_app}
                 />
               </>
             )}
@@ -397,8 +425,8 @@ function MarkModal(
               >
                 <input type="radio" name="wa-tag" checked={tag === t} onChange={() => setTag(t)}
                   style={{ accentColor: "var(--emerald)" }} />
-                {t}
-                {t === "rejected" && (
+                {t.replace("_", " ")}
+                {(t === "rejected" || t === "opted_out") && (
                   <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--coral)" }}>
                     highlights red
                   </span>

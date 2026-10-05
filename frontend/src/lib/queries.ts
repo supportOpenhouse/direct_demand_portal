@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AppSettings, BookRequest, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
+import { api, AppSettings, BookRequest, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters, WaCampaignAction, WaRecipientFilter, WaTemplateIn, WaView, WaAutoAction, WaAutoIn } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -274,10 +274,10 @@ export function useWaLeadTranscript(leadId: string) {
   });
 }
 
-export function useWaThreads() {
+export function useWaThreads(view: WaView = "chat") {
   return useInfiniteQuery({
-    queryKey: ["wa-messages", "threads"],
-    queryFn: ({ pageParam }) => api.waThreads(pageParam),
+    queryKey: ["wa-messages", "threads", view],
+    queryFn: ({ pageParam }) => api.waThreads(pageParam, 100, view),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((n, p) => n + p.items.length, 0);
@@ -287,8 +287,8 @@ export function useWaThreads() {
   });
 }
 
-export function useWaConvertible(enabled: boolean) {
-  return useQuery({ queryKey: ["wa-messages", "convertible"], queryFn: api.waConvertible, enabled });
+export function useWaConvertible(enabled: boolean, view: WaView = "chat") {
+  return useQuery({ queryKey: ["wa-messages", "convertible", view], queryFn: () => api.waConvertible(view), enabled });
 }
 
 // the bulk endpoint caps one call at 500 phones
@@ -314,6 +314,108 @@ export function useBulkCreateWaLeads() {
       qc.invalidateQueries({ queryKey: ["leads"] });
       qc.invalidateQueries({ queryKey: ["lead-counts"] });
     },
+  });
+}
+
+/* WhatsApp template campaigns — the template list (admin). One hook saves both ways: an `id`
+   edits that template, no `id` adds a new one. */
+export function useWaTemplates() {
+  return useQuery({ queryKey: ["wa-templates"], queryFn: api.waTemplates });
+}
+
+export function useSaveWaTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    // async so the result types as the UNION of the two replies ({id} on add, {status} on edit);
+    // a bare ternary of two different Promises makes TS pick the first branch's type and reject the second
+    mutationFn: async ({ id, t }: { id?: string; t: WaTemplateIn }) =>
+      id ? api.waTemplateEdit(id, t) : api.waTemplateCreate(t),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-templates"] }),
+  });
+}
+
+/* WhatsApp template campaigns — the Campaigns tab and its New campaign panel (admin).
+   The preview is a MUTATION although it only reads: it is fired by a button, takes a body that can carry a whole
+   uploaded file, and nothing should cache or refetch it. */
+export function useWaPreview() {
+  return useMutation({ mutationFn: api.waPreview });
+}
+
+export function useCreateWaCampaign() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.waCreateCampaign,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-campaigns"] }),
+  });
+}
+
+// polled: a sending campaign's funnel moves on its own. 15 s — the server recomputes every count on each read.
+export function useWaCampaigns() {
+  return useQuery({ queryKey: ["wa-campaigns"], queryFn: api.waCampaigns, refetchInterval: 15_000 });
+}
+
+/* One campaign's page. The detail polls every 10 s while it is `sending` (its numbers move on their own), and
+   every 60 s otherwise — reads and replies keep arriving after a send is done (a hidden tab doesn't poll); a
+   draft changes only when the admin acts here, which invalidates. The recipients follow whatever the detail does,
+   so the boxes and the table can't disagree. All under ["wa-campaigns"]: the list and every action share it. */
+const waDetailKey = (id: string) => ["wa-campaigns", "detail", id] as const;
+export const waPollMs = (status: string | undefined) =>
+  status === "sending" ? 10_000 : status === "draft" ? false : 60_000;
+
+export function useWaCampaign(id: string) {
+  return useQuery({
+    queryKey: waDetailKey(id),
+    queryFn: () => api.waCampaign(id),
+    enabled: !!id,
+    refetchInterval: (q) => waPollMs(q.state.data?.campaign.status),
+  });
+}
+
+export function useWaCampaignRecipients(id: string, status?: WaRecipientFilter) {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: ["wa-campaigns", "recipients", id, status ?? "all"],
+    queryFn: () => api.waCampaignRecipients(id, status),
+    enabled: !!id,
+    placeholderData: keepPreviousData,
+    refetchInterval: () => waPollMs(qc.getQueryData<import("./api").WaCampaignDetail>(waDetailKey(id))?.campaign.status),
+  });
+}
+
+export function useWaCampaignAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: WaCampaignAction }) => api.waCampaignAction(id, action),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-campaigns"] }),
+  });
+}
+
+export function useWaAutos() {
+  return useQuery({ queryKey: ["wa-campaigns", "auto"], queryFn: api.waAutos, refetchInterval: 60_000 });
+}
+
+export function useSaveWaAuto() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, body }: { id?: string; body: WaAutoIn }) => api.waAutoSave(id, body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-campaigns"] }),
+  });
+}
+
+// activate / deactivate / run-now. Invalidates the whole family: run-now adds a campaign to the Campaigns list too
+export function useWaAutoAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: string; action: WaAutoAction }) => api.waAutoAction(id, action),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-campaigns"] }),
+  });
+}
+
+export function useWaRetryRecipient() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, rid }: { id: string; rid: string }) => api.waRetryRecipient(id, rid),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["wa-campaigns"] }),
   });
 }
 

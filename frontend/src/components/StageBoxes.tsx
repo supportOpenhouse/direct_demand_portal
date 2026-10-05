@@ -12,7 +12,11 @@ import { Skeleton } from "./Skeleton";
 /* A box that isn't a stage — Visited Leads adds Visit completed / cancelled, which are
    the VISIT's status, not the lead's. It drives the page's existing visit filter rather
    than a second copy of it, so the box and the Filters dropdown can't disagree. */
-export type ExtraBox = { key: string; label: string; hue: string; count: number };
+export type ExtraBox = {
+  key: string; label: string; hue: string; count: number;
+  /** replaces the box's "Show only …" tooltip — for a number that needs a caveat */
+  hint?: string;
+};
 
 export function StageBoxes({
   stages = [], counts = {}, total, value = "", onChange, loading = false,
@@ -58,7 +62,7 @@ export function StageBoxes({
             className={"count-pill" + (extraValue === b.key ? " on" : "")}
             style={{ ["--pill-hue" as string]: b.hue }}
             onClick={() => onExtra?.(extraValue === b.key ? "" : b.key)}
-            title={`Show only ${b.label}`}
+            title={b.hint ?? `Show only ${b.label}`}
           >
             <span className="num">{num(b.count, 44)}</span>
             <span className="lbl">{b.label.toUpperCase()}</span>

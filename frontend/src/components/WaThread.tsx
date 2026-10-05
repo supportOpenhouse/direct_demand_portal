@@ -54,6 +54,9 @@ export function Bubble({ m }: { m: WaMessage }) {
           wordBreak: "break-word",
         }}
       >
+        {/* a campaign message, not something an RM typed. The template's NAME isn't on the message
+            (only its rendered text is), so the label is just "Template". */}
+        {m.msg_type === "template" && <span className="wa-tpl-tag">Template</span>}
         <Media m={m} />
         {m.body || (!m.media_url && <i style={{ color: "var(--muted)" }}>[{m.msg_type}]</i>)}
         {/* who sent it — the portal user outbound, the customer inbound. Outbound
@@ -77,9 +80,13 @@ interface Props {
   messages: WaMessage[];       // oldest first
   lastInboundAt: number | null;
   sendEnabled: boolean;
+  /* Which of our two numbers a reply leaves from — the one the customer last wrote to, because WhatsApp's
+     24 h window is per business number. Decided by the server (GET /gupshup/messages → reply_app), which
+     also does the sending, so the hint can't promise a number the send then doesn't use. */
+  replyApp?: "template" | "chat";
 }
 
-export default function WaThread({ phone, messages, lastInboundAt, sendEnabled }: Props) {
+export default function WaThread({ phone, messages, lastInboundAt, sendEnabled, replyApp }: Props) {
   const send = useSendWa();
   const [draft, setDraft] = useState("");
 
@@ -110,24 +117,32 @@ export default function WaThread({ phone, messages, lastInboundAt, sendEnabled }
           {blocked}
         </div>
       ) : (
-        <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "flex-end" }}>
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
-            }}
-            placeholder="Message… (Enter to send, Shift+Enter for a new line)"
-            rows={2}
-            style={{
-              flex: 1, resize: "none", font: "inherit", fontSize: 13, padding: "9px 11px",
-              borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)",
-              color: "var(--ink)",
-            }}
-          />
-          <button className="btn wa" onClick={submit} disabled={send.isPending || !draft.trim()}>
-            {send.isPending ? "Sending…" : "Send"}
-          </button>
+        <div style={{ marginTop: 10 }}>
+          {/* undefined until THIS thread's data has loaded — guessing "chat" would be wrong for a template thread */}
+          {replyApp && (
+            <div className="wc-hint" style={{ marginTop: 0, marginBottom: 5 }}>
+              Replying from the {replyApp === "template" ? "template" : "chat"} number
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit(); }
+              }}
+              placeholder="Message… (Enter to send, Shift+Enter for a new line)"
+              rows={2}
+              style={{
+                flex: 1, resize: "none", font: "inherit", fontSize: 13, padding: "9px 11px",
+                borderRadius: 9, border: "1px solid var(--line)", background: "var(--panel)",
+                color: "var(--ink)",
+              }}
+            />
+            <button className="btn wa" onClick={submit} disabled={send.isPending || !draft.trim()}>
+              {send.isPending ? "Sending…" : "Send"}
+            </button>
+          </div>
         </div>
       )}
       {send.isError && (

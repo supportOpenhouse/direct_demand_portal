@@ -20,6 +20,8 @@ import ReportDetail from "./pages/ReportDetail";
 import CallLog from "./pages/CallLog";
 import HuvoCalls from "./pages/HuvoCalls";
 import Chat from "./pages/Chat";
+import WaCampaigns from "./pages/WaCampaigns";
+import CampaignDetail from "./features/waCampaigns/CampaignDetail";
 import MetaLeads from "./pages/MetaLeads";
 import Dialer from "./pages/Dialer";
 import DialerPrevious from "./pages/DialerPrevious";
@@ -109,6 +111,9 @@ const desktopRoutes = [
       { path: "call-log", element: <CallLog /> },
       { path: "huvo-calls", element: <HuvoCalls /> },
       { path: "chat", element: <Chat /> },
+      // WhatsApp template campaigns: templates + sending. Admin only — page, nav and endpoints
+      { path: "wa-campaigns", element: <WaCampaigns /> },
+      { path: "wa-campaigns/:id", element: <CampaignDetail /> },
       // admin-only: the page itself refuses a non-admin, and so does the endpoint
       { path: "meta-leads", element: <MetaLeads /> },
       // Anything unmatched lands on Home, as the mobile routes already did. Added when

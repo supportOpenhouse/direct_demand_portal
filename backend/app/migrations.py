@@ -75,6 +75,7 @@ _ADD_COLUMNS = [
     ("leads", "reject_reason", "TEXT"),
     ("leads", "qualified_status", "TEXT"),
     ("wa_messages", "source_app", "TEXT"),
+    ("wa_messages", "whatsapp_id", "TEXT"),
     ("leads", "reject_notes", "TEXT"),
     ("leads", "rejected_at", "TIMESTAMPTZ"),
     # call worklist / follow-up flow
@@ -269,6 +270,12 @@ async def run_migrations(engine) -> None:
             await conn.execute(text("""
                 CREATE INDEX IF NOT EXISTS ix_dial_queue_rm_dialed
                     ON dial_queue (lower(rm_email), dialed_at DESC)"""))
+            # Campaign tracking finds a recipient's replies on right(phone, 10) — the app's last-10
+            # key — which the plain phone index can't serve; without this every funnel / recipients /
+            # repeat query scans wa_messages once per recipient.
+            await conn.execute(text("""
+                CREATE INDEX IF NOT EXISTS ix_wa_messages_phone10_created
+                    ON wa_messages (right(phone, 10), created_at)"""))
             await conn.execute(text("""
                 UPDATE call_logs c SET campaign_id = q.campaign_id
                   FROM dial_queue q

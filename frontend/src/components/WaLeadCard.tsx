@@ -54,6 +54,7 @@ export default function WaLeadCard({ phone }: { phone: string | null }) {
             messages={messages}
             lastInboundAt={lastInboundAt}
             sendEnabled={data?.send_enabled ?? false}
+            replyApp={data?.reply_app}
           />
         </div>
       )}

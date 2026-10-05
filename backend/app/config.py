@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     # ?token= for the SECOND Gupshup app — the one that sends template campaigns from its
     # own number (POST /v1/gupshup/template-webhook). Empty = open in dev, 503 in prod.
     GUPSHUP_TEMPLATE_WEBHOOK_SECRET: str = ""
+    # the template-campaign app's SEND credentials (spec §5.2). Separate number, key, app.
+    GUPSHUP_TEMPLATE_API_KEY: str = ""
+    GUPSHUP_TEMPLATE_SOURCE_NUMBER: str = ""
+    GUPSHUP_TEMPLATE_APP_NAME: str = ""
+    # unique people per moving 24 h — set from WhatsApp Manager → Account tools → Messaging limits (contract §9)
+    WA_DAILY_SEND_LIMIT: int = 250
     GUPSHUP_API_KEY: str = ""
     # the registered WhatsApp Business number, country code included, digits only
     GUPSHUP_SOURCE_NUMBER: str = ""
@@ -233,6 +239,16 @@ class Settings(BaseSettings):
     def gupshup_send_configured(self) -> bool:
         """Receiving works with no config at all; sending needs all three."""
         return bool(self.GUPSHUP_API_KEY and self.GUPSHUP_SOURCE_NUMBER and self.GUPSHUP_APP_NAME)
+
+    @property
+    def gupshup_template_missing(self) -> list[str]:
+        """The template-app send vars that are unset, in a fixed order — named in the 503."""
+        return [k for k in ("GUPSHUP_TEMPLATE_API_KEY", "GUPSHUP_TEMPLATE_SOURCE_NUMBER",
+                            "GUPSHUP_TEMPLATE_APP_NAME") if not getattr(self, k).strip()]
+
+    @property
+    def gupshup_template_configured(self) -> bool:
+        return not self.gupshup_template_missing
 
     @property
     def is_prod(self) -> bool:

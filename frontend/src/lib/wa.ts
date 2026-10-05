@@ -31,3 +31,10 @@ export function useWaAllowed(): boolean {
   return isAdmin || !!appSettings?.wa_show_all_rms
     || (!!email && (appSettings?.wa_allowed_emails ?? []).includes(email));
 }
+
+/* A timestamp as IST wall-clock — the send window is IST, so a campaign's times read in IST whatever zone the
+   browser is in. Shared by the Campaigns list and the campaign page. */
+export const fmtIST = (iso: string | null): string =>
+  iso ? new Date(iso).toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false,
+  }) : "—";

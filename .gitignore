@@ -33,4 +33,8 @@ claude.md
 
 # local auth-bypass dev launcher — must never be committed
 dev.sh
-/docs
+# docs/ stays private EXCEPT the design specs, which are reviewed and tracked
+/docs/*
+!/docs/superpowers/
+/docs/superpowers/*
+!/docs/superpowers/specs/

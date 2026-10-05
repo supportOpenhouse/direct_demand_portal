@@ -2676,6 +2676,8 @@ td.lead-cell .nm{
 /* Media: thumbnails, click to enlarge over the popup. The lightbox clears the modal
    layer (90) rather than sitting inside it — see the layer order note. */
 /* the walkthrough button: an anchor, so it needs the flex centring .btn assumes */
+.dd-media-sub{font-size:11.5px;font-weight:600;color:var(--muted);margin:2px 0 6px}
+.dd-shots + .dd-media-sub{margin-top:12px}
 .dd-video{display:inline-flex;align-items:center;gap:8px;text-decoration:none;margin-top:2px}
 .dd-shots{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:10px;margin-bottom:10px}
 .dd-shot{padding:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--panel-2);

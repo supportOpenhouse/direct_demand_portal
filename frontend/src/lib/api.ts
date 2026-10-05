@@ -424,6 +424,8 @@ export type DemandProperty = {
   /** Openhouse Core's home id — the brochure is fetched by it. Null on legacy rows and
       on some real ones; those show "No home id". */
   core_home_id: number | null;
+  /** Openhouse Studio's stitched walkthrough (Cloudinary). Null until the shoot is stitched. */
+  studio_video_url: string | null;
 } & Record<string, unknown>;
 
 export interface MatchPreviewReq {
@@ -741,6 +743,23 @@ export const api = {
   // A property's brochure PDF, by its Openhouse Core home id — a link, not the file.
   demandBrochure: (homeId: number) =>
     request<{ url: string; filename: string }>(`/v1/demand-dashboard/brochure/${homeId}`),
+  // The Openhouse Studio shoot's room photos for one property (`slot_id` = "bedrooms:2").
+  demandStudioPhotos: (uid: string) =>
+    request<{ items: { slot_id: string; url: string }[] }>(`/v1/demand-dashboard/studio/${encodeURIComponent(uid)}/photos`),
+  /* The stitched studio video straight to the device. Unlike the brochure it needs no
+     trip through our server: Cloudinary sends `Access-Control-Allow-Origin: *`, so the
+     page can fetch it itself (~13 MB). `<a download>` on the bare URL would still OPEN
+     it — the attribute is ignored cross-origin — hence fetch → blob → click. */
+  downloadStudioVideo: async (url: string, uid: string) => {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`video download failed (${res.status})`);
+    const href = URL.createObjectURL(await res.blob());
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = `studio-video-${uid}.mp4`;
+    a.click();
+    URL.revokeObjectURL(href);
+  },
   markPriority: (uid: string, priority: boolean) =>
     request<{ status: string; priority: boolean }>(`/v1/supply/${encodeURIComponent(uid)}/priority`, { method: "POST", body: JSON.stringify({ priority }) }),
   leads: (segment: string) => request<LeadsResponse>(`/v1/leads?segment=${segment}`),

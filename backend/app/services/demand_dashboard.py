@@ -26,7 +26,7 @@ import logging
 
 from sqlalchemy import text
 
-from ..db import properties_engine
+from ..db import properties_engine, studio_engine
 
 log = logging.getLogger("demand_dashboard")
 
@@ -156,8 +156,46 @@ def build_sql(columns: dict[str, set[str]]) -> str:
     """
 
 
+# From the Openhouse Studio DB, a separate engine — merged in Python by uid, since the
+# two databases can't be joined. `property_uid` there IS `uid` here (verified 5 Oct:
+# 109 of 110 stitched videos and 284 of 285 photo sets match a dashboard uid).
+STUDIO_COLS = ("studio_video_url",)
+
+# One row per property. 194 of 304 have no stitched_url yet (shot, not stitched).
+STUDIO_VIDEOS = text("""
+    SELECT property_uid, stitched_url FROM onboarded_properties_videos
+     WHERE coalesce(stitched_url, '') <> ''
+""")
+
+# `url` holds the literal 'already exists' on 2,886 of 3,788 rows (5 Oct) — a studio-side
+# placeholder, not a photo. Only real links leave the backend.
+STUDIO_PHOTOS = text("""
+    SELECT slot_id, url FROM onboarded_properties_photos
+     WHERE property_uid = :uid AND url LIKE 'https://%'
+     ORDER BY slot_id
+""")
+
+
+async def _studio_videos() -> dict[str, str]:
+    engine = studio_engine()
+    if engine is None:
+        return {}
+    async with engine.connect() as conn:
+        return dict((await conn.execute(STUDIO_VIDEOS)).all())
+
+
+async def fetch_studio_photos(uid: str) -> list[dict] | None:
+    """The studio shoot's room photos for one property; None if the studio DB isn't set."""
+    engine = studio_engine()
+    if engine is None:
+        return None
+    async with engine.connect() as conn:
+        return [dict(r) for r in (await conn.execute(STUDIO_PHOTOS, {"uid": uid})).mappings()]
+
+
 async def fetch_properties() -> dict:
-    """Every ready-to-sell property with its demand-side row. One query, no writes."""
+    """Every ready-to-sell property with its demand-side row, plus its stitched studio
+    video. One query per database, no writes."""
     engine = properties_engine()
     if engine is None:
         return {"status": "not_configured", "items": []}
@@ -167,4 +205,6 @@ async def fetch_properties() -> dict:
             columns[table].add(column)
         rows = (await conn.execute(text(build_sql(columns)),
                                    {"ready": list(SUPPLY_READY_STATUSES)})).mappings().all()
-    return {"status": "ok", "items": [dict(r) for r in rows]}
+    videos = await _studio_videos()
+    return {"status": "ok",
+            "items": [dict(r) | {"studio_video_url": videos.get(r["uid"])} for r in rows]}

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     # Direct-inventory DB holding the oh_pricing table (Openhouse reference prices
     # by society + area). Read-only; used to price Supply Pipeline units.
     DIRECT_INVENTORY_DB_URL: str = ""
+    # Openhouse Studio DB — onboarded_properties_videos / _photos, the shoot's stitched
+    # walkthrough and room photos, keyed by property_uid (= the Demand Dashboard uid).
+    # Read-only.
+    OPENHOUSE_STUDIO_DATABASE_URL: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15
@@ -224,6 +228,14 @@ class Settings(BaseSettings):
     @property
     def direct_inventory_configured(self) -> bool:
         return bool(self.DIRECT_INVENTORY_DB_URL)
+
+    @property
+    def studio_url(self) -> str:
+        return normalize_asyncpg_url(self.OPENHOUSE_STUDIO_DATABASE_URL)
+
+    @property
+    def studio_configured(self) -> bool:
+        return bool(self.OPENHOUSE_STUDIO_DATABASE_URL)
 
     @property
     def crm_booking_configured(self) -> bool:

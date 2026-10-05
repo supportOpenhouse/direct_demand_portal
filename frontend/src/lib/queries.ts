@@ -328,6 +328,9 @@ export function useSupply() {
 export function useDemandProperties() {
   return useQuery({ queryKey: ["demand-dashboard"], queryFn: api.demandDashboard, staleTime: 60_000 });
 }
+export function useDemandStudioPhotos(uid: string) {
+  return useQuery({ queryKey: ["demand-studio-photos", uid], queryFn: () => api.demandStudioPhotos(uid), staleTime: 5 * 60_000 });
+}
 
 export function useLeads(segment: string) {
   return useQuery({ queryKey: ["leads", segment], queryFn: () => api.leads(segment), staleTime: 60_000 });

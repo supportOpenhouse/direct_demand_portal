@@ -77,7 +77,8 @@ def test_the_api_sends_only_what_the_page_reads():
     """No column travels that nothing renders. The seller's identity, the guaranteed sale
     price and the pipeline dates were removed from the page on purpose (23 Sep); leaving
     them in the payload would keep shipping them to every browser that opens devtools."""
-    sent = {alias for _p, _l, alias, _t in svc.UNIFIED_COLS} | set(svc.JOINED_COLS)
+    sent = ({alias for _p, _l, alias, _t in svc.UNIFIED_COLS} | set(svc.JOINED_COLS)
+            | set(svc.STUDIO_COLS))
     read = _fields_the_page_reads()
     assert not (sent - read), f"sent but never rendered: {sorted(sent - read)}"
     for removed in ("owner_name", "contact_no", "co_owner", "seller_location",
@@ -89,7 +90,8 @@ def test_the_api_sends_only_what_the_page_reads():
 def test_the_page_asks_for_nothing_the_api_does_not_send():
     """The other direction: a field the page renders but the query never selects is a
     column of blanks nobody notices."""
-    sent = {alias for _p, _l, alias, _t in svc.UNIFIED_COLS} | set(svc.JOINED_COLS)
+    sent = ({alias for _p, _l, alias, _t in svc.UNIFIED_COLS} | set(svc.JOINED_COLS)
+            | set(svc.STUDIO_COLS))
     # The default layout `DEMAND_COLS = [...]` lists the page's COLUMN ids, not database
     # fields ("remarks", "brochure") — its last entry matches the `"name"]` pattern the
     # scan uses for section fields. Every id in that list is excluded as a group, rather
@@ -111,3 +113,11 @@ def test_only_supply_ready_properties_are_listed():
     assert svc.SUPPLY_READY_STATUSES == ("AMA Signed", "Key Handover Done")
     sql = svc.build_sql({"properties": set(), "legacy_properties": set()})
     assert "apd.status = ANY(:ready)" in sql
+
+
+def test_studio_photos_never_send_the_placeholder_rows():
+    """Openhouse Studio stores the literal 'already exists' in `url` for most photo rows
+    (2,886 of 3,788 on 5 Oct). An <img> of that is a broken tile — only links go out."""
+    sql = str(svc.STUDIO_PHOTOS)
+    assert "url LIKE 'https://%'" in sql and "property_uid = :uid" in sql
+    assert "coalesce(stitched_url, '') <> ''" in str(svc.STUDIO_VIDEOS)

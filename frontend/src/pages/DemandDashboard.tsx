@@ -9,7 +9,7 @@
    Escape instead of a second animation nobody else in this app uses. */
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useDemandProperties } from "../lib/queries";
+import { useDemandProperties, useDemandStudioPhotos } from "../lib/queries";
 import { api, DemandProperty } from "../lib/api";
 import { FilterBar, useFilterValues } from "../components/FilterBar";
 import SlideTabs from "../components/SlideTabs";
@@ -248,6 +248,9 @@ export const DEMAND_COLUMNS: DDColumn[] = [
     sort: (p) => (p.internal_remarks ?? "").toLowerCase() },
   // the brochure PDF, saved straight to the device; "No home id" where Core has none
   { id: "brochure", label: "Brochure", tight: true, cell: (p) => <BrochureDownload homeId={p.core_home_id} /> },
+  // Openhouse Studio's stitched walkthrough, saved straight to the device; "No video" until stitched
+  { id: "studio_video", label: "Studio video", tight: true,
+    cell: (p) => <StudioVideoDownload url={p.studio_video_url} uid={p.uid} /> },
   /* Off by default — every other field from the same row. They are ordinary table
      columns, not popup fields, so the settings modal lists them under "Hidden table
      columns"; `popup` is a lead-table distinction that means nothing here. */
@@ -296,7 +299,7 @@ const AVAIL_BOXES = [
 
 const DD_BY_ID: Record<string, DDColumn> = Object.fromEntries(DEMAND_COLUMNS.map((c) => [c.id, c]));
 /* their ten, in their order */
-const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks", "brochure"];
+const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks", "brochure", "studio_video"];
 /* module-level: an accessor object rebuilt each render re-sorts on every keystroke */
 const SORTERS = Object.fromEntries(
   DEMAND_COLUMNS.filter((c) => c.sort).map((c) => [c.id, c.sort!]),
@@ -304,7 +307,25 @@ const SORTERS = Object.fromEntries(
 
 function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => void }) {
   const { onClose, overlayClass } = useModalExit(raw);
-  const photos = photosOf(p);
+  // Studio shoot first (a room-by-room tour), then the listing's own shots. One list, so
+  // the lightbox's arrows walk across both.
+  const studioQ = useDemandStudioPhotos(p.uid);
+  const studio = studioShots(studioQ.data?.items ?? []);
+  const listing = photosOf(p);
+  const photos = [...studio, ...listing];
+  const thumbs = (list: { url: string; label: string }[], offset: number) => (
+    <div className="dd-shots">
+      {list.map((ph, i) => (
+        <button className="dd-shot" key={ph.url}
+                onClick={(e) => { e.stopPropagation(); setShot({ ...ph, i: offset + i }); }}
+                title={`${ph.label} — click to enlarge`}>
+          {/* lazy: a property carries up to ~20 photos and most are never looked at */}
+          <img src={ph.url} alt={ph.label} loading="lazy" />
+          <span className="dd-shot-l">{ph.label}</span>
+        </button>
+      ))}
+    </div>
+  );
   // Video is a link, not an image — it can't be a thumbnail, so it keeps its own row.
   const video = typeof p.video_link === "string" && p.video_link.trim() ? p.video_link : null;
   const [shot, setShot] = useState<Shot | null>(null);
@@ -320,6 +341,7 @@ function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => 
           <span className={`stage ${AVAIL_CLASS[p.availability_status] ?? ""}`}>{p.availability_status}</span>
           {p.origin === "legacy" && <span className="chip-soft">Legacy</span>}
           <BrochureButton homeId={p.core_home_id} />
+          <StudioVideoButton url={p.studio_video_url} />
           <button className="modal-x" onClick={onClose} aria-label="Close"><IconX /></button>
         </div>
         <div className="dd-body">
@@ -339,17 +361,14 @@ function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => 
           {(photos.length > 0 || video) && (
             <div className="dd-section">
               <div className="dd-section-t">Media</div>
-              <div className="dd-shots">
-                {photos.map((ph, i) => (
-                  <button className="dd-shot" key={ph.url}
-                          onClick={(e) => { e.stopPropagation(); setShot({ ...ph, i }); }}
-                          title={`${ph.label} — click to enlarge`}>
-                    {/* lazy: a property carries up to ~10 photos and most are never looked at */}
-                    <img src={ph.url} alt={ph.label} loading="lazy" />
-                    <span className="dd-shot-l">{ph.label}</span>
-                  </button>
-                ))}
-              </div>
+              {studio.length > 0 && (
+                <>
+                  <div className="dd-media-sub">Studio shoot</div>
+                  {thumbs(studio, 0)}
+                  {listing.length > 0 && <div className="dd-media-sub">Listing photos</div>}
+                </>
+              )}
+              {listing.length > 0 && thumbs(listing, studio.length)}
               {/* The walkthrough is the one thing here worth opening before a call — it
                   gets the accent, not a line of link text among the thumbnails. */}
               {video && (
@@ -423,7 +442,67 @@ function BrochureDownload({ homeId }: { homeId: number | null }) {
   );
 }
 
+/* Popup header: opens Openhouse Studio's stitched walkthrough in a new tab. The URL is
+   already on the row, so — unlike the brochure — there's nothing to fetch first and no
+   popup-blocker dance; a plain link. */
+function StudioVideoButton({ url }: { url: string | null }) {
+  if (!url) return <span className="chip-soft" title="Openhouse Studio hasn't stitched a video for this property">No studio video</span>;
+  return (
+    <a className="btn sm" href={url} target="_blank" rel="noreferrer">
+      <IconPlay /> View studio video
+    </a>
+  );
+}
+
+/* The table's studio-video download — same shape as BrochureDownload: own busy state per
+   row, stopPropagation so saving doesn't also open the property popup. ~13 MB, so the
+   "…" shows for a few seconds. */
+function StudioVideoDownload({ url, uid }: { url: string | null; uid: string }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  if (!url) return <span className="dd-nohome" title="Openhouse Studio hasn't stitched a video for this property">No video</span>;
+  const go = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setBusy(true);
+    try { await api.downloadStudioVideo(url, uid); }
+    catch (err) { toast(err instanceof Error ? err.message : "Couldn't download the video", "gold"); }
+    finally { setBusy(false); }
+  };
+  return (
+    <button className="btn ghost sm dd-dl" onClick={go} disabled={busy} title="Download the studio video">
+      <IconDownload /> {busy ? "…" : "MP4"}
+    </button>
+  );
+}
+
 type Shot = { url: string; label: string; i: number };
+
+/* Openhouse Studio's room photos. `slot_id` is "room:N" — "bedrooms:2",
+   "balconies:2-view", "extra_area:Pooja Room" — so they're labelled from it and walked
+   room by room, the way a buyer tours the flat: each balcony before its view. */
+const STUDIO_ROOMS: [string, string][] = [
+  ["living_room", "Living room"], ["kitchen", "Kitchen"], ["bedrooms", "Bedroom"],
+  ["bathrooms", "Bathroom"], ["balconies", "Balcony"], ["extra_area", ""],
+];
+function studioShots(items: { slot_id: string; url: string }[]): { url: string; label: string }[] {
+  const key = (slot: string) => {
+    const [room, rest = ""] = slot.split(":");
+    const i = STUDIO_ROOMS.findIndex(([k]) => k === room);
+    return { i: i < 0 ? STUDIO_ROOMS.length : i, n: parseInt(rest, 10) || 0, rest };
+  };
+  const label = (slot: string) => {
+    const [room, rest = ""] = slot.split(":");
+    if (room === "extra_area") return rest || "Extra area";
+    const name = STUDIO_ROOMS.find(([k]) => k === room)?.[1] ?? room.replace(/_/g, " ");
+    return `${name} ${rest.replace("-", " ")}`.trim();
+  };
+  return [...items]
+    .sort((a, b) => {
+      const x = key(a.slot_id), y = key(b.slot_id);
+      return x.i - y.i || x.n - y.n || x.rest.localeCompare(y.rest);
+    })
+    .map(({ slot_id, url }) => ({ url, label: label(slot_id) }));
+}
 
 /* Every photo on a property, in the order somebody would look at them: the balconies
    first (each with its view and compass shot), then the unit's own exit compass, then

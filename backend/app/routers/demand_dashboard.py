@@ -12,7 +12,7 @@ from fastapi.responses import Response
 
 from ..config import get_settings
 from ..core.auth import current_user
-from ..services.demand_dashboard import fetch_properties
+from ..services.demand_dashboard import fetch_properties, fetch_studio_photos
 
 router = APIRouter(tags=["demand-dashboard"], dependencies=[Depends(current_user)])
 
@@ -23,6 +23,18 @@ async def get_demand_dashboard():
     if result["status"] == "not_configured":
         raise HTTPException(status_code=503, detail="properties DB not configured")
     return result
+
+
+@router.get("/demand-dashboard/studio/{uid}/photos")
+async def get_studio_photos(uid: str):
+    """The Openhouse Studio shoot's room photos for one property — the popup's Media
+    section. Fetched per popup rather than shipped with the list: ~900 links for 72
+    properties, and most popups are never opened. (The stitched video URL rides on each
+    list row instead, because the table's download button needs it.)"""
+    items = await fetch_studio_photos(uid)
+    if items is None:
+        raise HTTPException(status_code=503, detail="Openhouse Studio DB not configured")
+    return {"items": items}
 
 
 @router.get("/demand-dashboard/brochure/{home_id}")

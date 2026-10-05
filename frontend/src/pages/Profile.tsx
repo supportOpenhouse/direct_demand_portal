@@ -67,7 +67,7 @@ export default function Profile() {
         <div className="card panel-pad">
           <div className="profile-row">
             <div><div className="pl">Sign out</div><div className="pd">Ends this session on this device.</div></div>
-            <button className="btn" onClick={logout} style={{ color: "var(--coral)", borderColor: "var(--coral-soft-2)" }}>
+            <button className="btn ghost" onClick={logout} style={{ color: "var(--coral)", borderColor: "var(--coral-soft-2)" }}>
               <IconLogout /> Sign out
             </button>
           </div>

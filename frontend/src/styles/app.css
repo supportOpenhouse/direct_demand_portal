@@ -398,7 +398,13 @@ body{
   display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;
   height:var(--control-h);padding:0 15px;border-radius:var(--r-input);
   font:inherit;font-weight:600;font-size:13px;cursor:pointer;transition:var(--t);white-space:nowrap;
+  /* A bare .btn IS the accent (5 Oct). It used to set no background, so a <button> fell
+     back to the browser's grey and an <a class="btn"> rendered as a plain purple link. */
+  background:var(--brand);color:var(--on-brand);
 }
+/* :where() keeps this at (0,1,0) so every modifier's own background (ghost, green,
+   mv-danger-solid…) still wins on hover; only a bare .btn takes the darker accent. */
+:where(.btn):hover{background:var(--brand-strong)}
 .btn svg{width:15px;height:15px}
 a.btn{text-decoration:none} /* .btn on a react-router <Link> */
 

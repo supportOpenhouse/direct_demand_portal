@@ -488,3 +488,156 @@ def test_accept_hands_a_preference_event_to_persist(monkeypatch):
     body = {"type": "preference-event", "payload": {"type": "user_preferences", "payload": {"user_preferences": []}}}
     assert client.post("/v1/gupshup/template-webhook", json=body).status_code == 200
     assert seen == ["preference-event"]
+
+
+# --- final fix round: STOP button, no re-stamp, opted_out treated like rejected -------
+
+class _PRes:
+    def __init__(self, rows=()):
+        self.rows = list(rows)
+
+    def first(self):
+        return self.rows[0] if self.rows else None
+
+    def mappings(self):
+        return self
+
+    def all(self):
+        return self.rows
+
+    def scalars(self):
+        return self
+
+    def __iter__(self):
+        return iter(self.rows)
+
+
+class _PConn:
+    def __init__(self, answer=None):
+        self.calls, self.answer = [], answer or (lambda s, p: _PRes())
+
+    async def execute(self, stmt, params=None):
+        self.calls.append((stmt, params))
+        return self.answer(stmt, params)
+
+
+class _PCtx:
+    def __init__(self, conn):
+        self.conn = conn
+
+    async def __aenter__(self):
+        return self.conn
+
+    async def __aexit__(self, *a):
+        return False
+
+
+class _PEng:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def begin(self):
+        return _PCtx(self.conn)
+
+    connect = begin
+
+
+def _tap(text, outer="quick_reply"):
+    return {"type": "message", "app": "template", "body": {"type": "message", "payload": {
+        "id": "in-1", "source": "919876543210", "type": outer,
+        "payload": {"text": text, "type": "button", "postbackText": "p"},
+        "sender": {"phone": "919876543210", "name": "R"}, "context": {"gsId": "g1", "id": "w1"}}}}
+
+
+def _typed(text):
+    return {"type": "message", "app": None, "body": {"type": "message", "payload": {
+        "id": "in-2", "source": "919876543210", "type": "text", "payload": {"text": text},
+        "sender": {"phone": "919876543210", "name": "R"}}}}
+
+
+@pytest.mark.parametrize("entry,by", [
+    (_tap("Stop promotions"), "STOP button"),          # G-5: Meta's opt-out button on a marketing template
+    (_tap("STOP", outer="text"), "STOP button"),        # Doc B's tap shape (contract §6.2)
+    (_typed("stop"), "STOP reply"),
+    (_tap("Yes, call me"), None),
+    (_typed("Stop promotions"), None),                  # typed text keeps the exact-word rule
+    (_typed("don't stop"), None),
+])
+async def test_a_stop_button_tap_opts_out_and_typed_text_keeps_the_exact_rule(monkeypatch, entry, by):
+    from app.routers import gupshup
+    conn = _PConn()
+    monkeypatch.setattr(gupshup, "neon_engine", lambda: _PEng(conn))
+    await gupshup._persist(entry)
+    opted = [p for s, p in conn.calls if s is gupshup.OPT_OUT_SQL]
+    assert opted == ([{"p": "9876543210", "by": by}] if by else [])
+
+
+def test_is_stop_button_reads_the_first_word():
+    from app.routers.gupshup import is_stop_button
+    for s in ("Stop promotions", "STOP", "stop-offers", " Stop."):
+        assert is_stop_button(s), s
+    for s in ("Don't stop", "Stopped", "Yes", "", None):
+        assert not is_stop_button(s), s
+
+
+def test_an_opt_out_is_never_re_stamped():
+    """G-13: a Meta stop re-stamping an admin's / typed-STOP opt-out as Meta's let Meta's next resume undo it."""
+    from app.routers.gupshup import OPT_OUT_SQL
+    sql = " ".join(OPT_OUT_SQL.text.split())
+    assert "WHERE wa_contacts.tag IS DISTINCT FROM 'rejected' AND wa_contacts.tag IS DISTINCT FROM 'opted_out'" in sql
+
+
+def test_the_bell_and_create_leads_skip_opted_out_like_rejected():
+    """F-4: opted_out is a decision not to work the number, like rejected."""
+    import inspect
+
+    from sqlalchemy import select
+    from sqlalchemy.dialects import postgresql
+
+    from app.models import WaMessage
+    from app.routers import gupshup
+    assert gupshup.DECLINED_TAGS == ("rejected", "opted_out")
+    assert "tags.get(p10) in DECLINED_TAGS" in inspect.getsource(gupshup.gupshup_pending)
+    sql = str(select(WaMessage.phone).where(gupshup._NOT_DECLINED).compile(
+        dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True}))
+    assert "NOT IN (SELECT wa_contacts.phone10" in sql and "wa_contacts.tag IN ('rejected', 'opted_out')" in sql
+    assert inspect.getsource(gupshup.gupshup_convertible).count("_NOT_DECLINED") == 1
+    assert inspect.getsource(gupshup.gupshup_threads).count("_NOT_DECLINED") == 1, "convertible_total matches the list"
+
+
+async def test_the_pending_bell_drops_an_opted_out_conversation(monkeypatch):
+    from datetime import datetime, timezone
+
+    from app.routers import gupshup
+    now = datetime(2026, 10, 5, tzinfo=timezone.utc)
+    msgs = [{"phone": "919876543210", "direction": "in", "name": "A", "created_at": now},
+            {"phone": "919876543211", "direction": "in", "name": "B", "created_at": now},
+            {"phone": "919876543212", "direction": "in", "name": "C", "created_at": now}]
+    tags = [{"phone10": "9876543210", "tag": "opted_out", "assigned_to": None},
+            {"phone10": "9876543211", "tag": "rejected", "assigned_to": None}]
+
+    def answer(stmt, p):
+        sql = str(stmt)
+        if "wa_contacts" in sql:
+            return _PRes(tags)
+        if "FROM leads" in sql:
+            return _PRes([])
+        return _PRes(msgs)
+    monkeypatch.setattr(gupshup, "neon_engine", lambda: _PEng(_PConn(answer)))
+    out = await gupshup.gupshup_pending({"role": "admin", "email": "a@x"})
+    assert [i["phone"] for i in out["items"]] == ["919876543212"]
+
+
+@pytest.mark.parametrize("tag,assigns", [("opted_out", False), ("rejected", False), ("buyer", True)])
+async def test_marking_opted_out_never_assigns_an_owner(monkeypatch, tag, assigns):
+    from app.routers import gupshup
+    from app.services import wa_assign
+    asked = []
+
+    async def assign(conn, p10):
+        asked.append(p10)
+        return "Asha"
+    monkeypatch.setattr(wa_assign, "assign_if_unassigned", assign)
+    monkeypatch.setattr(gupshup, "neon_engine", lambda: _PEng(_PConn()))
+    await gupshup.gupshup_mark(gupshup.MarkRequest(phone="9876543210", tag=tag), {"role": "admin", "email": "a@x"})
+    assert bool(asked) is assigns

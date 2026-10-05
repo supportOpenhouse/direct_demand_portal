@@ -22,7 +22,8 @@ every new conversation until they catch up on everyone's history — the same re
 lead sweep (services/lead_assign.py) balances on today.
 
 Contacts tagged `rejected` are never assigned — dead numbers shouldn't consume anyone's
-share — and tagging an existing one clears its owner.
+share — and tagging an existing one clears its owner. Contacts tagged `opted_out` (they asked
+us to stop) are never assigned either; an owner they already had is kept.
 """
 import logging
 
@@ -82,12 +83,12 @@ async def assign_if_unassigned(conn, phone10: str) -> str | None:
     Only fills blanks: an existing owner is never overwritten, because reshuffling a
     live conversation confuses the customer more than it helps. Returns the owner
     either way, or None when there is nobody to give it to — including for a
-    `rejected` contact, which is left unowned on purpose.
+    `rejected` or `opted_out` contact, which is left unowned on purpose.
     """
     row = (await conn.execute(
         text("SELECT assigned_to, tag FROM wa_contacts WHERE phone10 = :p"), {"p": phone10}
     )).first()
-    if row and (row[0] or row[1] == "rejected"):
+    if row and (row[0] or row[1] in ("rejected", "opted_out")):
         return row[0]
 
     owner = await pick_owner(conn, phone10)
@@ -106,7 +107,7 @@ async def assign_if_unassigned(conn, phone10: str) -> str | None:
 
 
 async def backfill(conn) -> int:
-    """Distribute conversations that predate assignment. Runs one at a time so each
+    """Distribute conversations that predate assignment (never a rejected or opted-out one). Runs one at a time so each
     pick sees the previous one's effect on load — a set-based update would hand every
     unowned thread to whoever is currently least loaded."""
     rows = (await conn.execute(text("""
@@ -114,7 +115,7 @@ async def backfill(conn) -> int:
         FROM wa_messages m
         LEFT JOIN wa_contacts c ON c.phone10 = right(m.phone, 10)
         WHERE length(m.phone) >= 10
-          AND (c.phone10 IS NULL OR (c.assigned_to IS NULL AND c.tag IS DISTINCT FROM 'rejected'))
+          AND (c.phone10 IS NULL OR (c.assigned_to IS NULL AND (c.tag IS NULL OR c.tag NOT IN ('rejected', 'opted_out'))))
     """))).all()
     done = 0
     for (p10,) in rows:

@@ -3,13 +3,15 @@ import logging
 import uuid
 import csv
 import io
+import unicodedata
 from datetime import date
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, model_validator
-from sqlalchemy import exists, func, select, text, update
+from sqlalchemy import exists, func, or_, select, text, update
 from sqlalchemy.exc import IntegrityError
 
 from ..config import get_settings
@@ -41,9 +43,16 @@ def _template_json(t) -> dict:
     }
 
 
+def _used_by_anything(template_id):
+    """A campaign was sent with it, or an auto campaign will send it: either way its body and Gupshup id are locked
+    (an auto definition whose template changed slot count would fail every run)."""
+    return or_(exists().where(WaCampaign.template_id == template_id),
+               exists().where(WaAutoCampaign.template_id == template_id))
+
+
 @router.get("/wa-campaigns/templates")
 async def list_templates():
-    used = exists().where(WaCampaign.template_id == WaTemplate.id)
+    used = _used_by_anything(WaTemplate.id)
     async with _engine().connect() as conn:
         rows = (await conn.execute(
             select(WaTemplate.__table__, used.label("used")).order_by(WaTemplate.active.desc(), WaTemplate.name)
@@ -107,13 +116,13 @@ async def edit_template(template_id: uuid.UUID, t: TemplateIn, user: dict = Depe
         )).mappings().first()
         if cur is None:
             raise HTTPException(status_code=404, detail="template not found")
-        used = (await conn.execute(select(WaCampaign.id).where(WaCampaign.template_id == template_id).limit(1))).first()
+        used = (await conn.execute(select(_used_by_anything(template_id)))).scalar()
 
         # Check for locked field changes
         changes = locked_changes(dict(cur), values)
         if used and changes:
             raise HTTPException(status_code=409, detail=(
-                "This template has been used by a campaign — its text and Gupshup id can't change. "
+                "This template has been used by a campaign or an auto campaign — its text and Gupshup id can't change. "
                 "Deactivate it and add a new one (it may reuse the same Gupshup id)."))
 
         # Check if re-activating or changing ID would violate the unique index
@@ -156,11 +165,21 @@ class PreviewIn(BaseModel):
     cooldown_days: int = Field(default=7, ge=0, le=365)
 
 
-RETRY_SQL = text("""
-    UPDATE wa_campaign_recipients SET status = 'queued', error = NULL, status_at = now()
+# A retry is a fresh send: the old ids go, so a late receipt for the earlier attempt can't move this row (contract §3).
+# A 'submitted' row is only "unknown" once its send has had time to answer: inside RETRY_GRACE it is still in flight,
+# and requeueing it would send it twice.
+RETRY_GRACE = "60 seconds"
+RETRY_SQL = text(f"""
+    UPDATE wa_campaign_recipients
+       SET status = 'queued', error = NULL, gupshup_id = NULL, whatsapp_id = NULL, status_at = now()
      WHERE id = :rid AND campaign_id = :cid AND status IN ('failed', 'submitted')
+       AND NOT (status = 'submitted' AND status_at > now() - interval '{RETRY_GRACE}')
     RETURNING id""")
-RETRY_PEEK_SQL = text("SELECT error, status_at FROM wa_campaign_recipients WHERE id = :rid AND campaign_id = :cid")
+RETRY_PEEK_SQL = text(f"""
+    SELECT r.error, r.status, r.status_at, c.status AS campaign_status,
+           (r.status = 'submitted' AND r.status_at > now() - interval '{RETRY_GRACE}') AS in_flight
+      FROM wa_campaign_recipients r JOIN wa_campaigns c ON c.id = r.campaign_id
+     WHERE r.id = :rid AND r.campaign_id = :cid""")
 REOPEN_SQL = text("UPDATE wa_campaigns SET status = 'sending', finished_at = NULL WHERE id = :cid AND status = 'done'")
 HHMM = r"^([01]\d|2[0-3]):[0-5]\d$"  # zero-padded: the send loop compares these as TEXT against to_char(…,'HH24:MI')
 
@@ -210,7 +229,7 @@ async def create_campaign(req: CreateIn, user: dict = Depends(require_admin)):
 
 
 ZERO_FUNNEL = {k: 0 for k in ("recipients", "queued", "accepted", "sent", "delivered", "read", "failed",
-                              "skipped", "unknown", "replied")}
+                              "skipped", "unknown", "replied", "no_reply")}
 
 
 @router.get("/wa-campaigns")
@@ -277,7 +296,8 @@ AUTO_LAST_RUNS_SQL = text("""
 
 
 async def _check_auto(conn, a: AutoIn) -> None:
-    """The template exists and is active, the seed exists, and its list fits the template's variables."""
+    """The template exists and is active, the seed exists and has been launched, and its list fits the
+    template's variables."""
     t = (await conn.execute(select(WaTemplate.__table__).where(WaTemplate.id == a.template_id))).mappings().first()
     if t is None:
         raise HTTPException(status_code=404, detail="template not found")
@@ -286,6 +306,10 @@ async def _check_auto(conn, a: AutoIn) -> None:
     src = (await conn.execute(svc.SOURCE_CAMPAIGN_SQL, {"campaign_id": a.seed_campaign_id})).mappings().first()
     if src is None:
         raise HTTPException(status_code=404, detail="seed campaign not found")
+    if src["status"] == "draft":
+        # its list has not gone out — run 1 would copy it while it sends (spec §7.3)
+        raise HTTPException(status_code=422, detail="The seed campaign is still a draft — launch it first, "
+                                                    "or pick a campaign that has been sent")
     if src["variable_count"] != t["variable_count"]:
         k = src["variable_count"]
         raise HTTPException(status_code=422, detail=(
@@ -295,6 +319,10 @@ async def _check_auto(conn, a: AutoIn) -> None:
 def _auto_values(a: AutoIn) -> dict:
     v = a.model_dump(exclude={"start_on"})
     return v | {"next_slot": a.start_on}
+
+
+async def _now_ist(conn):
+    return (await conn.execute(svc.NOW_IST_SQL)).scalar()
 
 
 async def _auto_row(conn, aid: uuid.UUID):
@@ -341,6 +369,21 @@ async def create_auto(a: AutoIn, user: dict = Depends(require_admin)):
     return {"id": str(aid)}
 
 
+# Literal path, above /wa-campaigns/{cid}/{action} below, which would otherwise read it as campaign "auto".
+@router.post("/wa-campaigns/auto/dry-run")
+async def dry_run_auto(a: AutoIn):
+    """Who the next run of a definition with THESE settings would message — the form's current values, saved or
+    not, new or existing. The SAME list builder a real run uses; a read-only connection, nothing is written."""
+    async with _engine().connect() as conn:
+        await _check_auto(conn, a)
+        try:
+            return await svc.auto_dry_run(conn, a.model_dump())
+        except svc.NotFound as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+
 @router.patch("/wa-campaigns/auto/{aid}")
 async def edit_auto(aid: uuid.UUID, a: AutoIn, user: dict = Depends(require_admin)):
     async with _engine().begin() as conn:
@@ -349,6 +392,8 @@ async def edit_auto(aid: uuid.UUID, a: AutoIn, user: dict = Depends(require_admi
             raise HTTPException(status_code=422, detail="the seed campaign can't change once the definition exists")
         await _check_auto(conn, a)
         values = _auto_values(a)
+        # a "next run on" whose time has already come moves to the next slot that hasn't
+        values["next_slot"] = svc.roll_forward(a.start_on, a.every_days, a.run_at, await _now_ist(conn))
         await conn.execute(update(WaAutoCampaign).where(WaAutoCampaign.id == aid)
                            .values(**values, status_note=None, updated_at=func.now()))
         await activity.record(conn, activity.changes_between(
@@ -356,16 +401,6 @@ async def edit_auto(aid: uuid.UUID, a: AutoIn, user: dict = Depends(require_admi
     return {"status": "ok"}
 
 
-@router.post("/wa-campaigns/auto/{aid}/dry-run")
-async def dry_run_auto(aid: uuid.UUID):
-    """Who the next run would message — the SAME helper a real run uses, and nothing is written."""
-    async with _engine().connect() as conn:
-        try:
-            return await svc.auto_dry_run(conn, aid)
-        except svc.NotFound as e:
-            raise HTTPException(status_code=404, detail=str(e))
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/wa-campaigns/auto/{aid}/{action}")
@@ -385,8 +420,12 @@ async def auto_action(aid: uuid.UUID, action: Literal["activate", "deactivate", 
             raise HTTPException(status_code=409, detail="switch the auto campaign on first")
         if action in ("activate", "deactivate"):
             on = action == "activate"
+            extra = {}
+            if on:  # a slot whose time has passed while it was off is not run late — the next one is
+                extra["next_slot"] = svc.roll_forward(cur["next_slot"], cur["every_days"], cur["run_at"],
+                                                      await _now_ist(conn))
             await conn.execute(update(WaAutoCampaign).where(WaAutoCampaign.id == aid)
-                               .values(active=on, status_note=None, updated_at=func.now()))
+                               .values(active=on, status_note=None, updated_at=func.now(), **extra))
             await activity.record(conn, activity.row_for(
                 activity.Actor.of(user), entity_type="wa_auto", entity_id=str(aid),
                 action=f"wa_auto_{action}d", field="active", before=cur["active"], after=on))
@@ -396,7 +435,8 @@ async def auto_action(aid: uuid.UUID, action: Literal["activate", "deactivate", 
     # its own transactions, after the log row commits: queues today's run (the web process sends it)
     res = await svc.run_auto_campaigns(trigger="manual", only=aid)
     if not res.get("runs"):
-        why = (res["skipped"][0]["reason"] if res.get("skipped") else "nothing to run")
+        why = (f"error: {res['failed'][0]['error']}" if res.get("failed")
+               else res["skipped"][0]["reason"] if res.get("skipped") else "nothing to run")
         raise HTTPException(status_code=409, detail=f"No run was started — {why}")
     return {"status": "queued", "runs": res["runs"]}
 
@@ -421,13 +461,22 @@ async def campaign_action(cid: uuid.UUID, action: Literal["launch", "pause", "re
 async def retry_recipient(cid: uuid.UUID, rid: uuid.UUID, user: dict = Depends(require_admin)):
     async with _engine().begin() as conn:
         cur = (await conn.execute(RETRY_PEEK_SQL, {"rid": rid, "cid": cid})).mappings().first()
-        if cur is not None and (why := svc.retry_refusal(cur["error"], cur["status_at"])):
-            raise HTTPException(status_code=409, detail=f"Not retried: {why}")  # contract Delta 18
+        if cur is not None:
+            if cur["campaign_status"] == "cancelled":  # nothing in a cancelled campaign sends — "queued" would be a lie
+                raise HTTPException(status_code=409, detail="Not retried: the campaign was cancelled")
+            if cur["in_flight"]:
+                raise HTTPException(status_code=409, detail="Not retried: still sending — Gupshup hasn't answered "
+                                                            "yet; check again in a minute")
+            if why := svc.retry_refusal(cur["error"], cur["status_at"]):
+                raise HTTPException(status_code=409, detail=f"Not retried: {why}")  # contract Delta 18
         row = (await conn.execute(RETRY_SQL, {"rid": rid, "cid": cid})).first()
         if row is None:
             raise HTTPException(status_code=409, detail="only a failed or unknown recipient can be retried")
         # a finished campaign goes back to sending so the loop picks the row up
         await conn.execute(REOPEN_SQL, {"cid": cid})
+        await activity.record(conn, activity.row_for(
+            activity.Actor.of(user), entity_type="wa_campaign", entity_id=str(cid), action="wa_campaign_retry",
+            metadata={"recipient_id": str(rid), "was": cur["status"], "error": cur["error"]}))
     return {"status": "queued"}
 
 
@@ -521,6 +570,15 @@ async def campaign_export(cid: uuid.UUID):
         w.writerow([_csv_cell(j["name"]), j["phone10"], j["status"], _csv_cell(j["error"]), j["owner"] or "",
                     j["sent_at"] or "", _csv_cell(j["first_reply"]), j["replied_at"] or "", j["replies"],
                     _csv_cell(j["button"])])
-    fname = "".join(ch if ch.isalnum() or ch in " -_" else "_" for ch in c["name"]).strip() or "campaign"
-    return StreamingResponse(iter([out.getvalue()]), media_type="text/csv; charset=utf-8",
-                             headers={"Content-Disposition": f'attachment; filename="{fname}.csv"'})
+    return StreamingResponse(iter(["\ufeff" + out.getvalue()]), media_type="text/csv; charset=utf-8",
+                             headers={"Content-Disposition": _attachment(c["name"])})
+
+
+def _attachment(name: str) -> str:
+    """Content-Disposition for `<campaign name>.csv`. Headers are latin-1, so a Hindi name in a plain filename=
+    is a 500: an ASCII fallback for old clients, and the real name UTF-8 percent-encoded in filename* (RFC 6266)."""
+    # only what a filename can't hold: a Hindi vowel sign is a combining mark (not isalnum) and must survive
+    safe = "".join("_" if ch in '/\\:*?"<>|' or unicodedata.category(ch)[0] == "C" else ch for ch in name).strip()
+    safe = safe or "campaign"
+    ascii_name = "".join(ch if ch.isascii() and (ch.isalnum() or ch in " -_") else "_" for ch in safe)
+    return f"attachment; filename=\"{ascii_name}.csv\"; filename*=UTF-8''{quote(safe + '.csv', safe='')}"

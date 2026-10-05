@@ -3,15 +3,16 @@ Spec: docs/superpowers/specs/2026-09-29-whatsapp-template-campaigns-design.md"""
 import asyncio
 import base64
 import logging
-import time
+import time as _clock
 import uuid
-from datetime import date, timedelta
+from collections import Counter
+from datetime import date, datetime, time, timedelta
 
 from sqlalchemy import select, text
 
 from ..config import get_settings
 from ..db import neon_engine
-from ..models import WaAutoCampaign, WaCampaign, WaCampaignRecipient, WaMessage, WaTemplate
+from ..models import WaCampaign, WaCampaignRecipient, WaMessage, WaTemplate
 from . import activity, gupshup_template, wa_assign
 from .gupshup_events import CAMPAIGN_STOP_CODES, event_code, event_error, event_ids
 from .wa_recipients import Candidate, build, flatten_param, parse_paste, parse_upload
@@ -73,30 +74,35 @@ WA_CONTACTS_SQL = text("""
 
 # Source "repeat a previous list": that campaign's recipients, in LIST ORDER (position — ids are
 # random uuids, so without it the order is arbitrary). In non_responders mode, drop anyone with
-# an inbound message after their own send.
+# an inbound message after their own send (a skipped row has no sent_at, so it passes: it is still owed).
 # Never repeat to a number Gupshup/Meta already refused for good: 1002 no WhatsApp,
 # 131026 undeliverable, 131050 / 1012 opted out (contract §3.5, §7, §8). By CODE —
 # the reason text varies. A per-row manual Retry is still possible (Task 16 decides).
 # The COALESCE matters: a failed row with NO error text makes the IN() NULL, and NOT (true AND
 # NULL) is NULL — which WHERE reads as false, silently dropping that recipient from the repeat.
+# SKIPPED rows are copied: a skip is re-decided by EXCLUDE_SQL at every build (spec §5.1, §7.2), so a
+# number in cooldown today is messaged by a later run instead of leaving the list for good. Only the two
+# skips that can't lapse are dropped, to keep runs tidy: they became a lead, or aren't on WhatsApp (same
+# COALESCE reason: skip_reason is NULL on every row that wasn't skipped).
 REPEAT_SQL = text("""
     SELECT r.phone10, r.name, r.variables
       FROM wa_campaign_recipients r
      WHERE r.campaign_id = :campaign_id
-       AND r.status <> 'skipped'
        AND (:mode = 'everyone' OR NOT EXISTS (
              SELECT 1 FROM wa_messages m
               WHERE right(m.phone, 10) = r.phone10 AND m.direction = 'in'
                 AND r.sent_at IS NOT NULL AND m.created_at > r.sent_at))
        AND NOT (r.status = 'failed'
                 AND COALESCE(split_part(r.error, ':', 1) IN ('1002', '131026', '131050', '1012'), false))
+       AND NOT COALESCE(r.skip_reason IN ('is_lead', 'no_whatsapp'), false)
      ORDER BY r.position, r.id
 """)
 
 # The campaign being repeated, with the slot count of the template it was sent with: a list built
-# for N variables can't be dropped into a template that has a different count (spec §5.1).
+# for N variables can't be dropped into a template that has a different count (spec §5.1). Its status
+# says whether its list has finished going out (an auto campaign may only copy a finished list, §7.3).
 SOURCE_CAMPAIGN_SQL = text("""
-    SELECT c.id, t.variable_count
+    SELECT c.id, c.status, t.variable_count
       FROM wa_campaigns c JOIN wa_templates t ON t.id = c.template_id
      WHERE c.id = :campaign_id
 """)
@@ -250,12 +256,47 @@ async def create_draft(conn, req, user: dict) -> uuid.UUID:
     return cid
 
 
+# ── Who replied to which send (spec §8.3) — ONE rule, shared by the funnel and the recipient table ─────────
+# A send that actually went out: Gupshup took it (accepted) or a receipt moved it on. A `failed` row can still carry
+# a sent_at (accepted, then failed async — 131049 on a daily auto), but nothing reached the person, so it can
+# neither earn a reply nor stand between an earlier send and the reply to it.
+WENT_OUT = "('accepted','sent','delivered','read')"
+
+
+def _context_names(alias: str) -> str:
+    """The inbound message `m` answers the send `alias` exactly: its context carries that send's ids (contract
+    §6.4). gsId is our messageId; `id` is the template's WhatsApp id — or, on Gupshup's Doc A tap (§6.1), the
+    messageId itself, so `id` is compared to BOTH."""
+    return (f"(m.raw->'payload'->'context'->>'gsId' = {alias}.gupshup_id"
+            f" OR m.raw->'payload'->'context'->>'id' IN ({alias}.gupshup_id, {alias}.whatsapp_id))")
+
+
+# The end of a send's reply window: the next send to the same number that actually went out. Computed ONCE per
+# recipient (a bounded lookup), not as a NOT EXISTS for every (recipient, message) pair.
+NEXT_SEND_JOIN = f"""LEFT JOIN LATERAL (
+        SELECT min(r2.sent_at) AS at FROM wa_campaign_recipients r2
+         WHERE r.status IN {WENT_OUT}   -- only those rows can be credited: skip the lookup for the rest
+           AND r2.phone10 = r.phone10 AND r2.sent_at > r.sent_at AND r2.status IN {WENT_OUT}
+      ) nxt ON true"""
+
+# Inbound message `m` is credited to recipient `r` when r went out and EITHER m's context names r — exact, whenever
+# it was sent — OR m names no campaign send at all and falls in r's window (after r, not after the next send).
+# (`context IS NULL` first: most messages carry none, and they skip the per-message recipient lookup.)
+# A message whose context names another send belongs to that send only: a tap on run 1 made after run 2 went out
+# is run 1's, never run 2's too.
+REPLY_CREDIT = f"""right(m.phone, 10) = r.phone10 AND m.direction = 'in' AND r.status IN {WENT_OUT}
+           AND ({_context_names("r")}
+                OR (r.sent_at IS NOT NULL AND m.created_at > r.sent_at
+                    AND (nxt.at IS NULL OR m.created_at <= nxt.at)
+                    AND (m.raw->'payload'->'context' IS NULL
+                         OR NOT EXISTS (SELECT 1 FROM wa_campaign_recipients rx
+                                         WHERE rx.phone10 = r.phone10 AND {_context_names("rx")}))))"""
+
 # The funnel for a list of campaigns, computed from their recipients — never stored, so it can't drift (spec §4.2).
 # `accepted` = Gupshup took the send (2xx) and no `sent` receipt has arrived yet; `sent` ⊇ `delivered` ⊇ `read`;
-# `unknown` = rows stuck in `submitted` (claimed, the outcome never recorded).
-# `replied`: a reply is credited to the most recent campaign send before it (spec §2) — an inbound message after this
-# row's send, with no later send to the same number in between.
-FUNNEL_SQL = text("""
+# `unknown` = rows stuck in `submitted` (claimed, the outcome never recorded). `replied` / `no_reply` split the rows
+# that went out by REPLY_CREDIT — the same rule the recipient table filters on, so the boxes and the table agree.
+FUNNEL_SQL = text(f"""
     SELECT r.campaign_id,
            count(*)                                              AS recipients,
            count(*) FILTER (WHERE r.status = 'queued')           AS queued,
@@ -266,14 +307,14 @@ FUNNEL_SQL = text("""
            count(*) FILTER (WHERE r.status = 'failed')           AS failed,
            count(*) FILTER (WHERE r.status = 'skipped')          AS skipped,
            count(*) FILTER (WHERE r.status = 'submitted')        AS unknown,
-           count(*) FILTER (WHERE EXISTS (
-               SELECT 1 FROM wa_messages m
-                WHERE right(m.phone, 10) = r.phone10 AND m.direction = 'in'
-                  AND r.sent_at IS NOT NULL AND m.created_at > r.sent_at
-                  AND NOT EXISTS (SELECT 1 FROM wa_campaign_recipients r2
-                                   WHERE r2.phone10 = r.phone10
-                                     AND r2.sent_at > r.sent_at AND r2.sent_at < m.created_at))) AS replied
+           count(*) FILTER (WHERE rep.hit)                       AS replied,
+           count(*) FILTER (WHERE r.status IN {WENT_OUT} AND NOT rep.hit) AS no_reply
       FROM wa_campaign_recipients r
+      {NEXT_SEND_JOIN}
+      LEFT JOIN LATERAL (
+        SELECT EXISTS (SELECT 1 FROM wa_messages m
+                        WHERE {REPLY_CREDIT}) AS hit
+      ) rep ON true
      WHERE r.campaign_id = ANY(:ids)
      GROUP BY r.campaign_id
 """)
@@ -311,10 +352,14 @@ SKIP_OPTED_OUT_SQL = text("""
      WHERE r.id = :id AND r.status = 'queued'
        AND c.phone10 = r.phone10 AND c.tag IN ('opted_out', 'rejected')
 """)
+# Claimed only while its campaign is still 'sending': a pause or cancel (by an admin, a Gupshup stop code, or the
+# loop itself on an account-level refusal) stops the rest of the batch the loop already fetched.
 CLAIM_SQL = text("""
-    UPDATE wa_campaign_recipients SET status = 'submitted', status_at = now()
-     WHERE id = :id AND status = 'queued'
-    RETURNING id, phone10, variables
+    UPDATE wa_campaign_recipients r SET status = 'submitted', status_at = now()
+      FROM wa_campaigns c
+     WHERE r.id = :id AND r.status = 'queued'
+       AND c.id = r.campaign_id AND c.status = 'sending'
+    RETURNING r.id, r.phone10, r.variables
 """)
 SET_OWNER_SQL = text("UPDATE wa_campaign_recipients SET owner = :o WHERE id = :id")
 # Gupshup took it (2xx + messageId): 'accepted', not 'sent' — the sent receipt moves it on (Task 9).
@@ -323,7 +368,8 @@ ACCEPTED_SQL = text("""
        SET status = 'accepted', gupshup_id = :g, whatsapp_id = NULL, sent_at = now(), status_at = now()
      WHERE id = :id AND status = 'submitted'
 """)
-# Gupshup refused with 429/5xx: nothing was sent, so the row goes back in line.
+# Gupshup refused with 429/5xx (or the app itself was refused, or no connection was made): nothing was sent, so
+# the row goes back in line.
 REQUEUE_SQL = text("""
     UPDATE wa_campaign_recipients SET status = 'queued', status_at = now()
      WHERE id = :id AND status = 'submitted'
@@ -360,7 +406,7 @@ async def tick() -> int:
     engine = neon_engine()
     if engine is None or not s.gupshup_template_configured:
         return 0  # rows stay queued until the template app is configured
-    if time.monotonic() < _backoff_until:
+    if _clock.monotonic() < _backoff_until:
         return 0  # Gupshup said slow down
     attempted = 0
     async with engine.connect() as conn:
@@ -380,7 +426,7 @@ async def tick() -> int:
         for rid in ids:
             attempted += 1
             if not await _send_one(engine, camp, rid):
-                _backoff_until = time.monotonic() + BACKOFF_SECONDS
+                _backoff_until = _clock.monotonic() + BACKOFF_SECONDS
                 return attempted
             budget -= 1
         async with engine.begin() as conn:
@@ -389,35 +435,53 @@ async def tick() -> int:
 
 
 async def _send_one(engine, camp, rid) -> bool:
-    """Send one recipient. False = Gupshup refused with 429/5xx: the row is back in the queue
-    and the loop should back off."""
+    """Send one recipient. False = stop this tick and back the loop off (BACKOFF_SECONDS):
+    - Gupshup refused with 429/5xx, or no connection was made → the row is back in the queue;
+    - Gupshup refused the APP (401/403, "Invalid App Details") → the row is back in the queue and the campaign
+      is paused with the reason, so the list isn't failed one row at a time;
+    - the outcome is unknown (no answer, a 504, a 2xx without a messageId) → the row stays 'submitted'
+      ("Unknown — check"); during an outage this stops the loop turning the whole queue into unknowns."""
     async with engine.begin() as conn:
         await conn.execute(SKIP_OPTED_OUT_SQL, {"id": rid})
         row = (await conn.execute(CLAIM_SQL, {"id": rid})).mappings().first()
         if row is None:
-            return True  # someone else claimed it, or it was just skipped as opted out / rejected
+            return True  # someone else claimed it, it was just skipped as opted out / rejected, or the campaign stopped
         owner = await wa_assign.assign_if_unassigned(conn, row["phone10"])
         await conn.execute(SET_OWNER_SQL, {"o": owner, "id": rid})
     variables = [str(v) for v in row["variables"]]
     res = await gupshup_template.send_template(row["phone10"], camp["gupshup_template_id"], variables)
+    if res["ok"]:
+        # logged BEFORE the write: if that write fails, this line is the only record of which recipient the
+        # messageId (and every receipt that will carry it) belongs to
+        log.info("gupshup template accepted: campaign=%s recipient=%s messageId=%s", camp["id"], rid, res["message_id"])
     async with engine.begin() as conn:
         if res["ok"]:
             try:
                 shown = render(camp["body"], variables)
             except (ValueError, IndexError):  # must never roll back the 'accepted' write: Gupshup already took it
                 shown = f"[template {camp['template_name']}]"
-            await conn.execute(ACCEPTED_SQL, {"g": res["message_id"], "id": rid})
+            if (await conn.execute(ACCEPTED_SQL, {"g": res["message_id"], "id": rid})).rowcount == 0:
+                log.warning("gupshup template accepted messageId=%s for recipient=%s, but the row was no longer "
+                            "'submitted' — its receipts won't find it", res["message_id"], rid)
             await conn.execute(WaMessage.__table__.insert().values(
                 direction="out", phone="91" + row["phone10"], body=shown,
                 msg_type="template", gupshup_id=res["message_id"], status="submitted",
                 author=camp["created_by"], source_app="template",
                 raw={"campaign_id": str(camp["id"]), "template": camp["template_name"]}))
-        elif res.get("retry"):
+            return True
+        if res.get("retry"):
             await conn.execute(REQUEUE_SQL, {"id": rid})
             return False
-        elif not res.get("unknown"):
-            await conn.execute(FAILED_SQL, {"e": res["error"][:500], "id": rid})
-        # unknown: leave 'submitted' — Gupshup may have sent it; the admin retries by hand
+        if res.get("account"):
+            await conn.execute(REQUEUE_SQL, {"id": rid})
+            await conn.execute(PAUSE_SQL, {"cid": camp["id"], "note": (
+                f"Paused: Gupshup refused the app credentials ({res.get('status')} {res['error']})")[:500]})
+            log.error("wa campaign %s paused: Gupshup refused the template app (%s %s)",
+                      camp["id"], res.get("status"), res["error"])
+            return False
+        if res.get("unknown"):
+            return False  # left 'submitted' — Gupshup may have sent it; the admin checks and retries by hand
+        await conn.execute(FAILED_SQL, {"e": res["error"][:500], "id": rid})
     return True
 
 
@@ -465,7 +529,9 @@ async def set_status(conn, cid, action: str, user: dict) -> str:
     allowed, to = TRANSITIONS[action]
     row = (await conn.execute(text("""
         UPDATE wa_campaigns SET status = :to,
-               launched_at = CASE WHEN :to = 'sending' AND launched_at IS NULL THEN now() ELSE launched_at END
+               launched_at = CASE WHEN :to = 'sending' AND launched_at IS NULL THEN now() ELSE launched_at END,
+               -- going (back) to sending answers whatever paused it: the old reason must not outlive the pause
+               status_note = CASE WHEN :to = 'sending' THEN NULL ELSE status_note END
          WHERE id = :id AND status = ANY(:allowed)
         RETURNING (SELECT status FROM wa_campaigns WHERE id = :id) AS before"""),
         {"to": to, "id": cid, "allowed": list(allowed)})).first()
@@ -501,6 +567,19 @@ PAUSE_SQL = text("""
     UPDATE wa_campaigns SET status = 'paused', status_note = :note
      WHERE id = :cid AND status = 'sending'
 """)
+# A campaign-level failure code (contract Delta 11). Receipts arrive seconds after the send, so a small list is often
+# already 'done' when the first one lands: the reason is recorded whatever the state, and only a 'sending' campaign
+# also moves to 'paused'. The run's auto definition is returned so it can be stopped too — its next run would
+# fail the same way.
+STOP_CAMPAIGN_SQL = text("""
+    UPDATE wa_campaigns SET status = CASE WHEN status = 'sending' THEN 'paused' ELSE status END,
+                            status_note = :note
+     WHERE id = :cid AND status IN ('sending', 'paused', 'done')
+    RETURNING auto_campaign_id
+""")
+STOP_AUTO_SQL = text("""
+    UPDATE wa_auto_campaigns SET active = false, status_note = :note, updated_at = now() WHERE id = :aid
+""")
 
 
 async def apply_receipt(conn, ev: dict) -> list[dict]:
@@ -516,46 +595,34 @@ async def apply_receipt(conn, ev: dict) -> list[dict]:
         "rank": EVENT_RANK[typ], "status": typ, "error": event_error(ev), **ids})).mappings()]
     code = event_code(ev)
     if typ == "failed" and code in CAMPAIGN_STOP_CODES:
+        note = f"Paused by Gupshup error {event_error(ev)}"[:500]
         for cid in {r["campaign_id"] for r in rows}:
-            await conn.execute(PAUSE_SQL, {"cid": cid, "note": f"Paused by Gupshup error {event_error(ev)}"})
+            stopped = (await conn.execute(STOP_CAMPAIGN_SQL, {"cid": cid, "note": note})).first()
+            if stopped is not None and stopped[0] is not None:
+                await conn.execute(STOP_AUTO_SQL, {"aid": stopped[0], "note": note})
     return rows
 
 
 # ── Campaign detail (spec §11) ──────────────────────────────────────────────────────
-# ponytail: a tap with no context at all (not seen in Gupshup's docs, but cheap to cover) falls back to
-# the time rule — the reply after this send and before the next send to the same number.
-RECIPIENTS_SQL = text("""
+# Every message REPLY_CREDIT gives a recipient: the first one, when, how many, and the first button tap among them
+# (a quick_reply — both documented tap shapes are stored as that, contract §6, Delta 7).
+RECIPIENTS_SQL = text(f"""
     SELECT r.id, r.phone10, r.name, r.variables, r.status, r.skip_reason, r.error, r.owner,
-           r.sent_at, r.status_at, rep.first_reply, rep.replied_at, rep.replies, btn.button
+           r.sent_at, r.status_at, rep.first_reply, rep.replied_at, rep.replies, rep.button
       FROM wa_campaign_recipients r
+      {NEXT_SEND_JOIN}
       LEFT JOIN LATERAL (
-        SELECT (array_agg(m.body ORDER BY m.created_at))[1] AS first_reply,
-               min(m.created_at)                             AS replied_at,
-               count(*)                                      AS replies
+        SELECT (array_agg(m.body ORDER BY m.created_at))[1]  AS first_reply,
+               min(m.created_at)                              AS replied_at,
+               count(*)                                       AS replies,
+               (array_agg(m.body ORDER BY m.created_at) FILTER (WHERE m.msg_type = 'quick_reply'))[1] AS button
           FROM wa_messages m
-         WHERE right(m.phone, 10) = r.phone10 AND m.direction = 'in'
-           AND r.sent_at IS NOT NULL AND m.created_at > r.sent_at
-           AND NOT EXISTS (SELECT 1 FROM wa_campaign_recipients r2
-                            WHERE r2.phone10 = r.phone10
-                              AND r2.sent_at > r.sent_at AND r2.sent_at < m.created_at)
+         WHERE {REPLY_CREDIT}
       ) rep ON true
-      LEFT JOIN LATERAL (
-        SELECT m.body AS button
-          FROM wa_messages m
-         WHERE m.direction = 'in' AND m.msg_type = 'quick_reply' AND right(m.phone, 10) = r.phone10
-           AND (m.raw->'payload'->'context'->>'gsId' = r.gupshup_id
-                OR m.raw->'payload'->'context'->>'id' = r.whatsapp_id
-                OR (m.raw->'payload'->'context' IS NULL AND r.sent_at IS NOT NULL AND m.created_at > r.sent_at
-                    AND NOT EXISTS (SELECT 1 FROM wa_campaign_recipients r3
-                                     WHERE r3.phone10 = r.phone10
-                                       AND r3.sent_at > r.sent_at AND r3.sent_at < m.created_at)))
-         ORDER BY m.created_at
-         LIMIT 1
-      ) btn ON true
      WHERE r.campaign_id = :cid
        AND (CAST(:status AS text) IS NULL
             OR (:status = 'replied'  AND rep.replies > 0)
-            OR (:status = 'no_reply' AND r.status IN ('accepted','sent','delivered','read') AND COALESCE(rep.replies, 0) = 0)
+            OR (:status = 'no_reply' AND r.status IN {WENT_OUT} AND COALESCE(rep.replies, 0) = 0)
             OR (:status = 'sent'     AND r.status IN ('sent','delivered','read'))
             OR (:status = 'delivered' AND r.status IN ('delivered','read'))
             OR r.status = :status)
@@ -587,22 +654,55 @@ def next_slot_after(slot: date, every_days: int, *, today: date) -> date:
     return nxt
 
 
+def latest_due_slot(next_slot: date, every_days: int, run_at: str, now: datetime) -> date:
+    """The NEWEST slot whose date + run_at (IST) has passed. A cron that was down for days runs one catch-up for
+    the latest slot it missed, not the oldest (spec §7.3) — the run is named for it. `now` is the IST wall clock.
+    Only called for a due definition, so next_slot is never after the last due day."""
+    last_due = now.date() if now.strftime("%H:%M") >= run_at else now.date() - timedelta(days=1)
+    k = max(0, (last_due - next_slot).days // every_days)
+    return next_slot + timedelta(days=k * every_days)
+
+
+def roll_forward(slot: date, every_days: int, run_at: str, now: datetime) -> date:
+    """A slot whose date + run_at (IST) has already come is moved on by every_days until it is in the future.
+    Activating or editing a definition must not fire a run for a time that has gone — that is Run now's job."""
+    at = time.fromisoformat(run_at)
+    while datetime.combine(slot, at) <= now:
+        slot += timedelta(days=every_days)
+    return slot
+
+
 # a definition is due once its slot's date + run_at has passed on the IST wall clock
-DUE_AUTO_SQL = text("""
-    SELECT a.*, t.active AS template_active
+DUE_CLAUSE = "(a.next_slot + CAST(a.run_at AS time)) <= (now() AT TIME ZONE 'Asia/Kolkata')"
+DUE_AUTO_SQL = text(f"""
+    SELECT a.id
       FROM wa_auto_campaigns a JOIN wa_templates t ON t.id = a.template_id
      WHERE a.active AND t.active
-       AND (a.next_slot + CAST(a.run_at AS time)) <= (now() AT TIME ZONE 'Asia/Kolkata')
+       AND {DUE_CLAUSE}
 """)
 # "Run now" names its definition, so the time-of-day condition doesn't apply
 ONE_AUTO_SQL = text("""
-    SELECT a.*, t.active AS template_active
+    SELECT a.id
       FROM wa_auto_campaigns a JOIN wa_templates t ON t.id = a.template_id
      WHERE a.id = :id AND a.active AND t.active
 """)
+# Re-read and LOCK one definition inside its run's transaction: the cron and Run now can't both run it, and the
+# second one sees what the first wrote (its next_slot) — not the stale row it listed before the lock.
+LOCK_AUTO_SQL = text(f"""
+    SELECT a.*
+      FROM wa_auto_campaigns a JOIN wa_templates t ON t.id = a.template_id
+     WHERE a.id = :id AND a.active AND t.active
+       AND (CAST(:manual AS boolean) OR {DUE_CLAUSE})
+       FOR UPDATE OF a
+""")
+NOW_IST_SQL = text("SELECT now() AT TIME ZONE 'Asia/Kolkata'")  # naive IST wall-clock timestamp
 LAST_RUN_SQL = text("""
     SELECT id, status FROM wa_campaigns WHERE auto_campaign_id = :aid ORDER BY run_slot DESC LIMIT 1
 """)
+SOURCE_STATUS_SQL = text("SELECT status FROM wa_campaigns WHERE id = :id")
+# A list that hasn't finished going out can't be copied (spec §7.3): its queued rows would be messaged by it AND by
+# the new run, the same template twice within hours. Applies to the previous run AND, for run 1, to the seed.
+UNFINISHED = ("draft", "sending", "paused")
 INSERT_RUN_SQL = text("""
     INSERT INTO wa_campaigns (id, name, template_id, source, repeat_of, auto_campaign_id, run_slot,
                               status, created_by, launched_at, send_window_start, send_window_end,
@@ -613,10 +713,20 @@ INSERT_RUN_SQL = text("""
     RETURNING id
 """)
 RUN_COUNT_SQL = text("SELECT count(*) FROM wa_campaigns WHERE auto_campaign_id = :aid")
-TODAY_IST_SQL = text("SELECT (now() AT TIME ZONE 'Asia/Kolkata')::date")
-SET_NEXT_SLOT_SQL = text("UPDATE wa_auto_campaigns SET next_slot = :n WHERE id = :id")
+# a skipped slot: move past it and say why (the list shows status_note)
+SKIP_SLOT_SQL = text("UPDATE wa_auto_campaigns SET next_slot = :n, status_note = :note, updated_at = now() WHERE id = :id")
 FINISH_AUTO_SQL = text("UPDATE wa_auto_campaigns SET active = false, status_note = :note, updated_at = now() WHERE id = :id")
 ADVANCE_AUTO_SQL = text("UPDATE wa_auto_campaigns SET next_slot = :n, status_note = NULL WHERE id = :id")
+NOTE_AUTO_SQL = text("UPDATE wa_auto_campaigns SET status_note = :note, updated_at = now() WHERE id = :id")
+# The previous run, for a dry run that has no definition id: the newest run of any auto campaign on this seed (the
+# seed is locked once a definition exists, so for an edited definition this is its own last run).
+SEED_LAST_RUN_SQL = text("""
+    SELECT c.id, c.status
+      FROM wa_campaigns c JOIN wa_auto_campaigns a ON a.id = c.auto_campaign_id
+     WHERE a.seed_campaign_id = :seed
+     ORDER BY c.run_slot DESC, c.created_at DESC
+     LIMIT 1
+""")
 
 
 class _RepeatReq:
@@ -639,62 +749,109 @@ async def auto_list(conn, a, last) -> tuple:
     return source, t, rows
 
 
-async def auto_dry_run(conn, auto_id) -> dict:
-    """Who the next run would message. Reads only — no campaign, no slot, no note is written."""
-    a = (await conn.execute(select(WaAutoCampaign.__table__).where(WaAutoCampaign.id == auto_id))).mappings().first()
-    if a is None:
-        raise NotFound("auto campaign not found")
-    last = (await conn.execute(LAST_RUN_SQL, {"aid": auto_id})).mappings().first()
+async def auto_dry_run(conn, a: dict) -> dict:
+    """Who the next run of a definition with these settings would message — the form's CURRENT values, saved or
+    not. Reads only: no definition, no campaign, no slot, no note is written. The settings carry no id, so the
+    previous run is SEED_LAST_RUN_SQL's (none yet → the seed, as for a new definition)."""
+    last = (await conn.execute(SEED_LAST_RUN_SQL, {"seed": a["seed_campaign_id"]})).mappings().first()
     _, t, rows = await auto_list(conn, a, last)
-    return {"counts": counts(rows), "samples": samples(t, rows)}
+    c, limit = counts(rows), get_settings().WA_DAILY_SEND_LIMIT
+    return {"counts": c, "samples": samples(t, rows), "over_daily_limit": c["valid"] > limit, "daily_limit": limit}
+
+
+def _why_skipped(rows: list[dict]) -> str:
+    """'cooldown 12, opted_out 2' — the top reasons nobody in a run's list could be messaged."""
+    top = Counter(r["reason"] or r["status"] for r in rows if r["status"] != "valid").most_common(3)
+    return ", ".join(f"{reason} {n}" for reason, n in top)
+
+
+async def _run_one(conn, aid, *, trigger: str, manual: bool) -> dict:
+    """One definition's slot, inside its own transaction: run + list + next_slot commit together (spec §7.3).
+    {"run": campaign id} when a run was queued, else {"reason": why not}.
+    A refused Run now writes NOTHING — the admin is told why, and the scheduled slot stays where it was."""
+    a = (await conn.execute(LOCK_AUTO_SQL, {"id": aid, "manual": manual})).mappings().first()
+    if a is None:
+        # since it was listed: switched off, its template deactivated, or another run (cron / Run now) took the slot
+        return {"reason": "no longer due"}
+    now = (await conn.execute(NOW_IST_SQL)).scalar()
+    today = now.date()
+    slot = today if manual else latest_due_slot(a["next_slot"], a["every_days"], a["run_at"], now)
+    nxt = next_slot_after(slot, a["every_days"], today=today)
+
+    async def skip(reason: str) -> dict:
+        if not manual:
+            await conn.execute(SKIP_SLOT_SQL, {"n": nxt, "id": aid, "note": f"skipped {slot:%-d %b}: {reason}"[:500]})
+        return {"reason": reason}
+
+    async def finish(note: str) -> dict:
+        await conn.execute(FINISH_AUTO_SQL, {"id": aid, "note": note})
+        return {"reason": note.removeprefix("finished — ")}
+
+    last = (await conn.execute(LAST_RUN_SQL, {"aid": aid})).mappings().first()
+    status = last["status"] if last else (await conn.execute(SOURCE_STATUS_SQL, {"id": a["seed_campaign_id"]})).scalar()
+    if status in UNFINISHED:
+        what = "previous run" if last else "seed campaign"
+        return await skip(f"{what} still sending" if status == "sending" else f"{what} is {status}")
+    if a["max_runs"] and (await conn.execute(RUN_COUNT_SQL, {"aid": aid})).scalar() >= a["max_runs"]:
+        return await finish("finished — max runs reached")
+    source, t, rows = await auto_list(conn, a, last)
+    if not rows:
+        return await finish("finished — no one left to message")
+    valid = [r for r in rows if r["status"] == "valid"]
+    if not valid:
+        # everyone is skipped THIS time (cooldown, an opt-out that may be resumed, …): skip the slot, keep the
+        # definition — the next slot re-decides every skip
+        return await skip(f"everyone was skipped ({_why_skipped(rows)})")
+    rid = (await conn.execute(INSERT_RUN_SQL, {
+        "id": uuid.uuid4(), "name": f"{a['name']} · {slot:%-d %b}", "template_id": a["template_id"],
+        "repeat_of": source, "aid": aid, "slot": slot, "ws": a["send_window_start"],
+        "we": a["send_window_end"], "rate": a["rate_per_minute"]})).first()
+    if rid is None:
+        return await skip("this slot already ran")
+    kept = [r for r in rows if r["status"] in ("valid", "skipped")]
+    await conn.execute(WaCampaignRecipient.__table__.insert(), [{
+        "id": uuid.uuid4(), "campaign_id": rid[0], "phone10": r["phone10"], "name": r["name"],
+        "variables": r["variables"], "status": "queued" if r["status"] == "valid" else "skipped",
+        "skip_reason": r["reason"] if r["status"] == "skipped" else None,
+        "position": i} for i, r in enumerate(kept)])  # keep the seed list's order
+    await activity.record(conn, activity.row_for(
+        None, entity_type="wa_auto", entity_id=str(aid), action="wa_auto_run",
+        metadata={"campaign_id": str(rid[0]), "queued": len(valid), "slot": str(slot), "trigger": trigger}))
+    if a["max_runs"] and (await conn.execute(RUN_COUNT_SQL, {"aid": aid})).scalar() >= a["max_runs"]:
+        await conn.execute(FINISH_AUTO_SQL, {"id": aid, "note": "finished — max runs reached"})  # that was the last one
+    else:
+        await conn.execute(ADVANCE_AUTO_SQL, {"n": nxt, "id": aid})
+    return {"run": rid[0]}
 
 
 async def run_auto_campaigns(trigger: str = "cron", only=None) -> dict:
     """Turn every due slot into a campaign run. It only QUEUES — the web process's send loop sends.
-    `only` = one definition's id, for "Run now" (its slot is due by definition, whatever the clock says)."""
+    `only` = one definition's id, for "Run now" (its slot is due by definition, whatever the clock says).
+    One definition failing never stops the others: it is logged, its status_note says "error: …", and it is
+    listed under `failed` — which the cron task turns into a non-zero exit."""
     engine = neon_engine()
     if engine is None:
-        return {"status": "not_configured", "runs": 0, "skipped": []}
-    runs, skipped = 0, []
+        return {"status": "not_configured", "runs": 0, "skipped": [], "failed": []}
+    runs, skipped, failed = 0, [], []
     async with engine.connect() as conn:
-        due = (await conn.execute(ONE_AUTO_SQL, {"id": only}) if only else await conn.execute(DUE_AUTO_SQL)).mappings().all()
-    for a in due:
-        async with engine.begin() as conn:  # one transaction per definition: run + list + next_slot
-            today = (await conn.execute(TODAY_IST_SQL)).scalar()
-            slot = today if only else a["next_slot"]
-            last = (await conn.execute(LAST_RUN_SQL, {"aid": a["id"]})).mappings().first()
-            nxt = next_slot_after(slot, a["every_days"], today=today)
-            if last and last["status"] in ("sending", "paused"):
-                skipped.append({"auto": str(a["id"]), "reason": "previous run still sending"})
-                await conn.execute(SET_NEXT_SLOT_SQL, {"n": nxt, "id": a["id"]})
-                continue
-            if a["max_runs"] and (await conn.execute(RUN_COUNT_SQL, {"aid": a["id"]})).scalar() >= a["max_runs"]:
-                await conn.execute(FINISH_AUTO_SQL, {"id": a["id"], "note": "finished — max runs reached"})
-                skipped.append({"auto": str(a["id"]), "reason": "max runs reached"})
-                continue
-            source, t, rows = await auto_list(conn, a, last)
-            valid = [r for r in rows if r["status"] == "valid"]
-            if not valid:
-                await conn.execute(FINISH_AUTO_SQL, {"id": a["id"], "note": "finished — no one left to message"})
-                skipped.append({"auto": str(a["id"]), "reason": "no one left to message"})
-                continue
-            rid = (await conn.execute(INSERT_RUN_SQL, {
-                "id": uuid.uuid4(), "name": f"{a['name']} · {slot:%-d %b}", "template_id": a["template_id"],
-                "repeat_of": source, "aid": a["id"], "slot": slot, "ws": a["send_window_start"],
-                "we": a["send_window_end"], "rate": a["rate_per_minute"]})).first()
-            if rid is not None:
-                kept = [r for r in rows if r["status"] in ("valid", "skipped")]
-                await conn.execute(WaCampaignRecipient.__table__.insert(), [{
-                    "id": uuid.uuid4(), "campaign_id": rid[0], "phone10": r["phone10"], "name": r["name"],
-                    "variables": r["variables"], "status": "queued" if r["status"] == "valid" else "skipped",
-                    "skip_reason": r["reason"] if r["status"] == "skipped" else None,
-                    "position": i} for i, r in enumerate(kept)])  # keep the seed list's order
-                await activity.record(conn, activity.row_for(
-                    None, entity_type="wa_auto", entity_id=str(a["id"]), action="wa_auto_run",
-                    metadata={"campaign_id": str(rid[0]), "queued": len(valid), "slot": str(slot), "trigger": trigger}))
-                runs += 1
-            else:
-                skipped.append({"auto": str(a["id"]), "reason": "this slot already ran"})
-            await conn.execute(ADVANCE_AUTO_SQL, {"n": nxt, "id": a["id"]})
-    log.info("auto campaigns (%s): %d run(s), %d skipped", trigger, runs, len(skipped))
-    return {"status": "ok", "runs": runs, "skipped": skipped}
+        ids = [r[0] for r in await (conn.execute(ONE_AUTO_SQL, {"id": only}) if only else conn.execute(DUE_AUTO_SQL))]
+    for aid in ids:
+        try:
+            async with engine.begin() as conn:  # one transaction per definition
+                out = await _run_one(conn, aid, trigger=trigger, manual=only is not None)
+        except Exception as e:  # noqa: BLE001 — one poisoned definition must not starve the healthy ones
+            log.exception("auto campaign %s: run failed", aid)
+            err = f"{type(e).__name__}: {e}"
+            failed.append({"auto": str(aid), "error": err[:300]})
+            try:
+                async with engine.begin() as conn:
+                    await conn.execute(NOTE_AUTO_SQL, {"id": aid, "note": f"error: {err}"[:500]})
+            except Exception:  # noqa: BLE001 — the note is best-effort; the failure is already logged + reported
+                log.exception("auto campaign %s: couldn't record the error", aid)
+            continue
+        if "run" in out:
+            runs += 1
+        else:
+            skipped.append({"auto": str(aid), "reason": out["reason"]})
+    log.info("auto campaigns (%s): %d run(s), %d skipped, %d failed", trigger, runs, len(skipped), len(failed))
+    return {"status": "ok", "runs": runs, "skipped": skipped, "failed": failed}

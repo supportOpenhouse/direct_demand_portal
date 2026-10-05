@@ -126,6 +126,16 @@ _ADD_COLUMNS = [
     ("leads", "assigned_at", "TIMESTAMPTZ"),
 ]
 
+# Template-campaign lookups on wa_messages (an existing table, so create_all won't index it):
+# - receipts match `gupshup_id = :key OR whatsapp_id = :wa_id`; without an index on whatsapp_id the OR is a
+#   full scan of wa_messages for every delivery event (contract §3.4)
+# - reply attribution reads one number's INBOUND messages by time; the partial index skips every outbound row
+_CAMPAIGN_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS ix_wa_messages_whatsapp_id ON wa_messages (whatsapp_id)",
+    "CREATE INDEX IF NOT EXISTS ix_wa_messages_in_phone10 ON wa_messages (right(phone, 10), created_at)"
+    " WHERE direction = 'in'",
+)
+
 # Openhouse Core SalesManager.id per booking-team member (name → smid)
 SMID_SEED = {
     "Saransh": 82,
@@ -158,6 +168,16 @@ async def run_migrations(engine) -> None:
                     f'ALTER TABLE {table} ALTER COLUMN id SET DEFAULT gen_random_uuid()'))
     except Exception:
         log.exception("schema (ADD COLUMN) migrations failed")
+
+    # Indexes on columns the block above adds, in their OWN transaction once it has committed: inside that shared
+    # transaction a failing CREATE INDEX would roll back every ADD COLUMN with it, and here a missing column (that
+    # block failed) costs only the index. Plain CREATE INDEX briefly blocks writes to wa_messages — small table.
+    try:
+        async with engine.begin() as conn:
+            for stmt in _CAMPAIGN_INDEXES:
+                await conn.execute(text(stmt))
+    except Exception:
+        log.exception("campaign index migrations failed")
 
     try:
         async with engine.begin() as conn:

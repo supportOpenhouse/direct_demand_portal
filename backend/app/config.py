@@ -1,9 +1,11 @@
 """App settings — every credential is optional so the app boots with an empty .env."""
 import json
 import os
+import re
 from functools import lru_cache
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILES = ("../.env", ".env")
@@ -97,6 +99,13 @@ class Settings(BaseSettings):
     GUPSHUP_TEMPLATE_API_KEY: str = ""
     GUPSHUP_TEMPLATE_SOURCE_NUMBER: str = ""
     GUPSHUP_TEMPLATE_APP_NAME: str = ""
+
+    @field_validator("GUPSHUP_TEMPLATE_SOURCE_NUMBER")
+    @classmethod
+    def _source_digits_only(cls, v: str) -> str:
+        """Gupshup wants the source as digits-only E.164 ("91…", contract Delta 21): a "+91 88888 88888" pasted
+        into Render would otherwise be refused on every send."""
+        return re.sub(r"\D", "", v or "")
     # unique people per moving 24 h — set from WhatsApp Manager → Account tools → Messaging limits (contract §9)
     WA_DAILY_SEND_LIMIT: int = 250
     GUPSHUP_API_KEY: str = ""

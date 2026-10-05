@@ -57,12 +57,25 @@ WA_EVENT_SQL = text("""
      WHERE direction = 'out' AND (gupshup_id = :key OR whatsapp_id = CAST(:wa_id AS text))
 """)
 STOP_REPLY_BY = "STOP reply"
+STOP_BUTTON_BY = "STOP button"
 META_STOP_BY = "WhatsApp: stopped offers"  # Meta's stop control, or a send refused with 131050
 OPTED_OUT_CODE = 131050
+# Tags that are a decision NOT to work the number: never handed to an RM, never a bell reminder, never in the
+# "Create leads" list. `rejected` = dead number; `opted_out` = asked us to stop.
+DECLINED_TAGS = ("rejected", "opted_out")
 
 
 def is_stop(body: str | None) -> bool:
+    """A TYPED message that is exactly STOP (case and punctuation aside) — "don't stop" is not an opt-out."""
     return re.sub(r"[^a-z]", "", (body or "").lower()) == "stop"
+
+
+def is_stop_button(body: str | None) -> bool:
+    """A template button whose label starts with the word STOP ("Stop promotions", "STOP") — Meta's marketing
+    templates carry an opt-out button, and Meta requires honouring it (contract §7, Delta 12). Only for a button
+    TAP: a typed message keeps the exact-word rule."""
+    words = re.findall(r"[a-z]+", (body or "").lower())
+    return bool(words) and words[0] == "stop"
 
 
 def opt_out_changes(payload: dict) -> list[tuple[str, str]]:
@@ -79,12 +92,14 @@ def opt_out_changes(payload: dict) -> list[tuple[str, str]]:
 
 # Opts the number out of every future campaign (spec §10). Keeps any existing owner (the spec only
 # tags + skips), and never overwrites 'rejected', which already excludes the number everywhere and
-# also drives assignment + the bell. marked_by says WHO opted them out — a Meta resume only undoes Meta's.
+# also drives assignment + the bell. marked_by says WHO opted them out — a Meta resume only undoes Meta's —
+# so a number that is ALREADY opted out is left exactly as it is: a later Meta stop re-stamping an admin's or a
+# typed-STOP opt-out as Meta's would let Meta's next resume undo it.
 OPT_OUT_SQL = text("""
     INSERT INTO wa_contacts (phone10, tag, marked_by, marked_at, assigned_to, assigned_at)
     VALUES (:p, 'opted_out', :by, now(), NULL, NULL)
     ON CONFLICT (phone10) DO UPDATE SET tag = 'opted_out', marked_by = :by, marked_at = now()
-     WHERE wa_contacts.tag IS DISTINCT FROM 'rejected'
+     WHERE wa_contacts.tag IS DISTINCT FROM 'rejected' AND wa_contacts.tag IS DISTINCT FROM 'opted_out'
 """)
 OPT_IN_SQL = text(f"""
     UPDATE wa_contacts SET tag = NULL, marked_by = 'WhatsApp: resumed offers', marked_at = now()
@@ -203,10 +218,13 @@ async def _persist(entry: dict) -> None:
                     source_app=entry.get("app"),
                     **_media_of(inner),
                 ))
-                # Our own policy on top of Meta's (contract §7): a typed STOP — or a template button that
-                # says STOP — opts the number out of every campaign, on either number.
-                if is_stop(text_body) and len(phone) >= 10:
-                    await conn.execute(OPT_OUT_SQL, {"p": phone[-10:], "by": STOP_REPLY_BY})
+                # Our own policy on top of Meta's (contract §7): a typed STOP, or a tap on a template button
+                # that starts with STOP ("Stop promotions"), opts the number out of every campaign, on either number.
+                if len(phone) >= 10:
+                    if kind == "quick_reply" and is_stop_button(text_body):
+                        await conn.execute(OPT_OUT_SQL, {"p": phone[-10:], "by": STOP_BUTTON_BY})
+                    elif is_stop(text_body):
+                        await conn.execute(OPT_OUT_SQL, {"p": phone[-10:], "by": STOP_REPLY_BY})
                 # Deliberately NOT assigned here. An inbound message used to hand the
                 # conversation to the least-loaded RM on arrival; it no longer does.
                 # Ownership is now only ever taken on purpose — an admin picking an RM
@@ -432,9 +450,12 @@ def _scoped(q, user: dict):
 
 
 THREADS_PAGE_MAX = 200
-# a conversation whose number has no lead yet — what "Create leads" can act on
+# a conversation whose number has no lead yet, and hasn't been declined (rejected / opted out) — what
+# "Create leads" can act on
 _NO_LEAD = func.right(WaMessage.phone, 10).not_in(
     select(_LEAD_P10).where(Lead.phone.isnot(None)))
+_NOT_DECLINED = func.right(WaMessage.phone, 10).not_in(
+    select(WaContact.phone10).where(WaContact.tag.in_(DECLINED_TAGS)))
 
 
 def _view_filter(view: str):
@@ -483,7 +504,8 @@ async def gupshup_threads(offset: int = 0, limit: int = 100, view: Literal["chat
         total = (await conn.execute(
             _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_view_filter(view)), user))).scalar() or 0
         convertible = (await conn.execute(
-            _scoped(select(func.count(func.distinct(WaMessage.phone))).where(_NO_LEAD, _view_filter(view)), user)
+            _scoped(select(func.count(func.distinct(WaMessage.phone)))
+                    .where(_NO_LEAD, _NOT_DECLINED, _view_filter(view)), user)
         )).scalar() or 0
         phones = [r["phone"] for r in rows]
         last_in, names, both, camp = {}, {}, set(), {}
@@ -533,7 +555,7 @@ async def gupshup_convertible(view: Literal["chat", "template"] = "chat", user: 
         return {"phones": []}
     async with engine.connect() as conn:
         rows = (await conn.execute(_scoped(
-            select(WaMessage.phone).where(_NO_LEAD, _view_filter(view)).group_by(WaMessage.phone)
+            select(WaMessage.phone).where(_NO_LEAD, _NOT_DECLINED, _view_filter(view)).group_by(WaMessage.phone)
             .order_by(desc(func.max(WaMessage.created_at))), user))).all()
     return {"phones": [r[0] for r in rows]}
 
@@ -650,9 +672,9 @@ async def gupshup_pending(user: dict = Depends(current_user)):
         if p10 in have_lead:
             continue
         # `rejected` is a deliberate decision NOT to make a lead — the same reason
-        # wa_assign refuses to hand one out. Reminding about it forever would train
-        # people to ignore the bell.
-        if tags.get(p10) == "rejected":
+        # wa_assign refuses to hand one out — and `opted_out` is the person asking us to
+        # stop. Reminding about either forever would train people to ignore the bell.
+        if tags.get(p10) in DECLINED_TAGS:
             continue
         items.append({
             "phone": phone,
@@ -735,7 +757,8 @@ async def gupshup_mark(req: MarkRequest, user: dict = Depends(require_admin)):
         raise HTTPException(status_code=400, detail="invalid phone number")
     marked_by = user.get("name") or user.get("email")
     now = datetime.now(timezone.utc)
-    # a rejected number stops consuming an RM's share, so its owner is cleared
+    # a rejected number stops consuming an RM's share, so its owner is cleared. An opted-out one keeps
+    # whoever already owns it (they asked us to stop marketing, not to stop answering) but is never given one.
     rejected = req.tag == "rejected"
     values = {"tag": req.tag, "marked_by": marked_by, "marked_at": now}
     if rejected:
@@ -745,7 +768,7 @@ async def gupshup_mark(req: MarkRequest, user: dict = Depends(require_admin)):
     )
     async with engine.begin() as conn:
         await conn.execute(stmt)
-        if not rejected:  # un-rejecting puts it back into the rotation
+        if req.tag not in DECLINED_TAGS:  # un-rejecting / un-opting-out puts it back into the rotation
             from ..services.wa_assign import assign_if_unassigned
             await assign_if_unassigned(conn, phone10)
     log.info("gupshup mark %s%s as %s by %s", "•" * 6, phone10[-4:], req.tag, marked_by)

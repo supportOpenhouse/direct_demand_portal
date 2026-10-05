@@ -28,7 +28,8 @@ Tasks, in the order they run:
             rather than leaving both on a tight interval.
 
   wa_auto   Turn every due auto-campaign slot into a campaign run (it only queues; the web
-            process sends). Schedule every 15 minutes.
+            process sends). Schedule every 15 minutes. One definition failing doesn't stop the
+            others; it gets an "error: …" note and the task exits non-zero.
 
 Exit code is non-zero if any task failed, so Render marks the run failed instead of
 reporting a green tick over a job that did nothing. One task failing does not stop the
@@ -72,7 +73,11 @@ async def task_leads() -> dict:
 async def task_wa_auto() -> dict:
     from app.services.wa_campaigns import run_auto_campaigns
 
-    return await run_auto_campaigns(trigger="cron")
+    res = await run_auto_campaigns(trigger="cron")
+    if res.get("failed"):
+        # the healthy definitions already ran; this only makes Render mark the run failed
+        raise RuntimeError(f"{len(res['failed'])} auto campaign(s) failed: {res['failed']} (runs: {res['runs']})")
+    return res
 
 
 RUNNERS = {"visits": task_visits, "whatsapp": task_whatsapp, "leads": task_leads, "wa_auto": task_wa_auto}

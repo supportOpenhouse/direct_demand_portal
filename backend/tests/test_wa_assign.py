@@ -51,8 +51,38 @@ def test_assignment_never_overwrites_an_existing_owner():
     import inspect
     src = inspect.getsource(wa_assign.assign_if_unassigned)
     assert "WHERE wa_contacts.assigned_to IS NULL" in src
-    # and an already-rejected contact is left alone entirely
-    assert 'row[1] == "rejected"' in src
+    # and an already-rejected (or opted-out) contact is left alone entirely
+    assert 'row[1] in ("rejected", "opted_out")' in src
+
+
+async def test_a_declined_contact_is_never_handed_out():
+    """F-4: opted_out behaves like rejected — asked to stop, so never given an RM (an owner it had is kept)."""
+    import inspect
+
+    class _Conn:
+        def __init__(self, tag, owner=None):
+            self.tag, self.owner, self.writes = tag, owner, []
+
+        async def execute(self, stmt, params=None):
+            if "SELECT assigned_to, tag FROM wa_contacts" in str(stmt):
+                return _Rows([(self.owner, self.tag)])
+            self.writes.append(str(stmt))
+            return _Rows([("Asha",)])
+
+    for tag in ("rejected", "opted_out"):
+        conn = _Conn(tag)
+        assert await wa_assign.assign_if_unassigned(conn, "9876543210") is None and conn.writes == [], tag
+    assert await wa_assign.assign_if_unassigned(_Conn("opted_out", owner="Ravi"), "9876543210") == "Ravi"
+    assert await wa_assign.assign_if_unassigned(_Conn("buyer"), "9876543210") == "Asha"
+    assert "c.tag IS NULL OR c.tag NOT IN ('rejected', 'opted_out')" in inspect.getsource(wa_assign.backfill)
+
+
+class _Rows:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def first(self):
+        return self.rows[0] if self.rows else None
 
 
 def test_backfill_assigns_one_at_a_time():

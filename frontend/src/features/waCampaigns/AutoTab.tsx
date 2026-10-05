@@ -59,7 +59,7 @@ export default function AutoTab() {
             </thead>
             <tbody>{items.map((a) => (
               <tr key={a.id}>
-                <td>{a.name}{!a.active && a.status_note && <div className="wc-hint">{a.status_note}</div>}</td>
+                <td>{a.name}{a.status_note && <div className="wc-hint">{a.status_note}</div>}</td>
                 <td className="cell-text"><span title={a.template_name}>{a.template_name}</span></td>
                 <td className="cell-tight">{schedule(a)}</td>
                 <td className="cell-tight">{REPEAT_LABEL[a.repeat_mode] ?? a.repeat_mode}</td>

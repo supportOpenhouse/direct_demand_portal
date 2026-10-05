@@ -173,8 +173,13 @@ def test_repeat_non_responders_drops_anyone_who_replied_after_their_send():
     assert "m.direction = 'in'" in sql and "m.created_at > r.sent_at" in sql
 
 
-def test_a_repeat_never_copies_rows_that_were_skipped():
-    assert "r.status <> 'skipped'" in svc.REPEAT_SQL.text
+def test_a_repeat_copies_skipped_rows_so_every_build_re_decides_them():
+    """D-I2: a skip is decided again at every build (spec §5.1, §7.2). Dropping skipped rows turned ONE cooldown
+    skip into removal from every later run of an auto campaign. Only the two skips that can't lapse are dropped —
+    with COALESCE, because skip_reason is NULL on every row that wasn't skipped and NOT (NULL) would drop them all."""
+    sql = svc.REPEAT_SQL.text
+    assert "'skipped'" not in sql, "skipped rows must be copied"
+    assert "AND NOT COALESCE(r.skip_reason IN ('is_lead', 'no_whatsapp'), false)" in sql
 
 
 def test_a_repeat_never_resends_to_numbers_refused_for_good():
@@ -756,7 +761,8 @@ async def test_only_not_found_becomes_a_404_a_real_bug_stays_a_500(monkeypatch):
 
 # ── Task 6: the campaigns list and its funnel ─────────────────────────────────────
 
-FUNNEL_KEYS = {"recipients", "queued", "accepted", "sent", "delivered", "read", "failed", "skipped", "unknown", "replied"}
+FUNNEL_KEYS = {"recipients", "queued", "accepted", "sent", "delivered", "read", "failed", "skipped", "unknown", "replied",
+               "no_reply"}
 API_TS = Path(__file__).parents[2] / "frontend" / "src" / "lib" / "api.ts"
 
 
@@ -765,15 +771,16 @@ def test_funnel_counts_come_from_recipients_not_stored_columns():
     assert "FROM wa_campaign_recipients" in sql and "count(*) FILTER" in sql
     # a Gupshup 2xx is "accepted", not sent — its own box until the sent receipt lands (contract §0 rule 3)
     assert "FILTER (WHERE r.status = 'accepted')" in sql
-    # a reply is credited to the most recent campaign send before it (spec §2)
-    assert "r2.sent_at > r.sent_at AND r2.sent_at < m.created_at" in sql
+    # a reply is credited by the ONE attribution rule the recipient table uses
+    assert svc.REPLY_CREDIT in sql and svc.NEXT_SEND_JOIN in sql
 
 
 def test_the_funnel_sql_selects_exactly_the_columns_the_endpoint_reads():
     """The endpoint reads f[k] for every key of ZERO_FUNNEL, and no test runs the SQL: an alias the SQL doesn't
     select would be a KeyError on the first campaign that has recipients — in production only."""
     sql = svc.FUNNEL_SQL.text
-    assert sorted(re.findall(r"\bAS\s+(\w+)", sql)) == sorted(r.ZERO_FUNNEL) == sorted(FUNNEL_KEYS)
+    outer = sql.split("FROM wa_campaign_recipients r\n", 1)[0]   # the select list, not the laterals' own aliases
+    assert sorted(re.findall(r"\bAS\s+(\w+)", outer)) == sorted(r.ZERO_FUNNEL) == sorted(FUNNEL_KEYS)
     assert "SELECT r.campaign_id," in sql and "GROUP BY r.campaign_id" in sql and "r.campaign_id = ANY(:ids)" in sql
 
 
@@ -936,10 +943,12 @@ def test_an_opt_out_after_the_list_was_built_still_stops_the_send():
     assert src.index("SKIP_OPTED_OUT_SQL") < src.index("CLAIM_SQL"), "re-check before claiming"
 
 
-def test_claim_is_idempotent():
-    sql = svc.CLAIM_SQL.text
-    assert "status = 'submitted'" in sql and "AND status = 'queued'" in sql
-    assert "RETURNING" in sql
+def test_claim_is_idempotent_and_only_while_the_campaign_is_sending():
+    """G-9: a pause / cancel / auto-pause must stop the batch the loop already fetched."""
+    sql = " ".join(svc.CLAIM_SQL.text.split())
+    assert "SET status = 'submitted'" in sql and "WHERE r.id = :id AND r.status = 'queued'" in sql
+    assert "FROM wa_campaigns c" in sql and "AND c.id = r.campaign_id AND c.status = 'sending'" in sql
+    assert "RETURNING r.id, r.phone10, r.variables" in sql
 
 
 def test_the_loop_only_sends_campaigns_that_are_sending_and_in_window():
@@ -1000,23 +1009,52 @@ def test_a_campaign_level_failure_pauses_only_a_sending_campaign():
     assert "status = 'paused'" in sql and "status_note" in sql and "AND status = 'sending'" in sql
 
 
-def test_a_reply_belongs_to_the_most_recent_campaign_send_before_it():
-    sql = svc.RECIPIENTS_SQL.text
-    assert "m.created_at > r.sent_at" in sql
-    assert "r2.sent_at > r.sent_at AND r2.sent_at < m.created_at" in sql
+def test_the_funnel_and_the_recipient_table_share_one_attribution_rule():
+    """D-C2 / G-1: the boxes and the table filters must never disagree about who replied."""
+    for sql in (svc.FUNNEL_SQL.text, svc.RECIPIENTS_SQL.text):
+        assert svc.REPLY_CREDIT in sql and svc.NEXT_SEND_JOIN in sql
+        assert sql.count("FROM wa_messages m") == 1, "exactly one place reads replies"
 
 
-def test_a_button_tap_is_attributed_by_its_context_ids_first():
-    # contract §6.4: context.gsId = our messageId; context.id = the template's WhatsApp id
-    sql = svc.RECIPIENTS_SQL.text
-    assert "m.raw->'payload'->'context'->>'gsId' = r.gupshup_id" in sql
-    assert "m.raw->'payload'->'context'->>'id' = r.whatsapp_id" in sql
-    assert "m.msg_type = 'quick_reply'" in sql
+def test_a_reply_belongs_to_the_most_recent_send_that_actually_went_out():
+    """D-C2(a): A delivered, then B accepted and FAILED (131049 keeps sent_at) → the reply is A's, not B's.
+    The window ends at the next send that WENT OUT; a failed send neither ends it nor earns a reply."""
+    assert svc.WENT_OUT == "('accepted','sent','delivered','read')"
+    nxt = " ".join(svc.NEXT_SEND_JOIN.split())
+    assert "SELECT min(r2.sent_at) AS at FROM wa_campaign_recipients r2" in nxt
+    # D-M9: one bounded lookup per recipient, skipped outright for rows that can't be credited anyway
+    assert "WHERE r.status IN ('accepted','sent','delivered','read') -- only those rows" in nxt
+    assert "r2.phone10 = r.phone10 AND r2.sent_at > r.sent_at AND r2.status IN ('accepted','sent','delivered','read')" in nxt
+    credit = " ".join(svc.REPLY_CREDIT.split())
+    assert credit.startswith("right(m.phone, 10) = r.phone10 AND m.direction = 'in' "
+                             "AND r.status IN ('accepted','sent','delivered','read')")
+    assert "m.created_at > r.sent_at AND (nxt.at IS NULL OR m.created_at <= nxt.at)" in credit
 
 
-def test_no_reply_counts_accepted_rows_too():
+def test_a_reply_that_names_its_send_is_credited_to_that_send_only():
+    """D-C2(b) / D-M8: a tap whose context names run 1, made after run 2 went out, is run 1's — button AND reply on
+    the same row — and never run 2's too. context.id is compared to BOTH ids (Doc A taps carry only context.id)."""
+    credit = " ".join(svc.REPLY_CREDIT.split())
+    names_r = ("(m.raw->'payload'->'context'->>'gsId' = r.gupshup_id"
+               " OR m.raw->'payload'->'context'->>'id' IN (r.gupshup_id, r.whatsapp_id))")
+    names_rx = names_r.replace("r.", "rx.").replace("(rx.gupshup", "(rx.gupshup")
+    assert f"AND ({names_r} OR (r.sent_at IS NOT NULL" in credit, "exact match first, whenever it was sent"
+    assert ("(m.raw->'payload'->'context' IS NULL OR NOT EXISTS (SELECT 1 FROM wa_campaign_recipients rx "
+            f"WHERE rx.phone10 = r.phone10 AND {names_rx}))") in credit, "the time rule only for a context naming no send"
+
+
+def test_the_button_is_the_first_tap_among_the_replies_credited_to_that_row():
+    sql = " ".join(svc.RECIPIENTS_SQL.text.split())
+    assert "(array_agg(m.body ORDER BY m.created_at) FILTER (WHERE m.msg_type = 'quick_reply'))[1] AS button" in sql
+    assert "rep.button" in sql and "btn" not in sql, "one lateral, not a second attribution rule for buttons"
+
+
+def test_no_reply_counts_rows_that_went_out_with_nothing_credited():
     sql = svc.RECIPIENTS_SQL.text
     assert "r.status IN ('accepted','sent','delivered','read') AND COALESCE(rep.replies, 0) = 0" in sql
+    funnel = " ".join(svc.FUNNEL_SQL.text.split())
+    assert "count(*) FILTER (WHERE rep.hit) AS replied" in funnel
+    assert "count(*) FILTER (WHERE r.status IN ('accepted','sent','delivered','read') AND NOT rep.hit) AS no_reply" in funnel
 
 
 def test_retry_refuses_what_meta_says_never_to_retry():
@@ -1055,8 +1093,18 @@ def test_the_recipients_endpoint_uses_the_items_envelope_and_validates_the_filte
 
 
 def test_the_export_defuses_spreadsheet_formulas():
+    for lead in ("=", "+", "-", "@", "\t", "\r"):
+        assert r._csv_cell(lead + "SUM(A1)") == "'" + lead + "SUM(A1)", repr(lead)
     assert r._csv_cell("=HYPERLINK(\"x\")").startswith("'=")
     assert r._csv_cell("+91 98") == "'+91 98" and r._csv_cell(None) == "" and r._csv_cell("hello") == "hello"
+
+
+def test_the_export_filename_survives_a_hindi_campaign_name():
+    """D-M5: headers are latin-1 — a Hindi name in filename= was a 500. ASCII fallback + RFC 6266 filename*."""
+    h = r._attachment("दिवाली offer / Noida")
+    h.encode("latin-1")   # would raise on the old header
+    assert h == ("attachment; filename=\"______ offer _ Noida.csv\"; "
+                 "filename*=UTF-8''%E0%A4%A6%E0%A4%BF%E0%A4%B5%E0%A4%BE%E0%A4%B2%E0%A5%80%20offer%20_%20Noida.csv")
 
 
 class _Res:
@@ -1107,9 +1155,11 @@ async def test_export_and_detail_shape_with_a_fake_connection(monkeypatch):
             "template_buttons": ["Yes"]}
     monkeypatch.setattr(r, "_engine", lambda: _Eng([[camp], [rec]]))
     resp = await r.campaign_export(camp["id"])
-    assert resp.headers["content-disposition"] == 'attachment; filename="Diwali _ push.csv"'
+    assert resp.headers["content-disposition"] == (
+        'attachment; filename="Diwali _ push.csv"; filename*=UTF-8\'\'Diwali%20_%20push.csv')
     body = "".join([c async for c in resp.body_iterator])
-    assert body.splitlines()[0].startswith("name,phone,status") and "'=Ravi" in body
+    assert body.startswith("\ufeffname,phone,status"), "a UTF-8 BOM, or Excel garbles Hindi names (D-M5)"
+    assert "'=Ravi" in body
 
     funnel = {k: 0 for k in r.ZERO_FUNNEL} | {"recipients": 1, "read": 1}
     monkeypatch.setattr(r, "_engine", lambda: _Eng([[camp], [funnel], [rec, rec]]))

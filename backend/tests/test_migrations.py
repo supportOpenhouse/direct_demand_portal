@@ -69,3 +69,62 @@ def test_added_columns_name_real_columns_too():
         if col not in Base.metadata.tables[table].columns
     )
     assert not missing, f"in _ADD_COLUMNS but not on the model: {missing}"
+
+
+def test_the_campaign_indexes_run_after_the_columns_they_need_in_their_own_transaction():
+    """G-6 / D-M9. ix_wa_messages_whatsapp_id needs the whatsapp_id column that the schema transaction adds. Run
+    INSIDE that transaction, a failing CREATE INDEX would roll back every ADD COLUMN; run before it, on a database
+    that lacks the column, it fails. So: its own transaction, after the schema one."""
+    import inspect
+
+    from app import migrations
+    assert ("wa_messages", "whatsapp_id", "TEXT") in _ADD_COLUMNS
+    assert migrations._CAMPAIGN_INDEXES == (
+        "CREATE INDEX IF NOT EXISTS ix_wa_messages_whatsapp_id ON wa_messages (whatsapp_id)",
+        "CREATE INDEX IF NOT EXISTS ix_wa_messages_in_phone10 ON wa_messages (right(phone, 10), created_at)"
+        " WHERE direction = 'in'",
+    )
+    src = inspect.getsource(migrations.run_migrations)
+    schema, rest = src.split('log.exception("schema (ADD COLUMN) migrations failed")', 1)
+    assert "_CAMPAIGN_INDEXES" not in schema, "not inside the shared ADD COLUMN transaction"
+    idx = rest.split('log.exception("campaign index migrations failed")', 1)[0]
+    assert "async with engine.begin() as conn:" in idx and "for stmt in _CAMPAIGN_INDEXES:" in idx
+
+
+async def test_run_migrations_commits_the_columns_before_creating_the_indexes():
+    """The order, run: every ADD COLUMN commits; then the two indexes in a transaction of their own."""
+    from app import migrations
+
+    events = []
+
+    class _Conn:
+        async def execute(self, stmt, params=None):
+            events.append(str(stmt).strip().split("\n")[0][:60])
+
+            class _R:
+                def mappings(self):
+                    return []
+
+                def __iter__(self):
+                    return iter([])
+            return _R()
+
+    class _Ctx:
+        async def __aenter__(self):
+            events.append("BEGIN")
+            return _Conn()
+
+        async def __aexit__(self, *a):
+            events.append("COMMIT")
+            return False
+
+    class _Eng:
+        def begin(self):
+            return _Ctx()
+    await migrations.run_migrations(_Eng())
+    first_commit = events.index("COMMIT")
+    wa_id_col = next(i for i, e in enumerate(events) if "ADD COLUMN IF NOT EXISTS whatsapp_id" in e)
+    ix = next(i for i, e in enumerate(events) if "ix_wa_messages_whatsapp_id" in e)
+    assert wa_id_col < first_commit < ix
+    assert events[ix - 1] == "BEGIN" and events[ix + 1].startswith("CREATE INDEX IF NOT EXISTS ix_wa_messages_in_phone10")
+    assert events[ix + 2] == "COMMIT"

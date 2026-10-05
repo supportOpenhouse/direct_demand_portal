@@ -155,7 +155,7 @@ function Detail() {
       <div style={{ height: 14 }} />
       <StageBoxes total={counts.recipients} extra={boxes} extraValue={filter}
         onExtra={(k) => setFilter(k as WaRecipientFilter | "")} />
-      {c.status === "paused" && c.status_note && <div className="wc-hint bad">{c.status_note}</div>}
+      {c.status_note && <div className="wc-hint bad">{c.status_note}</div>}  {/* server clears it on resume; a Gupshup stop note on a finished campaign must still show */}
       {tallies.length > 0 && (
         <div className="wc-hint">Buttons: {tallies.map(([t, n]) => `${t} ${num(n)}`).join(" · ")}</div>
       )}

@@ -248,7 +248,8 @@ export const DEMAND_COLUMNS: DDColumn[] = [
     sort: (p) => (p.internal_remarks ?? "").toLowerCase() },
   // the brochure PDF, saved straight to the device; "No home id" where Core has none
   { id: "brochure", label: "Brochure", tight: true, cell: (p) => <BrochureDownload homeId={p.core_home_id} /> },
-  // Openhouse Studio's stitched walkthrough, saved straight to the device; "No video" until stitched
+  // Openhouse Studio's stitched walkthrough (else the home's app-listed video), saved straight
+  // to the device; "No video" when there is neither
   { id: "studio_video", label: "Studio video", tight: true,
     cell: (p) => <StudioVideoDownload url={p.studio_video_url} uid={p.uid} /> },
   /* Off by default — every other field from the same row. They are ordinary table
@@ -446,7 +447,7 @@ function BrochureDownload({ homeId }: { homeId: number | null }) {
    already on the row, so — unlike the brochure — there's nothing to fetch first and no
    popup-blocker dance; a plain link. */
 function StudioVideoButton({ url }: { url: string | null }) {
-  if (!url) return <span className="chip-soft" title="Openhouse Studio hasn't stitched a video for this property">No studio video</span>;
+  if (!url) return <span className="chip-soft" title="No stitched studio video, and no video listed in the Openhouse app">No studio video</span>;
   return (
     <a className="btn sm" href={url} target="_blank" rel="noreferrer">
       <IconPlay /> View studio video
@@ -460,7 +461,7 @@ function StudioVideoButton({ url }: { url: string | null }) {
 function StudioVideoDownload({ url, uid }: { url: string | null; uid: string }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
-  if (!url) return <span className="dd-nohome" title="Openhouse Studio hasn't stitched a video for this property">No video</span>;
+  if (!url) return <span className="dd-nohome" title="No stitched studio video, and no video listed in the Openhouse app">No video</span>;
   const go = async (e: React.MouseEvent) => {
     e.stopPropagation();
     setBusy(true);

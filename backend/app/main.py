@@ -21,7 +21,7 @@ from .routers import (
     activity, app_settings, auth, bonvoice, demand_dashboard, dialer, external_analytics,
     gupshup, health,
     huvo, huvo_calls, inventory, leads, live_calls, logs, meta, reports,
-    sheet_leads, supply, users, visits,
+    sheet_leads, studio_external, supply, users, visits,
 )
 from .services.dialer import start_dialer, stop_dialer
 from .workers.scheduler import start_scheduler, stop_scheduler
@@ -165,6 +165,7 @@ app.include_router(auth.router, prefix="/v1")
 app.include_router(inventory.router, prefix="/v1")
 app.include_router(supply.router, prefix="/v1")
 app.include_router(demand_dashboard.router, prefix="/v1")
+app.include_router(studio_external.router, prefix="/v1")
 app.include_router(leads.router, prefix="/v1")
 app.include_router(users.router, prefix="/v1")
 app.include_router(app_settings.router, prefix="/v1")

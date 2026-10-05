@@ -424,7 +424,8 @@ export type DemandProperty = {
   /** Openhouse Core's home id — the brochure is fetched by it. Null on legacy rows and
       on some real ones; those show "No home id". */
   core_home_id: number | null;
-  /** Openhouse Studio's stitched walkthrough (Cloudinary). Null until the shoot is stitched. */
+  /** Openhouse Studio's stitched walkthrough, else the home's video listed in the Openhouse app
+      (both Cloudinary). Null when there is neither. */
   studio_video_url: string | null;
 } & Record<string, unknown>;
 

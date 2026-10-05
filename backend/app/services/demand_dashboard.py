@@ -161,10 +161,15 @@ def build_sql(columns: dict[str, set[str]]) -> str:
 # 109 of 110 stitched videos and 284 of 285 photo sets match a dashboard uid).
 STUDIO_COLS = ("studio_video_url",)
 
-# One row per property. 194 of 304 have no stitched_url yet (shot, not stitched).
+# The stitched walkthrough, else the video the home has listed in the Openhouse app
+# (onboarded_properties.app_listed_videos, filled by scripts/23). 5 Oct: 110 stitched +
+# 66 app-listed only. Every stitched video belongs to an onboarded property, so reading
+# FROM onboarded_properties loses none.
 STUDIO_VIDEOS = text("""
-    SELECT property_uid, stitched_url FROM onboarded_properties_videos
-     WHERE coalesce(stitched_url, '') <> ''
+    SELECT p.uid, coalesce(nullif(v.stitched_url, ''), p.app_listed_videos) AS video_url
+      FROM onboarded_properties p
+      LEFT JOIN onboarded_properties_videos v ON v.property_uid = p.uid
+     WHERE coalesce(nullif(v.stitched_url, ''), p.app_listed_videos) IS NOT NULL
 """)
 
 # `url` holds the literal 'already exists' on 2,886 of 3,788 rows (5 Oct) — a studio-side

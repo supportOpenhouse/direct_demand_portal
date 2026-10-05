@@ -120,4 +120,5 @@ def test_studio_photos_never_send_the_placeholder_rows():
     (2,886 of 3,788 on 5 Oct). An <img> of that is a broken tile — only links go out."""
     sql = str(svc.STUDIO_PHOTOS)
     assert "url LIKE 'https://%'" in sql and "property_uid = :uid" in sql
-    assert "coalesce(stitched_url, '') <> ''" in str(svc.STUDIO_VIDEOS)
+    # stitched walkthrough first; the app-listed video only when there is none
+    assert "coalesce(nullif(v.stitched_url, ''), p.app_listed_videos)" in str(svc.STUDIO_VIDEOS)

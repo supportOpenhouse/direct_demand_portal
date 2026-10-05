@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # walkthrough and room photos, keyed by property_uid (= the Demand Dashboard uid).
     # Read-only.
     OPENHOUSE_STUDIO_DATABASE_URL: str = ""
+    # Key for Core's get-homes-video/ (header X-OpenHouse-Studio-Key) — the videos listed in
+    # the Openhouse app, copied into onboarded_properties.app_listed_videos by scripts/23.
+    OPENHOUSE_STUDIO_API_KEY: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15

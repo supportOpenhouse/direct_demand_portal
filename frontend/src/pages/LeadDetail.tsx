@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatDateTime, formatPrice, useAddNote, useAllSocieties, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useSetShortlistedSocieties, useWaLeadTranscript } from "../lib/queries";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useAllSocieties, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useWaLeadTranscript } from "../lib/queries";
 import { ALL_STAGES, BROKER_OPTIONS, initials, leadSources, metaQuestionLabel, noteOrigin, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
@@ -577,10 +577,8 @@ function NameHeading({ lead, as }: { lead: Lead; as: "h2" | "h3" }) {
    saves on its own (PATCH source-data → one activity row per changed answer). Local
    state is the truth while open, so the refetch after a save can't snap a select back;
    it is rendered keyed by lead id, which is what resets it.
-   Its societies question IS the confirm form's Q7 (lead_confirmed_data.shortlisted_
-   societies): the list lives in LeadDetail and comes in as a prop, and a pick here saves
-   through PATCH /leads/{id}/shortlisted-societies. The "answer Q3 first" gate is UI-only —
-   Q7 writes the same column without it. */
+   Its societies question is its OWN column (leads.buyer_shortlisted_broker_societies),
+   separate from the confirm form's Q7 — same master-list dropdown, different answer. */
 const BROKER_QUESTIONS: [keyof typeof BROKER_OPTIONS, string][] = [
   ["broker_count", "How many brokers is the buyer in touch with?"],
   ["broker_search_since", "Since when has the buyer been searching with a broker?"],
@@ -588,11 +586,8 @@ const BROKER_QUESTIONS: [keyof typeof BROKER_OPTIONS, string][] = [
   ["buyer_profession", "Profession of the buyer"],
 ];
 
-function BrokerCard({ lead, societies, onSocietiesChange }: {
-  lead: Lead; societies: string[]; onSocietiesChange: (next: string[]) => void;
-}) {
+function BrokerCard({ lead }: { lead: Lead }) {
   const patch = usePatchSourceData(lead.id);
-  const shortlist = useSetShortlistedSocieties(lead.id);
   const toast = useToast();
   const allSocieties = useAllSocieties();
   const [a, setA] = useState({
@@ -600,6 +595,7 @@ function BrokerCard({ lead, societies, onSocietiesChange }: {
     broker_search_since: lead.broker_search_since ?? "",
     buyer_property_type: lead.buyer_property_type ?? "",
     buyer_profession: lead.buyer_profession ?? "",
+    buyer_shortlisted_broker_societies: lead.buyer_shortlisted_broker_societies ?? [],
   });
   const save = (next: typeof a, body: Parameters<typeof api.patchSourceData>[1]) => {
     const prev = a;
@@ -628,18 +624,17 @@ function BrokerCard({ lead, societies, onSocietiesChange }: {
           <MultiSelect
             label="Societies"
             disabled={gated}
-            options={societyChoices(allSocieties.data?.items ?? [], societies)}
-            value={societies}
-            // Q7's list too: the shared state moves both at once; a refused save puts both back
-            onChange={(next) => {
-              const prev = societies;
-              onSocietiesChange(next);
-              shortlist.mutate(next, { onError: (e: any) => { onSocietiesChange(prev); toast(e.message, "gold"); } });
-            }}
+            options={societyChoices(allSocieties.data?.items ?? [], a.buyer_shortlisted_broker_societies)}
+            value={a.buyer_shortlisted_broker_societies}
+            // Q3 rides along: the server refuses Q4 without it (no DB read needed)
+            onChange={(next) => save({ ...a, buyer_shortlisted_broker_societies: next },
+              { buyer_property_type: a.buyer_property_type, buyer_shortlisted_broker_societies: next })}
           />
-          <div style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
-            {gated ? "Answer “What is the buyer looking for?” first" : societies.join(", ")}
-          </div>
+          {!gated && a.buyer_shortlisted_broker_societies.length > 0 && (
+            <div style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
+              {a.buyer_shortlisted_broker_societies.join(", ")}
+            </div>
+          )}
         </div>
       </div>
       <div className="two">{select(BROKER_QUESTIONS[3])}</div>
@@ -723,14 +718,14 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
     setSizeMin(c?.size_min_sqft != null ? String(c.size_min_sqft) : "");
     setSizeMax(c?.size_max_sqft != null ? String(c.size_max_sqft) : "");
     setMicromarkets(c?.preferred_micromarkets || []);
-    setSocieties(c?.shortlisted_societies ?? []);  // no pre-tick: Q4 is this list, and saves it
+    setSocieties(c?.shortlisted_societies ?? []);
     setLocalities(c?.preferred_localities || []);
     setLocalitySuggest([]);
     setSocietySuggest([]);
     setRemark(c?.remark || "");
     setFollowUp("");  // always blank on open — RM enters a fresh follow-up for this connected call
-    // Once per opened lead. Q4 (broker card) saves this list per pick and refetches the
-    // lead; refilling on that would wipe every confirm answer typed and not yet saved.
+    // Once per opened lead. The broker card saves per pick and refetches the lead;
+    // refilling on that would wipe every confirm answer typed and not yet saved.
     // The state already holds what was saved, so nothing is lost by not refilling.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead?.id]);
@@ -902,7 +897,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
           {/* the Meta form, full width, when the card above is another source's */}
           {hasMetaForm && !formInPair && <MetaFormCard deliveries={metaDeliveries} landscape />}
 
-          <BrokerCard key={lead.id} lead={lead} societies={societies} onSocietiesChange={setSocieties} />
+          <BrokerCard key={lead.id} lead={lead} />
 
           {/* CONFIRMED call form — last on mobile, per the requested card order */}
           <div className={"card panel-pad compact-form" + (mobile ? " m-last" : "")}>
@@ -974,7 +969,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             </div>
 
             <div className="field">
-              <label>Q7. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— same list as the broker card</span></label>
+              <label>Q7. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
               <MultiSelect
                 label="Societies"
                 options={societyChoices(allSocieties.data?.items ?? [], societies)}

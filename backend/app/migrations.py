@@ -78,6 +78,7 @@ _ADD_COLUMNS = [
     ("leads", "broker_search_since", "TEXT"),
     ("leads", "buyer_property_type", "TEXT"),
     ("leads", "buyer_profession", "TEXT"),
+    ("leads", "buyer_shortlisted_broker_societies", "TEXT[] NOT NULL DEFAULT '{}'"),
     ("wa_messages", "source_app", "TEXT"),
     ("leads", "reject_notes", "TEXT"),
     ("leads", "rejected_at", "TIMESTAMPTZ"),

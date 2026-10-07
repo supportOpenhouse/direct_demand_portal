@@ -3,8 +3,8 @@ from math import ceil
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select, text
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
@@ -122,6 +122,7 @@ def _lead_row(r) -> dict:
         "broker_search_since": r.get("broker_search_since"),
         "buyer_property_type": r.get("buyer_property_type"),
         "buyer_profession": r.get("buyer_profession"),
+        "buyer_shortlisted_broker_societies": list(r.get("buyer_shortlisted_broker_societies") or []),
         # latest booked visit (Pipeline status chip) — only present on the list query
         "visit_status": r.get("visit_status"),
         "visit_date": r.get("visit_sel_date"),
@@ -1042,6 +1043,8 @@ class SourceDataPatch(BaseModel):
     broker_search_since: str | None = None
     buyer_property_type: str | None = None
     buyer_profession: str | None = None
+    # Q4 — same master-list dropdown as every society prompt, its own column
+    buyer_shortlisted_broker_societies: Societies | None = None
 
     @field_validator(*BROKER_OPTIONS)
     @classmethod
@@ -1049,6 +1052,13 @@ class SourceDataPatch(BaseModel):
         if v not in (None, "", *BROKER_OPTIONS[info.field_name]):
             raise ValueError(f"not one of {BROKER_OPTIONS[info.field_name]}")
         return v
+
+    @model_validator(mode="after")
+    def _q4_needs_q3(self):
+        # The card re-sends Q3 with every Q4 save, so the rule needs no DB read.
+        if self.buyer_shortlisted_broker_societies and not self.buyer_property_type:
+            raise ValueError("buyer_shortlisted_broker_societies needs buyer_property_type")
+        return self
 
 
 @router.patch("/leads/{lead_id}/source-data")
@@ -1084,45 +1094,6 @@ async def patch_source_data(lead_id: UUID, payload: SourceDataPatch,
             activity.Actor.of(user), "lead", lead_id, before, after,
             metadata={"via": "source_data"}))
     return {"status": "ok"}
-
-
-# --- shortlisted societies (broker card Q4 == confirm form Q7) ----------------
-
-class ShortlistedSocieties(BaseModel):
-    societies: Societies = []
-
-
-def shortlist_upsert(lead_id, societies: list[str]):
-    """Writes ONLY shortlisted_societies — the broker card saves per pick, and must not
-    touch the confirm form's other answers. RETURNING reads the old list through an
-    aliased subselect: the pre-statement snapshot, never the row just written."""
-    prev = LeadConfirmedData.__table__.alias("prev")
-    before = select(prev.c.shortlisted_societies).where(prev.c.lead_id == lead_id).scalar_subquery()
-    stmt = pg_insert(LeadConfirmedData).values(lead_id=lead_id, shortlisted_societies=societies)
-    return stmt.on_conflict_do_update(
-        index_elements=[LeadConfirmedData.lead_id],
-        set_={"shortlisted_societies": stmt.excluded.shortlisted_societies},
-    ).returning(before.label("before"))
-
-
-@router.patch("/leads/{lead_id}/shortlisted-societies")
-async def set_shortlisted_societies(lead_id: UUID, payload: ShortlistedSocieties,
-                                    user: dict = Depends(current_user)):
-    """The broker card's Q4. Same column as the confirm form's Q7 — one list, two
-    places to edit it. A row holding only this is safe: matching falls back to the
-    lead's own config/budget for every NULL column."""
-    engine = neon_engine()
-    if engine is None:
-        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
-    async with engine.begin() as conn:
-        if (await conn.execute(text("SELECT 1 FROM leads WHERE id = :id"), {"id": lead_id})).first() is None:
-            raise HTTPException(status_code=404, detail="lead not found")
-        before = (await conn.execute(shortlist_upsert(lead_id, payload.societies))).scalar()
-        await activity.record(conn, activity.changes_between(
-            activity.Actor.of(user), "lead", lead_id,
-            {"shortlisted_societies": before or []}, {"shortlisted_societies": payload.societies},
-            metadata={"via": "broker_card"}))
-    return {"status": "ok", "societies": payload.societies}
 
 
 # --- remarks thread ----------------------------------------------------------

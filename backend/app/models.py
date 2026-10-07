@@ -313,12 +313,15 @@ class Lead(Base):
     # Kept when the lead moves on — it records how warm it was when qualified.
     qualified_status: Mapped[str | None] = mapped_column(Text)
     # "Broker & buyer profile" card (lead popup). Answers are the labels in
-    # routers/leads.BROKER_OPTIONS. Its societies question is Q7's column —
-    # lead_confirmed_data.shortlisted_societies.
+    # routers/leads.BROKER_OPTIONS. Its societies question ("shortlisted or interested
+    # properties with the broker") is its own list — NOT Q7's shortlisted_societies — and
+    # needs buyer_property_type first. Starts empty for every lead.
     broker_count: Mapped[str | None] = mapped_column(Text)
     broker_search_since: Mapped[str | None] = mapped_column(Text)
     buyer_property_type: Mapped[str | None] = mapped_column(Text)
     buyer_profession: Mapped[str | None] = mapped_column(Text)
+    buyer_shortlisted_broker_societies: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default="{}")
     # rejection
     reject_reason: Mapped[str | None] = mapped_column(Text)
     reject_notes: Mapped[str | None] = mapped_column(Text)

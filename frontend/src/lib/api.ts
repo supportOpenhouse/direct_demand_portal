@@ -351,6 +351,7 @@ export interface Lead {
   broker_search_since?: string | null;
   buyer_property_type?: string | null;
   buyer_profession?: string | null;
+  buyer_shortlisted_broker_societies?: string[];
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
   visit_date: string | null;    // its scheduled date
   visit_society: string | null; // society of the latest booked visit (shown on the chip)
@@ -888,12 +889,8 @@ export const api = {
   me: () => request<AuthUser>("/v1/me"),
   // source-captured edit + notes thread + autocomplete
   patchSourceData: (id: string, patch: Partial<Record<"name" | "city" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks"
-    | "broker_count" | "broker_search_since" | "buyer_property_type" | "buyer_profession", string> & { societies: string[] }>) =>
+    | "broker_count" | "broker_search_since" | "buyer_property_type" | "buyer_profession", string> & { societies: string[]; buyer_shortlisted_broker_societies: string[] }>) =>
     request<{ status: string }>(`/v1/leads/${id}/source-data`, { method: "PATCH", body: JSON.stringify(patch) }),
-  // Broker card Q4 — the SAME column as the confirm form's Q7 (shortlisted_societies)
-  setShortlistedSocieties: (id: string, societies: string[]) =>
-    request<{ status: string; societies: string[] }>(`/v1/leads/${id}/shortlisted-societies`,
-      { method: "PATCH", body: JSON.stringify({ societies }) }),
   leadNotes: (id: string) => request<{ items: LeadNote[] }>(`/v1/leads/${id}/notes`),
   addNote: (id: string, body: string) =>
     request<{ status: string }>(`/v1/leads/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),

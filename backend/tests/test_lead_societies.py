@@ -29,33 +29,41 @@ def test_too_long_or_too_many_is_refused_not_truncated():
         _M(societies=[f"S{i}" for i in range(51)])
 
 
-# --- Part A: Q4 == Q7, one column ------------------------------------------------
+# --- Broker card Q4: its OWN column (user ruling 7 Oct, reversing "Q4 == Q7") -------
 
-from sqlalchemy.dialects import postgresql  # noqa: E402
-
+from app.migrations import _ADD_COLUMNS  # noqa: E402
 from app.models import Lead  # noqa: E402
-from app.routers.leads import SourceDataPatch, _lead_row, shortlist_upsert  # noqa: E402
+from app.routers.leads import SourceDataPatch, _lead_row  # noqa: E402
+
+Q4 = "buyer_shortlisted_broker_societies"
 
 
-def _sql(stmt) -> str:
-    return str(stmt.compile(dialect=postgresql.dialect()))
+def test_q4_has_its_own_column_not_q7s():
+    col = Lead.__table__.columns[Q4]
+    assert not col.nullable and col.server_default is not None
+    assert ("leads", Q4, "TEXT[] NOT NULL DEFAULT '{}'") in _ADD_COLUMNS
+    assert Q4 in SourceDataPatch.model_fields
+    import app.routers.leads as r
+    assert not hasattr(r, "shortlist_upsert"), "Q4 no longer writes lead_confirmed_data"
 
 
-def test_broker_societies_is_gone_everywhere():
-    """Q4 is Q7: one column, lead_confirmed_data.shortlisted_societies."""
-    from app.migrations import _ADD_COLUMNS
-    assert "broker_societies" not in Lead.__table__.columns
-    assert all(col != "broker_societies" for _, col, _ in _ADD_COLUMNS)
-    assert "broker_societies" not in SourceDataPatch.model_fields
+def test_q4_is_cleaned_and_needs_what_the_buyer_is_looking_for():
+    with pytest.raises(ValidationError):
+        SourceDataPatch(**{Q4: ["ATS Pristine"]})
+    with pytest.raises(ValidationError):
+        SourceDataPatch(**{"buyer_property_type": "", Q4: ["ATS Pristine"]})
+    ok = SourceDataPatch(**{"buyer_property_type": "Builder floor", Q4: [" A ", "a"]})
+    assert getattr(ok, Q4) == ["A"]
+    # clearing the list never needs Q3 — nothing left to gate
+    assert getattr(SourceDataPatch(**{Q4: []}), Q4) == []
 
 
-def test_the_shortlist_upsert_touches_only_that_column_and_reads_the_old_value_first():
-    sql = _sql(shortlist_upsert("00000000-0000-0000-0000-000000000000", ["A"]))
-    assert "ON CONFLICT (lead_id) DO UPDATE SET shortlisted_societies = excluded.shortlisted_societies" in sql
-    set_clause = sql.split("DO UPDATE SET", 1)[1].split("RETURNING", 1)[0]
-    assert set_clause.count("=") == 1, "a broker-card save must not rewrite the confirm form's answers"
-    # an ALIASED subselect = the pre-statement snapshot, not the row just written
-    assert "FROM lead_confirmed_data AS prev" in sql.split("RETURNING", 1)[1]
+def test_the_lead_payload_carries_q4():
+    class R(dict):
+        def __missing__(self, key):
+            return None
+    assert _lead_row(R(id="x", **{Q4: ["A", "B"]}))[Q4] == ["A", "B"]
+    assert _lead_row(R(id="x"))[Q4] == []
 
 
 # --- Part B: scripts/24 — the database change ------------------------------------

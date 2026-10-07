@@ -146,7 +146,16 @@ export const LEAD_COLUMNS: LeadColumn[] = [
   { id: "city", label: "City", sort: (l) => l.city, tdClass: "cell-tight", tdStyle: { fontSize: 12.5 },
     render: (l) => text(l.city) },
   { id: "society", label: "Society", sort: (l) => l.societies[0] ?? null, tdClass: "cell-text", tdStyle: small,
-    render: (l) => { const s = l.societies.join(", "); return <span title={s}>{s || "—"}</span>; } },
+    // "Society1 +2" — the first society, a count for the rest, the full list on hover
+    render: (l) => {
+      const [first, ...rest] = l.societies;
+      if (!first) return <span>—</span>;
+      return (
+        <span title={l.societies.join(", ")}>
+          {first}{rest.length > 0 && <span style={{ color: "var(--muted)", fontWeight: 600 }}> +{rest.length}</span>}
+        </span>
+      );
+    } },
   { id: "budget", label: "Budget", sort: (l) => l.budget_band, tdClass: "cell-tight", tdStyle: { fontSize: 12.5 },
     render: (l) => text(l.budget_band) },
   { id: "plan", label: "Plan to Buy", sort: (l) => l.plan_to_buy,

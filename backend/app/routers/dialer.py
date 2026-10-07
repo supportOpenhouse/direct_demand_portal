@@ -23,8 +23,11 @@ log = logging.getLogger("dialer")
 router = APIRouter(prefix="/dialer", tags=["dialer"])
 
 # multi-select fields whose options come from whatever is actually in the leads table
-_OPTION_COLUMNS = {"society": "society", "city": "city", "source": "source",
+_OPTION_COLUMNS = {"city": "city", "source": "source",
                    "stage": "stage", "assigned_to": "assigned_to"}
+# societies is an array — its options are the distinct names inside the lists
+SOCIETY_OPTIONS = ("SELECT DISTINCT btrim(s) AS v FROM leads, unnest(societies) AS s "
+                   "WHERE btrim(s) <> '' ORDER BY 1 LIMIT 300")
 
 
 def _engine():
@@ -124,6 +127,7 @@ async def dialer_fields(_: dict = Depends(require_admin)):
                 f"WHERE {col} IS NOT NULL AND btrim({col}) <> '' ORDER BY 1 LIMIT 300"
             ))).mappings().all()
             options[key] = [r["v"] for r in rows]
+        options["society"] = [r["v"] for r in (await conn.execute(text(SOCIETY_OPTIONS))).mappings()]
         rms = (await conn.execute(_CALLABLE_RMS)).mappings().all()
     return {
         "fields": [
@@ -335,7 +339,7 @@ async def campaign_detail(campaign_id: UUID, _: dict = Depends(require_admin)):
         feed = (await conn.execute(text("""
             SELECT q.status, q.outcome, q.detail, q.rm_email, q.dialed_at, q.ended_at,
                    q.event_id, q.attempts, q.answered,
-                   l.name AS lead_name, l.society, l.id AS lead_id
+                   l.name AS lead_name, array_to_string(l.societies, ', ') AS society, l.id AS lead_id
               FROM dial_queue q
               JOIN leads l ON l.id = q.lead_id
              WHERE q.campaign_id = :id AND q.dialed_at IS NOT NULL

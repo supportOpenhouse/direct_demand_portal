@@ -13,13 +13,14 @@ import { useEffect, useRef, useState } from "react";
 import { IconChevronDown, IconX } from "./icons";
 
 export function MultiSelect({
-  label, options, value, onChange,
+  label, options, value, onChange, disabled = false,
 }: {
   label: string;
   /** every option, with its count in the current view */
   options: { value: string; label: string; count?: number }[];
   value: string[];
   onChange: (next: string[]) => void;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
@@ -48,7 +49,7 @@ export function MultiSelect({
   return (
     <div className="mselect" ref={box}>
       <button className={"btn" + (value.length ? " primary" : " ghost")} onClick={() => setOpen((v) => !v)}
-              aria-expanded={open} title={value.length ? value.join(", ") : `Filter by ${label.toLowerCase()}`}>
+              disabled={disabled} aria-expanded={open} title={value.length ? value.join(", ") : `Filter by ${label.toLowerCase()}`}>
         {label}{value.length > 0 && ` · ${value.length}`} <IconChevronDown />
       </button>
       {open && (

@@ -33,6 +33,15 @@ const SRC_LABEL: Record<string, string> = {
 export const PICKABLE_SOURCES = ["meta", "99acres", "magicbricks", "whatsapp", "gads", "youtube"]
   .filter((k) => k in SRC_LABEL);
 
+/* The popup's "Broker & buyer profile" dropdowns — the label IS the stored value.
+   Mirrored by BROKER_OPTIONS in routers/leads.py (tests/test_broker_profile.py). */
+export const BROKER_OPTIONS = {
+  broker_count: ["1", "2", "3", "4+"],
+  broker_search_since: ["Just started", "1-2 weeks", "1 month", "2 months", "2 months+"],
+  buyer_property_type: ["Low rise flat", "High rise flat", "Builder floor", "Independent house", "Open to all"],
+  buyer_profession: ["Salaried", "Business", "Unemployed", "Baap ka paisa"],
+};
+
 /* An unknown source — a custom one typed into Add lead ("Walk-in") — gets the NEUTRAL
    chip. It fell back to "meta" before, which painted a walk-in in Meta's blue: a colour
    that claims an attribution the lead doesn't have. */
@@ -226,7 +235,7 @@ export function leadMatchesQuery(query: string, l: Lead): boolean {
   if (
     matches(
       query,
-      l.name, l.phone, l.email, l.city, l.society, l.configuration,
+      l.name, l.phone, l.email, l.city, l.societies.join(" "), l.configuration,
       l.budget_band, l.plan_to_buy, l.assigned_to, l.latest_note, l.source_remarks,
       sourcesLabel(l), stageLabel(l.stage),
     )

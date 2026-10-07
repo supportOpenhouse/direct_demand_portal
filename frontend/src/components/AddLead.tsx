@@ -12,14 +12,16 @@ import { useAuth } from "./AuthContext";
 import { useToast } from "./Toast";
 import { useOpenLead } from "./LeadModal";
 import { IconPlus, IconWarn, IconX } from "./icons";
-import { useCreateLead } from "../lib/queries";
+import { useAllSocieties, useCreateLead } from "../lib/queries";
+import { societyChoices } from "../lib/leadFilters";
+import { MultiSelect } from "./MultiSelect";
 import { CITIES, PICKABLE_SOURCES, srcLabel } from "../lib/leads";
 import { isCallingRm } from "../lib/roles";
 import { useModalExit } from "../lib/useModalExit";
 import type { NewLead } from "../lib/api";
 
 const EMPTY: NewLead = {
-  name: "", phone: "", city: "", society: "", budget_band: "", configuration: "", source_remarks: "",
+  name: "", phone: "", city: "", societies: [], budget_band: "", configuration: "", source_remarks: "",
   source: "",
 };
 
@@ -44,6 +46,7 @@ function AddLeadModal({ onClose: rawClose }: { onClose: () => void }) {
   const toast = useToast();
   const openLead = useOpenLead();
   const [f, setF] = useState<NewLead>(EMPTY);
+  const allSocieties = useAllSocieties();
   const [err, setErr] = useState(false);
   // the dropdown, and the text box it opens when "Custom" is picked
   const [srcPick, setSrcPick] = useState("");
@@ -73,7 +76,7 @@ function AddLeadModal({ onClose: rawClose }: { onClose: () => void }) {
     });
   };
 
-  const input = (label: string, key: keyof NewLead, placeholder = "", required = false, bad = false) => (
+  const input = (label: string, key: Exclude<keyof NewLead, "societies">, placeholder = "", required = false, bad = false) => (
     <div className={"field" + (bad ? " invalid" : "")}>
       <label>{label}{required && <> <span className="req">*</span></>}</label>
       <input value={f[key]} placeholder={placeholder} onChange={(e) => setF({ ...f, [key]: e.target.value })} />
@@ -100,7 +103,11 @@ function AddLeadModal({ onClose: rawClose }: { onClose: () => void }) {
                 {CITIES.map((c) => <option key={c}>{c}</option>)}
               </select>
             </div>
-            {input("Society of interest", "society")}
+            <div className="field"><label>Society of interest</label>
+              <MultiSelect label="Societies"
+                options={societyChoices(allSocieties.data?.items ?? [], f.societies)}
+                value={f.societies} onChange={(next) => setF({ ...f, societies: next })} />
+            </div>
           </div>
           <div className="two">
             {input("Budget", "budget_band", "e.g. ₹70L – ₹90L")}

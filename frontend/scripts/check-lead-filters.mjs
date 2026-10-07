@@ -33,27 +33,33 @@ assert.equal(m.isInvalidPhone("919876543210"), true,
 assert.equal(m.isInvalidPhone(""), true, "blank is not a number");
 assert.equal(m.isInvalidPhone(null), true, "null is not a number");
 
-// ── society: master list + lead-only societies + none, all reconciling ───────────
+// ── society: a lead holds several; master + lead-only + none, all reachable ──────
 const leads = [
-  { society: "Gaur City 6" }, { society: "gaur city 6 " },   // same society, lead spelling
-  { society: "Not In Master" },                              // a typo / missing project
-  { society: "" }, { society: null },                        // no society
+  { societies: ["Gaur City 6"] }, { societies: ["gaur city 6 ", "Zara Rossa"] },  // two societies
+  { societies: ["Not In Master"] },                                                // typo / missing project
+  { societies: [] }, { societies: null },                                          // no society
 ];
 const master = ["Gaur City 6", "Zara Rossa"];
-const opts = m.societyOptions(leads, (l) => l.society, master);
+const opts = m.societyOptions(leads, (l) => l.societies, master);
 const label = Object.fromEntries(opts.map((o) => [o.value, o.label]));
 assert.equal(label["Gaur City 6"], "Gaur City 6 (2)", "case/space-insensitive, master spelling wins");
-assert.equal(label["Zara Rossa"], "Zara Rossa (0)", "a master society with no leads is still offered");
+assert.equal(label["Zara Rossa"], "Zara Rossa (1)", "the second society of a lead counts too");
 assert.equal(label["Not In Master"], "Not In Master (1)", "a society missing from master stays reachable");
 const none = opts.find((o) => o.label.startsWith("— None —"));
-assert.ok(none && none.label.endsWith("(2)"), "blank and null both count as no society");
-const counted = opts.reduce((n, o) => n + Number(o.label.match(/\((\d+)\)$/)[1]), 0);
-assert.equal(counted, leads.length, "every lead is reachable through exactly one option");
-assert.ok(m.societyMatches("gaur city 6 ", "Gaur City 6"), "matching is case/space-insensitive");
-assert.ok(m.societyMatches(null, none.value) && !m.societyMatches("x", none.value), "None means blank only");
+assert.ok(none && none.label.endsWith("(2)"), "[] and null both count as no society");
+assert.ok(m.societyMatches(["gaur city 6 "], ["Gaur City 6"]), "case/space-insensitive");
+assert.ok(m.societyMatches(["A", "Zara Rossa"], ["Zara Rossa"]), "ANY of the lead's societies");
+assert.ok(m.societyMatches([], [none.value]) && !m.societyMatches(["x"], [none.value]), "None = no society only");
+assert.ok(m.societyMatches([], [none.value, "Zara Rossa"]) && m.societyMatches(["Zara Rossa"], [none.value, "Zara Rossa"])
+  && !m.societyMatches(["Other"], [none.value, "Zara Rossa"]), "None + a society = either");
+assert.ok(m.societyMatches(["x"], []), "nothing picked = no filter");
 assert.ok(
-  m.societyOptions([], (l) => l.society, [], "Gone Society").some((o) => o.value === "Gone Society"),
-  "an active selection faceting dropped is pinned, so the <select> can't snap to All");
+  m.societyOptions([], (l) => l.societies, [], ["Gone Society"]).some((o) => o.value === "Gone Society"),
+  "a selection faceting dropped is pinned");
+// the dropdown's options keep an off-list value already on a record
+const ch = m.societyChoices(["B", "A"], ["Off List"]);
+assert.deepEqual(ch.map((o) => o.value), ["A", "B", "Off List"], "master + picked, sorted, no dupes");
+assert.equal(m.societyChoices(["A"], ["A"]).length, 1);
 
 // ── yes/no ───────────────────────────────────────────────────────────────────────
 const yn = m.yesNoOptions([1, 2, 3], (x) => x > 1);
@@ -65,7 +71,7 @@ assert.ok(m.inRange(null, m.EMPTY_RANGE), "an unset range constrains nothing, ev
 assert.ok(!m.inRange(null, { preset: "today", from: "", to: "" }), "a set range excludes a missing date");
 
 // ── at their defaults, the shared filters hide nothing ───────────────────────────
-const plain = { society: null, created_at: null, assigned_at: null, meta_lead_id: null,
+const plain = { societies: [], created_at: null, assigned_at: null, meta_lead_id: null,
                 phone: "+91 98765 43210", reject_reason: null, rejected_at: null };
 assert.ok(m.passExtras(plain, m.EXTRA_DEFAULTS), "defaults filter nothing out");
 

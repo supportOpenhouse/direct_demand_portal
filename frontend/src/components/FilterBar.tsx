@@ -9,9 +9,10 @@
    `pass(l, skip)` call, so the counts stay live and this component stays dumb. */
 import { useEffect, useState, type ReactNode } from "react";
 import { IconFilter, IconX } from "./icons";
+import { MultiSelect } from "./MultiSelect";
 import { DATE_PRESETS, type FilterOption } from "./Filters";
 
-export type FieldKind = "select" | "buttons" | "toggle" | "range" | "date" | "daterange";
+export type FieldKind = "select" | "buttons" | "toggle" | "range" | "date" | "daterange" | "multiselect";
 
 export interface Field {
   key: string;
@@ -200,6 +201,10 @@ function FilterModal({ fields, values, onChange, onClear, onClose }: {
                       );
                     })}
                   </div>
+                ) : f.kind === "multiselect" ? (
+                  /* hundreds of options (societies) — a searchable checkbox list, not buttons */
+                  <MultiSelect label={f.label} options={opts(f.options)}
+                               value={values[f.key] ?? []} onChange={(v) => onChange(f.key, v)} />
                 ) : f.kind === "date" ? (
                   <input type="date" value={values[f.key] ?? ""} onChange={(e) => onChange(f.key, e.target.value)} />
                 ) : (

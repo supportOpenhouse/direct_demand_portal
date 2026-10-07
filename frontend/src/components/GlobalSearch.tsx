@@ -88,7 +88,7 @@ export default function GlobalSearch({ openLead = false }: { openLead?: boolean 
                   <div className="gs-main">
                     <span className="gs-name">{r.lead.name || "Unknown lead"}</span>
                     <span className="gs-sub">
-                      {[r.lead.phone, r.lead.city, r.lead.society].filter(Boolean).join(" · ") || "—"}
+                      {[r.lead.phone, r.lead.city, r.lead.societies.join(", ")].filter(Boolean).join(" · ") || "—"}
                     </span>
                   </div>
                   <span className="gs-seg">{r.segment.label}</span>

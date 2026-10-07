@@ -131,6 +131,11 @@ BEGIN
        SET sources = CASE WHEN NEW.source = ANY(sources) THEN sources
                           ELSE sources || NEW.source END,
            merged_origin_keys = merged_origin_keys || NEW.origin_key,
+           -- the arriving societies join the list, case-insensitively (scripts/24)
+           societies = societies || ARRAY(
+               SELECT s FROM unnest(NEW.societies) AS s
+                WHERE NOT EXISTS (SELECT 1 FROM unnest(leads.societies) AS e
+                                   WHERE lower(btrim(e)) = lower(btrim(s)))),
            -- a lead named after its own number ("+91 85955 94789", how WhatsApp creates
            -- them) takes the first real name any source brings
            name = CASE WHEN coalesce(name, '') ~ '^\s*\+?[\d\s()-]{8,}\s*$'

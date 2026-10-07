@@ -251,6 +251,9 @@ class Lead(Base):
     # source-captured (what the ad form / portal gave us — locked, admin-editable later)
     city: Mapped[str | None] = mapped_column(Text)
     society: Mapped[str | None] = mapped_column(Text)
+    # Every society of interest (spec 2026-10-07). `society` is kept = societies[1] by the
+    # leads_fill_societies trigger (scripts/24), so ingest can keep writing `society`.
+    societies: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, server_default="{}")
     configuration: Mapped[str | None] = mapped_column(Text)
     budget_band: Mapped[str | None] = mapped_column(Text)
     plan_to_buy: Mapped[str | None] = mapped_column(Text)
@@ -309,6 +312,13 @@ class Lead(Base):
     # hot | warm | cold, asked when a person moves the lead to `qualified` (Status card).
     # Kept when the lead moves on — it records how warm it was when qualified.
     qualified_status: Mapped[str | None] = mapped_column(Text)
+    # "Broker & buyer profile" card (lead popup). Answers are the labels in
+    # routers/leads.BROKER_OPTIONS. Its societies question is Q7's column —
+    # lead_confirmed_data.shortlisted_societies.
+    broker_count: Mapped[str | None] = mapped_column(Text)
+    broker_search_since: Mapped[str | None] = mapped_column(Text)
+    buyer_property_type: Mapped[str | None] = mapped_column(Text)
+    buyer_profession: Mapped[str | None] = mapped_column(Text)
     # rejection
     reject_reason: Mapped[str | None] = mapped_column(Text)
     reject_notes: Mapped[str | None] = mapped_column(Text)

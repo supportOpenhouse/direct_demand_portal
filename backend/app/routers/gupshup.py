@@ -35,6 +35,7 @@ from ..db import neon_engine
 import uuid
 
 from ..services import activity, wa_assign
+from ..services.normalize import Societies
 from ..models import Lead, WaContact, WaMessage
 
 log = logging.getLogger("gupshup")
@@ -662,7 +663,7 @@ class CreateLeadRequest(BaseModel):
     phone: str
     name: str = Field(min_length=1, max_length=120)
     city: str | None = None
-    society: str | None = None
+    societies: Societies = []
     # Default False: unassigned is the safe outcome — a lead nobody owns is visible in
     # the unassigned pool, where a lead owned by the wrong person is not.
     assign: bool = Field(default=False, description=ASSIGN_HELP)
@@ -683,10 +684,9 @@ async def gupshup_create_lead(req: CreateLeadRequest, user: dict = Depends(curre
 
     now = datetime.now(timezone.utc)
     city = (req.city or "").strip() or None
-    society = (req.society or "").strip() or None
     values = {
         "origin_key": f"whatsapp:{phone10}", "source_category": "whatsapp", "source": "whatsapp",
-        "name": req.name.strip(), "phone": display_phone(phone10), "city": city, "society": society,
+        "name": req.name.strip(), "phone": display_phone(phone10), "city": city, "societies": req.societies,
         "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
         "source_meta": {"created_from": "whatsapp_chat", "created_by": user.get("email")},
     }

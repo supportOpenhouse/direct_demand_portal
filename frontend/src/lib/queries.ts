@@ -431,6 +431,17 @@ export function usePatchSourceData(id: string) {
   });
 }
 
+export function useSetShortlistedSocieties(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (societies: string[]) => api.setShortlistedSocieties(id, societies),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["lead", id] });
+      qc.invalidateQueries({ queryKey: ["lead-matches", id] });
+    },
+  });
+}
+
 /* Click-to-call: rings the caller's own phone, then bridges to the lead. */
 export function usePlaceCall() {
   return useMutation({ mutationFn: (leadId: string) => api.placeCall(leadId) });

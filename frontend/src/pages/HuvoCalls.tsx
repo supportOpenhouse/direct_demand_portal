@@ -11,6 +11,8 @@
 import { useState } from "react";
 import { HuvoCall, DURATION_OPTIONS, NO_CAMPAIGN } from "../lib/api";
 import { CITIES } from "../lib/leads";
+import { societyChoices } from "../lib/leadFilters";
+import { MultiSelect } from "../components/MultiSelect";
 import {
   useHuvoCalls, useHuvoCall, useHuvoCallFilters, useCreateHuvoLead,
   useBulkCreateHuvoLeads, useSocietiesByCity, formatDateTime,
@@ -55,7 +57,7 @@ function CreateLeadModal(
 ) {
   const create = useCreateHuvoLead();
   const toast = useToast();
-  const [form, setForm] = useState({ name: call.caller_name || "", city: "", society: "" });
+  const [form, setForm] = useState({ name: call.caller_name || "", city: "", societies: [] as string[] });
   const societies = useSocietiesByCity(form.city);
   const societyOptions = societies.data?.items ?? [];
 
@@ -63,7 +65,7 @@ function CreateLeadModal(
     if (!form.name.trim() || create.isPending) return;
     create.mutate(
       { phone: call.from_number || "", name: form.name.trim(),
-        city: form.city.trim(), society: form.society.trim() },
+        city: form.city.trim(), societies: form.societies },
       {
         onSuccess: (d) => {
           toast(d.calls_linked > 1
@@ -99,23 +101,23 @@ function CreateLeadModal(
             <label>City</label>
             <select value={form.city}
               // changing city invalidates the society — it may not exist there
-              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, society: "" }))}>
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, societies: [] }))}>
               <option value="">Choose city (optional)</option>
               {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Society</label>
-            <select value={form.society} disabled={!form.city}
-              onChange={(e) => setForm((f) => ({ ...f, society: e.target.value }))}>
-              <option value="">
-                {!form.city ? "Choose a city first"
-                  : societies.isLoading ? "Loading…"
-                  : societyOptions.length ? "Choose society (optional)"
-                  : "No societies found for this city"}
-              </option>
-              {societyOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <MultiSelect
+              label={!form.city ? "Choose a city first"
+                : societies.isLoading ? "Loading…"
+                : societyOptions.length ? "Societies"
+                : "No societies for this city"}
+              disabled={!form.city || !societyOptions.length}
+              options={societyChoices(societyOptions, form.societies)}
+              value={form.societies}
+              onChange={(next) => setForm((f) => ({ ...f, societies: next }))}
+            />
           </div>
           {/* What Huvo already learned on the call — saves re-reading the row behind
               the modal to decide whether this lead is worth creating. */}

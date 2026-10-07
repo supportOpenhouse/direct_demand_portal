@@ -2717,6 +2717,11 @@ td.lead-cell .nm{
 .mselect-row{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:13px}
 .mselect-row:hover{background:var(--panel-2)}
 .mselect-row input{accent-color:var(--brand);cursor:pointer;flex:none}
+/* Inside a form `.field`, `.field label` (0,1,1) and `.field input` (0,1,1) would turn each
+   option row into a block and stretch its checkbox to width:100% — every society prompt
+   sits in a .field. Scoped under .mselect so these win without touching the forms. */
+.mselect .mselect-row{display:flex;margin:0;font-size:13px;font-weight:400;color:inherit}
+.mselect .mselect-row input{width:auto;height:auto;padding:0;border:0;background:none;box-shadow:none}
 .mselect-lbl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mselect-count{color:var(--muted);font-size:11.5px;font-family:var(--font-mono)}
 .mselect-none{padding:12px;color:var(--muted);font-size:12.5px;text-align:center}

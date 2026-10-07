@@ -47,7 +47,8 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # field → (SQL expression, kind). The frontend builder is driven by this same list
 # via /v1/dialer/fields, so the two can't drift.
 FIELDS: dict[str, dict] = {
-    "society":        {"col": "l.society",        "kind": "multi",     "label": "Society"},
+    # an ARRAY column: "any of the lead's societies is in the picked list"
+    "society":        {"col": "l.societies",      "kind": "multi",     "label": "Society", "array": True},
     "city":           {"col": "l.city",           "kind": "multi",     "label": "City"},
     "source":         {"col": "l.source",         "kind": "multi",     "label": "Lead source"},
     "stage":          {"col": "l.stage",          "kind": "multi",     "label": "Lead stage"},
@@ -121,6 +122,10 @@ def _condition(n, params: dict, ctr) -> str:
         if not vals:
             return "TRUE"  # nothing selected = no filter, same as the live preview
         placeholders = ", ".join(bind(v) for v in vals)
+        if field.get("array"):
+            overlap = f"{col} && CAST(ARRAY[{placeholders}] AS text[])"
+            # NOT NULL DEFAULT '{}' — an empty list overlaps nothing, so NOT matches it
+            return overlap if op == "IN" else f"NOT ({overlap})"
         if op == "IN":
             return f"{col} IN ({placeholders})"
         # NULL NOT IN (...) is UNKNOWN in SQL but "not one of them" to a human

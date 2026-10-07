@@ -41,7 +41,7 @@ _MY_CAMPAIGNS = text("""
 # spoken to them before.
 _NOW_CALLING = text("""
     SELECT q.id, q.lead_id, q.dialed_at, q.attempts,
-           l.name, l.phone, l.society, l.city, l.configuration,
+           l.name, l.phone, array_to_string(l.societies, ', ') AS society, l.city, l.configuration,
            l.budget_band AS budget,
            l.stage, l.miss_count, l.ever_connected
       FROM dial_queue q
@@ -65,7 +65,7 @@ _NOW_CALLING = text("""
 _COMPLETED_TODAY = text("""
     SELECT q.id, q.lead_id, q.dialed_at, q.ended_at, q.answered, q.outcome,
            q.attempts, q.call_result, q.call_result_at,
-           l.name, l.phone, l.society, l.city, l.stage
+           l.name, l.phone, array_to_string(l.societies, ', ') AS society, l.city, l.stage
       FROM dial_queue q
       JOIN leads l ON l.id = q.lead_id
      WHERE lower(q.rm_email) = lower(:email)
@@ -78,7 +78,7 @@ _COMPLETED_TODAY = text("""
 
 _UPCOMING = """
     SELECT q.id, q.lead_id, q.position,
-           l.name, l.society, l.city, l.configuration,
+           l.name, array_to_string(l.societies, ', ') AS society, l.city, l.configuration,
            l.budget_band AS budget, l.stage
       FROM dial_queue q
       JOIN leads l ON l.id = q.lead_id

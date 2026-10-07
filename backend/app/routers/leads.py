@@ -3,8 +3,8 @@ from math import ceil
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel, Field
-from sqlalchemy import text
+from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import assignment_aliases, current_user, is_calling_rm, require_admin
@@ -13,6 +13,7 @@ from ..models import Lead, LeadConfirmedData, LeadNote, Visit
 from ..services import activity
 from ..services.leads_sync import read_leads_state, run_leads_sync
 from ..services.matching import match_lead, match_preview
+from ..services.normalize import Societies
 from ..services.societies import (
     localities_in_micromarket,
     search_localities,
@@ -90,7 +91,7 @@ def _lead_row(r) -> dict:
         "assigned_to": r["assigned_to"],
         "assigned_at": r["assigned_at"].isoformat() if r.get("assigned_at") else None,
         "city": r["city"],
-        "society": r["society"],
+        "societies": list(r.get("societies") or []),
         "configuration": r["configuration"],
         "budget_band": r["budget_band"],
         "plan_to_buy": r["plan_to_buy"],
@@ -117,6 +118,10 @@ def _lead_row(r) -> dict:
         "ever_connected": r["ever_connected"],
         "is_hot": bool(r["is_hot"]),
         "qualified_status": r.get("qualified_status"),
+        "broker_count": r.get("broker_count"),
+        "broker_search_since": r.get("broker_search_since"),
+        "buyer_property_type": r.get("buyer_property_type"),
+        "buyer_profession": r.get("buyer_profession"),
         # latest booked visit (Pipeline status chip) — only present on the list query
         "visit_status": r.get("visit_status"),
         "visit_date": r.get("visit_sel_date"),
@@ -789,7 +794,7 @@ class NewLead(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     phone: str = Field(min_length=1, max_length=40)
     city: str | None = Field(default=None, max_length=100)
-    society: str | None = Field(default=None, max_length=200)
+    societies: Societies = []
     budget_band: str | None = Field(default=None, max_length=100)
     configuration: str | None = Field(default=None, max_length=100)
     source_remarks: str | None = Field(default=None, max_length=2000)
@@ -842,7 +847,7 @@ async def create_lead(payload: NewLead, user: dict = Depends(current_user)):
                 # with a hand-made `meta:<phone>` key.
                 origin_key=key, source_category="manual", source=canonical_source(payload.source),
                 name=payload.name.strip(), phone=display_phone(phone10),
-                city=city, society=clean(payload.society),
+                city=city, societies=payload.societies,
                 budget_band=clean(payload.budget_band),
                 configuration=clean(payload.configuration),
                 source_remarks=clean(payload.source_remarks),
@@ -1010,28 +1015,52 @@ async def sync_leads():
 
 # --- editable source-captured card ------------------------------------------
 
+# The popup's "Broker & buyer profile" dropdowns. Stored as the label itself.
+# Mirrored by BROKER_OPTIONS in frontend/src/lib/leads.ts (tests/test_broker_profile.py).
+BROKER_OPTIONS: dict[str, tuple[str, ...]] = {
+    "broker_count": ("1", "2", "3", "4+"),
+    "broker_search_since": ("Just started", "1-2 weeks", "1 month", "2 months", "2 months+"),
+    "buyer_property_type": ("Low rise flat", "High rise flat", "Builder floor",
+                            "Independent house", "Open to all"),
+    "buyer_profession": ("Salaried", "Business", "Unemployed", "Baap ka paisa"),
+}
+
+
 class SourceDataPatch(BaseModel):
     # `name` is the lead's own identity, not source-captured data, but it is the same
     # write: one column, same before/after diff, same activity row. A second endpoint
     # would only duplicate that.
     name: str | None = None
     city: str | None = None
-    society: str | None = None
+    societies: Societies | None = None
     configuration: str | None = None
     budget_band: str | None = None
     plan_to_buy: str | None = None
     source_remarks: str | None = None
+    # "Broker & buyer profile" card — saved one pick at a time. "" clears an answer.
+    broker_count: str | None = None
+    broker_search_since: str | None = None
+    buyer_property_type: str | None = None
+    buyer_profession: str | None = None
+
+    @field_validator(*BROKER_OPTIONS)
+    @classmethod
+    def _listed(cls, v: str | None, info):
+        if v not in (None, "", *BROKER_OPTIONS[info.field_name]):
+            raise ValueError(f"not one of {BROKER_OPTIONS[info.field_name]}")
+        return v
 
 
 @router.patch("/leads/{lead_id}/source-data")
 async def patch_source_data(lead_id: UUID, payload: SourceDataPatch,
                             user: dict = Depends(current_user)):
     sets, params = [], {"id": lead_id}
-    for field in ("name", "city", "society", "configuration", "budget_band", "plan_to_buy", "source_remarks"):
+    for field in SourceDataPatch.model_fields:
         val = getattr(payload, field)
         if val is not None:
             sets.append(f"{field} = :{field}")
-            params[field] = val or None
+            # a list keeps [] — societies is NOT NULL, and [] means "none" (unticked all)
+            params[field] = val if isinstance(val, list) else (val or None)
     if not sets:
         return {"status": "noop"}
     engine = neon_engine()
@@ -1055,6 +1084,45 @@ async def patch_source_data(lead_id: UUID, payload: SourceDataPatch,
             activity.Actor.of(user), "lead", lead_id, before, after,
             metadata={"via": "source_data"}))
     return {"status": "ok"}
+
+
+# --- shortlisted societies (broker card Q4 == confirm form Q7) ----------------
+
+class ShortlistedSocieties(BaseModel):
+    societies: Societies = []
+
+
+def shortlist_upsert(lead_id, societies: list[str]):
+    """Writes ONLY shortlisted_societies — the broker card saves per pick, and must not
+    touch the confirm form's other answers. RETURNING reads the old list through an
+    aliased subselect: the pre-statement snapshot, never the row just written."""
+    prev = LeadConfirmedData.__table__.alias("prev")
+    before = select(prev.c.shortlisted_societies).where(prev.c.lead_id == lead_id).scalar_subquery()
+    stmt = pg_insert(LeadConfirmedData).values(lead_id=lead_id, shortlisted_societies=societies)
+    return stmt.on_conflict_do_update(
+        index_elements=[LeadConfirmedData.lead_id],
+        set_={"shortlisted_societies": stmt.excluded.shortlisted_societies},
+    ).returning(before.label("before"))
+
+
+@router.patch("/leads/{lead_id}/shortlisted-societies")
+async def set_shortlisted_societies(lead_id: UUID, payload: ShortlistedSocieties,
+                                    user: dict = Depends(current_user)):
+    """The broker card's Q4. Same column as the confirm form's Q7 — one list, two
+    places to edit it. A row holding only this is safe: matching falls back to the
+    lead's own config/budget for every NULL column."""
+    engine = neon_engine()
+    if engine is None:
+        raise HTTPException(status_code=503, detail="Set DATABASE_URL")
+    async with engine.begin() as conn:
+        if (await conn.execute(text("SELECT 1 FROM leads WHERE id = :id"), {"id": lead_id})).first() is None:
+            raise HTTPException(status_code=404, detail="lead not found")
+        before = (await conn.execute(shortlist_upsert(lead_id, payload.societies))).scalar()
+        await activity.record(conn, activity.changes_between(
+            activity.Actor.of(user), "lead", lead_id,
+            {"shortlisted_societies": before or []}, {"shortlisted_societies": payload.societies},
+            metadata={"via": "broker_card"}))
+    return {"status": "ok", "societies": payload.societies}
 
 
 # --- remarks thread ----------------------------------------------------------

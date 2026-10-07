@@ -156,7 +156,7 @@ export function MobileLeads({ segment }: { segment: string }) {
           </div>
           <div className="m-row-line">
             <span className="m-ph">{l.phone || "—"}</span>
-            {l.society && <span className="m-soc">{l.society}</span>}
+            {l.societies.length > 0 && <span className="m-soc">{l.societies.join(", ")}</span>}
             <StageChip stage={l.stage} style={{ marginLeft: "auto" }} />
           </div>
         </button>

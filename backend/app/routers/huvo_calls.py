@@ -22,6 +22,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from ..core.auth import current_user, require_admin
 from ..db import neon_engine
 from ..models import Lead
+from ..services.normalize import Societies
 
 log = logging.getLogger("huvo_calls")
 router = APIRouter(tags=["huvo"])
@@ -236,7 +237,7 @@ class HuvoLeadRequest(BaseModel):
     phone: str
     name: str = Field(min_length=1, max_length=120)
     city: str | None = None
-    society: str | None = None
+    societies: Societies = []
 
 
 @router.post("/huvo/leads")
@@ -264,7 +265,7 @@ async def huvo_create_lead(req: HuvoLeadRequest, user: dict = Depends(current_us
         "origin_key": f"huvo:{phone10}", "source_category": "huvo", "source": "huvo",
         "name": req.name.strip(), "phone": display_phone(phone10),
         "city": (req.city or "").strip() or None,
-        "society": (req.society or "").strip() or None,
+        "societies": req.societies,
         "received_at": now, "tat_deadline": now + timedelta(hours=TAT_HOURS),
         "source_meta": {"created_from": "huvo_call_log", "created_by": user.get("email")},
     }

@@ -8,6 +8,9 @@ supply and matching so filters and matching treat the same thing as the same.
   Matching compares the bedroom count via config_bhk so "2 BHK" still matches
   "2 BHK + Study"."""
 import re
+from typing import Annotated
+
+from pydantic import AfterValidator, Field, StringConstraints
 
 # qualifiers that make a config genuinely different — preserved, never merged away
 _CONFIG_EXTRAS = [
@@ -67,3 +70,24 @@ def config_bhk(raw: str | None) -> float | None:
         return None
     m = re.search(r"(\d+(?:\.\d+)?)", str(raw))
     return float(m.group(1)) if m else None
+
+
+def clean_societies(values: list[str] | None) -> list[str]:
+    """Strip, drop blanks, de-dupe ignoring case — the first spelling wins. Every
+    writer of leads.societies / shortlisted_societies goes through this."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for v in values or []:
+        s = v.strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return out
+
+
+# A society list from a client: each name <= 200 chars, <= 50 names, else 422.
+Societies = Annotated[
+    list[Annotated[str, StringConstraints(max_length=200)]],
+    Field(max_length=50),
+    AfterValidator(clean_societies),
+]

@@ -20,7 +20,7 @@ const COLUMNS: { header: string; get: (l: Lead) => unknown }[] = [
   { header: "Source", get: (l) => sourcesLabel(l) },
   { header: "Arrivals", get: (l) => (l.count_leads_repeat ?? 0) + 1 },
   { header: "City", get: (l) => l.city },
-  { header: "Society", get: (l) => l.society },
+  { header: "Society", get: (l) => l.societies.join(", ") },
   { header: "Configuration", get: (l) => l.configuration },
   { header: "Budget", get: (l) => l.budget_band },
   { header: "Plan to buy", get: (l) => l.plan_to_buy },

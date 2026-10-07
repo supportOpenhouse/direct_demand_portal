@@ -322,7 +322,7 @@ export interface Lead {
   assigned_to: string | null;
   assigned_at: string | null; // when the current owner was set (null = never / unassigned)
   city: string | null;
-  society: string | null;
+  societies: string[];          // every society of interest; [] = none
   configuration: string | null;
   budget_band: string | null;
   plan_to_buy: string | null;
@@ -346,6 +346,11 @@ export interface Lead {
   ever_connected: boolean;      // have we ever connected? gates RNR escalation
   is_hot: boolean;              // starred as a hot lead
   qualified_status?: "hot" | "warm" | "cold" | null; // asked when moved to qualified
+  // "Broker & buyer profile" card — values are lib/leads BROKER_OPTIONS labels
+  broker_count?: string | null;
+  broker_search_since?: string | null;
+  buyer_property_type?: string | null;
+  buyer_profession?: string | null;
   visit_status: "upcoming" | "completed" | "cancelled" | null;  // latest booked visit
   visit_date: string | null;    // its scheduled date
   visit_society: string | null; // society of the latest booked visit (shown on the chip)
@@ -583,7 +588,7 @@ export const ACTIVITY_EXPORT_FIELDS: [string, string, boolean][] = [
 ];
 
 export interface NewLead {
-  name: string; phone: string; city: string; society: string;
+  name: string; phone: string; city: string; societies: string[];
   budget_band: string; configuration: string; source_remarks: string;
   /** a PICKABLE_SOURCES key, or free text for a source this app has no key for */
   source: string;
@@ -701,7 +706,7 @@ export const api = {
               requested: number; assigned: number }>("/v1/gupshup/leads/bulk", {
       method: "POST", body: JSON.stringify({ phones, assign }),
     }),
-  waCreateLead: (payload: { phone: string; name: string; city?: string; society?: string;
+  waCreateLead: (payload: { phone: string; name: string; city?: string; societies?: string[];
                             assign?: boolean }) =>
     request<{ status: string; lead_id: string | null; assigned_to: string | null }>(
       "/v1/gupshup/leads", { method: "POST", body: JSON.stringify(payload) }),
@@ -853,7 +858,7 @@ export const api = {
     request<{ outcomes: string[]; interest: string[]; campaigns: string[] }>("/v1/huvo/calls/outcomes"),
   // Mirrors waCreateLead. Also back-links every Huvo call from this number, since the
   // webhook only resolves lead_id at write time.
-  huvoCreateLead: (payload: { phone: string; name: string; city?: string; society?: string }) =>
+  huvoCreateLead: (payload: { phone: string; name: string; city?: string; societies?: string[] }) =>
     request<{ status: string; lead_id: string | null; calls_linked: number }>(
       "/v1/huvo/leads", { method: "POST", body: JSON.stringify(payload) }),
   /* Names are taken server-side from the stored calls, so this sends only numbers —
@@ -882,8 +887,13 @@ export const api = {
     request<{ token: string; user: AuthUser }>("/v1/auth/google", { method: "POST", body: JSON.stringify({ credential }) }),
   me: () => request<AuthUser>("/v1/me"),
   // source-captured edit + notes thread + autocomplete
-  patchSourceData: (id: string, patch: Partial<Record<"name" | "city" | "society" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks", string>>) =>
+  patchSourceData: (id: string, patch: Partial<Record<"name" | "city" | "configuration" | "budget_band" | "plan_to_buy" | "source_remarks"
+    | "broker_count" | "broker_search_since" | "buyer_property_type" | "buyer_profession", string> & { societies: string[] }>) =>
     request<{ status: string }>(`/v1/leads/${id}/source-data`, { method: "PATCH", body: JSON.stringify(patch) }),
+  // Broker card Q4 — the SAME column as the confirm form's Q7 (shortlisted_societies)
+  setShortlistedSocieties: (id: string, societies: string[]) =>
+    request<{ status: string; societies: string[] }>(`/v1/leads/${id}/shortlisted-societies`,
+      { method: "PATCH", body: JSON.stringify({ societies }) }),
   leadNotes: (id: string) => request<{ items: LeadNote[] }>(`/v1/leads/${id}/notes`),
   addNote: (id: string, body: string) =>
     request<{ status: string }>(`/v1/leads/${id}/notes`, { method: "POST", body: JSON.stringify({ body }) }),

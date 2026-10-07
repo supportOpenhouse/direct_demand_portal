@@ -97,7 +97,7 @@ export function NotificationBell() {
   const categories: { key: string; label: string; hint: string; rows: BellRow[] }[] = [
     {
       key: "new", label: "New Leads", hint: "not yet called",
-      rows: newLeads.map((l) => leadRow(l, (x) => [x.city, x.society, srcLabel(x.source)].filter(Boolean).join(" - "))),
+      rows: newLeads.map((l) => leadRow(l, (x) => [x.city, x.societies.join(", "), srcLabel(x.source)].filter(Boolean).join(" - "))),
     },
     {
       key: "reminder", label: "Reminder", hint: "callbacks due today",

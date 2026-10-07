@@ -3,14 +3,14 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
-import { formatDate, formatDateTime, formatPrice, useAddNote, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useWaLeadTranscript } from "../lib/queries";
-import { ALL_STAGES, initials, leadSources, metaQuestionLabel, noteOrigin, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
+import { formatDate, formatDateTime, formatPrice, useAddNote, useAllSocieties, useConfirmLead, useEntityActivity, useLead, useLeadCrmVisits, useLeadMetaForm, useLeadNotes, useMarkPriority, usePatchSourceData, useSetFollowup, useSetLeadStage, useSetShortlistedSocieties, useWaLeadTranscript } from "../lib/queries";
+import { ALL_STAGES, BROKER_OPTIONS, initials, leadSources, metaQuestionLabel, noteOrigin, sourcesLabel, srcClass, srcLabel, stageLabel } from "../lib/leads";
 import type { ActivityRow, Lead } from "../lib/api";
 import { ArrivalCount, SourceChips } from "../components/StageChip";
 import { actionStyle, Details, pretty } from "../lib/activity";
 import { api, MetaFormDelivery } from "../lib/api";
 import { useToast } from "../components/Toast";
-import { AutocompleteChips, AutocompleteInput } from "../components/Autocomplete";
+import { AutocompleteChips } from "../components/Autocomplete";
 import { AssignControl } from "../components/AssignControl";
 import {
   IconCalendar,
@@ -29,6 +29,8 @@ import { useDebounce } from "../lib/useDebounce";
 import { VisitPlanner } from "../features/VisitPlanner";
 import ManageVisitsModal from "../features/ManageVisitsModal";
 import { StageChip } from "../components/StageChip";
+import { MultiSelect } from "../components/MultiSelect";
+import { societyChoices } from "../lib/leadFilters";
 import { useModalExit } from "../lib/useModalExit";
 import { Bubble } from "../components/WaThread";
 
@@ -154,6 +156,7 @@ const PHONE_ONLY_NAME = /^\s*\+?[\d\s()-]{8,}\s*$/;
 function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
   const patch = usePatchSourceData(lead.id);
   const toast = useToast();
+  const allSocieties = useAllSocieties();
   const [edit, setEdit] = useState(false);
   const rows = merged.map((r) => (r.metadata.lead ?? {}) as Record<string, unknown>);
   // every distinct non-empty value, own first — no source's answer is hidden. Distinct
@@ -172,7 +175,7 @@ function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
   const shown = (key: string) => all(key).join(" / ") || null;
   // Edit writes the lead's own columns, prefilled with the first value any source has
   const initial = () => ({
-    city: all("city")[0] ?? "", society: all("society")[0] ?? "", budget_band: all("budget_band")[0] ?? "",
+    city: all("city")[0] ?? "", societies: (lead.societies ?? []) as string[], budget_band: all("budget_band")[0] ?? "",
     plan_to_buy: all("plan_to_buy")[0] ?? "", source_remarks: all("source_remarks")[0] ?? "",
   });
   const [f, setF] = useState(initial);
@@ -193,7 +196,7 @@ function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
       <span className="field-val">{val || "—"}</span>
     </div>
   );
-  const inp = (label: string, key: keyof typeof f, placeholder = "") => (
+  const inp = (label: string, key: Exclude<keyof typeof f, "societies">, placeholder = "") => (
     <div className="field"><label>{label}</label>
       <input value={f[key]} placeholder={placeholder} onChange={(e) => setF({ ...f, [key]: e.target.value })} /></div>
   );
@@ -224,13 +227,24 @@ function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
             </div>
           </div>
           <div className="field">
-            <label>Society of interest <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
-            <AutocompleteInput
-              value={f.society}
-              placeholder="Search societies…"
-              onPick={(label, hit) => setF((s) => ({ ...s, society: label, city: hit?.meta?.city || s.city }))}
-              fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", "), meta: h }))}
+            <label>Society of interest</label>
+            <MultiSelect
+              label="Societies"
+              options={societyChoices(allSocieties.data?.items ?? [], f.societies)}
+              value={f.societies}
+              onChange={async (next) => {
+                setF((s) => ({ ...s, societies: next }));
+                // a blank City takes the city of the society just added
+                const added = next.find((x) => !f.societies.includes(x));
+                if (f.city || !added) return;
+                const hit = (await api.searchSocieties(added)).items
+                  .find((h) => h.society.toLowerCase() === added.toLowerCase());
+                if (hit?.city) setF((s) => ({ ...s, city: s.city || hit.city! }));
+              }}
             />
+            {f.societies.length > 0 && (
+              <div style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{f.societies.join(", ")}</div>
+            )}
           </div>
           <div className="two">
             <div className="field"><label>Plan to Buy</label>
@@ -247,7 +261,10 @@ function SourceCard({ lead, merged }: { lead: any; merged: ActivityRow[] }) {
           <div className="two">{ro("Budget", shown("budget_band"))}{ro("City", shown("city"))}</div>
           {/* three short, related facts about what they asked for — one line */}
           <div className="three">
-            {ro("Society of interest", shown("society"))}
+            {/* the lead's own list only: scripts/24 + the merge trigger already put every merged
+                source's society in it, and unioning old merge metadata here would keep
+                showing a society an RM removed in Edit */}
+            {ro("Society of interest", lead.societies.join(", ") || null)}
             {ro("Plan to Buy", shown("plan_to_buy"))}
             {ro("Preferred visit day (from ad)", shown("preferred_visit_day"))}
           </div>
@@ -556,6 +573,80 @@ function NameHeading({ lead, as }: { lead: Lead; as: "h2" | "h3" }) {
   );
 }
 
+/* "Broker & buyer profile" — asked on the call, sits above the confirm form. Every pick
+   saves on its own (PATCH source-data → one activity row per changed answer). Local
+   state is the truth while open, so the refetch after a save can't snap a select back;
+   it is rendered keyed by lead id, which is what resets it.
+   Its societies question IS the confirm form's Q7 (lead_confirmed_data.shortlisted_
+   societies): the list lives in LeadDetail and comes in as a prop, and a pick here saves
+   through PATCH /leads/{id}/shortlisted-societies. The "answer Q3 first" gate is UI-only —
+   Q7 writes the same column without it. */
+const BROKER_QUESTIONS: [keyof typeof BROKER_OPTIONS, string][] = [
+  ["broker_count", "How many brokers is the buyer in touch with?"],
+  ["broker_search_since", "Since when has the buyer been searching with a broker?"],
+  ["buyer_property_type", "What is the buyer looking for?"],
+  ["buyer_profession", "Profession of the buyer"],
+];
+
+function BrokerCard({ lead, societies, onSocietiesChange }: {
+  lead: Lead; societies: string[]; onSocietiesChange: (next: string[]) => void;
+}) {
+  const patch = usePatchSourceData(lead.id);
+  const shortlist = useSetShortlistedSocieties(lead.id);
+  const toast = useToast();
+  const allSocieties = useAllSocieties();
+  const [a, setA] = useState({
+    broker_count: lead.broker_count ?? "",
+    broker_search_since: lead.broker_search_since ?? "",
+    buyer_property_type: lead.buyer_property_type ?? "",
+    buyer_profession: lead.buyer_profession ?? "",
+  });
+  const save = (next: typeof a, body: Parameters<typeof api.patchSourceData>[1]) => {
+    const prev = a;
+    setA(next);
+    // a refused save must not leave the select showing an answer that isn't stored
+    patch.mutate(body, { onError: (e: any) => { setA(prev); toast(e.message, "gold"); } });
+  };
+  const select = ([k, q]: (typeof BROKER_QUESTIONS)[number]) => (
+    <div className="field">
+      <label>{q}</label>
+      <select value={a[k]} onChange={(e) => save({ ...a, [k]: e.target.value }, { [k]: e.target.value })}>
+        <option value="">Select…</option>
+        {BROKER_OPTIONS[k].map((o) => <option key={o}>{o}</option>)}
+      </select>
+    </div>
+  );
+  const gated = !a.buyer_property_type;
+  return (
+    <div className="card panel-pad compact-form">
+      <div className="panel-title"><IconHome /> Broker &amp; buyer profile</div>
+      <div className="two">{select(BROKER_QUESTIONS[0])}{select(BROKER_QUESTIONS[1])}</div>
+      <div className="two">
+        {select(BROKER_QUESTIONS[2])}
+        <div className="field">
+          <label>Shortlisted or interested properties with the broker</label>
+          <MultiSelect
+            label="Societies"
+            disabled={gated}
+            options={societyChoices(allSocieties.data?.items ?? [], societies)}
+            value={societies}
+            // Q7's list too: the shared state moves both at once; a refused save puts both back
+            onChange={(next) => {
+              const prev = societies;
+              onSocietiesChange(next);
+              shortlist.mutate(next, { onError: (e: any) => { onSocietiesChange(prev); toast(e.message, "gold"); } });
+            }}
+          />
+          <div style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11, marginTop: 4 }}>
+            {gated ? "Answer “What is the buyer looking for?” first" : societies.join(", ")}
+          </div>
+        </div>
+      </div>
+      <div className="two">{select(BROKER_QUESTIONS[3])}</div>
+    </div>
+  );
+}
+
 export default function LeadDetail({ mobile = false, leadId, inModal = false }: {
   mobile?: boolean;
   /** Set by the popup. Absent on the /leads/:id route, where the param wins. */
@@ -601,6 +692,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
   // full width underneath.
   const formInPair = hasMetaForm && lead?.source === "meta" && mergedSources.length === 0;
   const confirm = useConfirmLead(id);
+  const allSocieties = useAllSocieties();
   const [planner, setPlanner] = useState(false);
   const [managing, setManaging] = useState(false);
 
@@ -631,13 +723,17 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
     setSizeMin(c?.size_min_sqft != null ? String(c.size_min_sqft) : "");
     setSizeMax(c?.size_max_sqft != null ? String(c.size_max_sqft) : "");
     setMicromarkets(c?.preferred_micromarkets || []);
-    setSocieties(c?.shortlisted_societies?.length ? c.shortlisted_societies : lead.society ? [lead.society] : []);
+    setSocieties(c?.shortlisted_societies ?? []);  // no pre-tick: Q4 is this list, and saves it
     setLocalities(c?.preferred_localities || []);
     setLocalitySuggest([]);
     setSocietySuggest([]);
     setRemark(c?.remark || "");
     setFollowUp("");  // always blank on open — RM enters a fresh follow-up for this connected call
-  }, [lead]);
+    // Once per opened lead. Q4 (broker card) saves this list per pick and refetches the
+    // lead; refilling on that would wipe every confirm answer typed and not yet saved.
+    // The state already holds what was saved, so nothing is lost by not refilling.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead?.id]);
 
   // Cascade: a micro-market OFFERS its localities and their societies; a locality offers
   // its societies. Nothing is auto-selected — a micro-market can carry 30+ societies and
@@ -747,7 +843,7 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             </span>
           </div>
           <div className="lead-modal-sub">
-            {[lead.phone, sourcesLabel(lead), lead.society, lead.configuration].filter(Boolean).join(" · ")}
+            {[lead.phone, sourcesLabel(lead), lead.societies.join(", "), lead.configuration].filter(Boolean).join(" · ")}
             {lead.budget_band ? <> · <b>{lead.budget_band}</b></> : null}
           </div>
         </>
@@ -805,6 +901,8 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
 
           {/* the Meta form, full width, when the card above is another source's */}
           {hasMetaForm && !formInPair && <MetaFormCard deliveries={metaDeliveries} landscape />}
+
+          <BrokerCard key={lead.id} lead={lead} societies={societies} onSocietiesChange={setSocieties} />
 
           {/* CONFIRMED call form — last on mobile, per the requested card order */}
           <div className={"card panel-pad compact-form" + (mobile ? " m-last" : "")}>
@@ -876,14 +974,27 @@ export default function LeadDetail({ mobile = false, leadId, inModal = false }: 
             </div>
 
             <div className="field">
-              <label>Q7. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— search master list</span></label>
-              <AutocompleteChips
+              <label>Q7. Shortlisted societies <span style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11 }}>— same list as the broker card</span></label>
+              <MultiSelect
+                label="Societies"
+                options={societyChoices(allSocieties.data?.items ?? [], societies)}
                 value={societies}
                 onChange={setSocieties}
-                suggestions={societySuggest}
-                placeholder="Search societies…"
-                fetcher={async (q) => (await api.searchSocieties(q)).items.map((h) => ({ label: h.society, sub: [h.locality, h.city].filter(Boolean).join(", ") }))}
               />
+              {/* the micro-market / locality cascade still OFFERS — nothing is ticked until clicked */}
+              {societySuggest.some((s) => !societies.includes(s)) && (
+                <div className="sugg-row">
+                  <span className="sugg-lbl">Suggested</span>
+                  {societySuggest.filter((s) => !societies.includes(s)).map((s) => (
+                    <button type="button" key={s} className="sugg-chip" onClick={() => setSocieties([...societies, s])}>
+                      <span className="sc-plus">+</span>{s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {societies.length > 0 && (
+                <div style={{ fontWeight: 500, color: "var(--muted)", fontSize: 11, marginTop: 4 }}>{societies.join(", ")}</div>
+              )}
             </div>
 
             <div className="field" style={{ marginTop: 12, marginBottom: 0 }}>

@@ -106,7 +106,7 @@ async def build_requirement(
 async def lead_requirement(lead: dict, confirmed: dict | None) -> dict:
     """Confirmed data wins over source-captured."""
     c = confirmed or {}
-    societies = c.get("shortlisted_societies") or ([lead["society"]] if lead.get("society") else [])
+    societies = c.get("shortlisted_societies") or list(lead.get("societies") or [])
     bmin, bmax = c.get("budget_min_lacs"), c.get("budget_max_lacs")
     if bmin is None and bmax is None and c.get("budget_value_lacs"):  # legacy single value
         v = float(c["budget_value_lacs"])

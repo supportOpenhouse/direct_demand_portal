@@ -10,6 +10,8 @@ import { useEffect, useId, useMemo, useState } from "react";
 import { markWaSeen } from "../lib/whatsapp";
 import { SelectFirst } from "../components/SelectFirst";
 import { CITIES } from "../lib/leads";
+import { societyChoices } from "../lib/leadFilters";
+import { MultiSelect } from "../components/MultiSelect";
 import {
   useWaMessages, useCreateWaLead, useMarkWaContact, useAssignWaContact, useAssignees,
   useSocietiesByCity, useBulkCreateWaLeads, useBackfillWaAssign, useWaThreads, useWaConvertible,
@@ -464,18 +466,18 @@ function CreateLeadModal(
   { phone, name, onClose }: { phone: string; name: string; onClose: () => void },
 ) {
   const create = useCreateWaLead();
-  const [form, setForm] = useState({ name, city: "", society: "" });
+  const [form, setForm] = useState({ name, city: "", societies: [] as string[] });
   const [assign, setAssign] = useState(false);   // unassigned by default
   const societies = useSocietiesByCity(form.city);
   const societyOptions = societies.data?.items ?? [];
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (k: "name" | "city") => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = () => {
     if (!form.name.trim() || create.isPending) return;
     create.mutate(
       { phone, name: form.name.trim(), city: form.city.trim(),
-        society: form.society.trim(), assign },
+        societies: form.societies, assign },
       { onSuccess: onClose },
     );
   };
@@ -502,7 +504,7 @@ function CreateLeadModal(
             <select
               value={form.city}
               // changing city invalidates the chosen society — it may not exist there
-              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, society: "" }))}
+              onChange={(e) => setForm((f) => ({ ...f, city: e.target.value, societies: [] }))}
             >
               <option value="">Choose city (optional)</option>
               {CITIES.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -510,19 +512,16 @@ function CreateLeadModal(
           </div>
           <div className="field" style={{ marginBottom: 0 }}>
             <label>Society</label>
-            <select
-              value={form.society}
-              disabled={!form.city}
-              onChange={(e) => setForm((f) => ({ ...f, society: e.target.value }))}
-            >
-              <option value="">
-                {!form.city ? "Enter city first"
-                  : societies.isLoading ? "Loading…"
-                  : societyOptions.length ? "Choose society (optional)"
-                  : "No societies found for this city"}
-              </option>
-              {societyOptions.map((s) => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <MultiSelect
+              label={!form.city ? "Enter city first"
+                : societies.isLoading ? "Loading…"
+                : societyOptions.length ? "Societies"
+                : "No societies for this city"}
+              disabled={!form.city || !societyOptions.length}
+              options={societyChoices(societyOptions, form.societies)}
+              value={form.societies}
+              onChange={(next) => setForm((f) => ({ ...f, societies: next }))}
+            />
           </div>
           <div className="field" style={{ marginTop: 15, marginBottom: 0 }}>
             <label>Lead owner</label>

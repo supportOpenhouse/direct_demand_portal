@@ -707,6 +707,11 @@ export const api = {
               requested: number; assigned: number }>("/v1/gupshup/leads/bulk", {
       method: "POST", body: JSON.stringify({ phones, assign }),
     }),
+  // WhatsApp page CSV (admin): every conversation with all its messages, oldest first
+  waExport: () =>
+    request<{ items: { phone: string; name: string | null;
+                       messages: { at: string; from: "customer" | "us"; type: string; text: string | null }[] }[] }>(
+      "/v1/gupshup/export"),
   waCreateLead: (payload: { phone: string; name: string; city?: string; societies?: string[];
                             assign?: boolean }) =>
     request<{ status: string; lead_id: string | null; assigned_to: string | null }>(

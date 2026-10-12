@@ -330,6 +330,51 @@ def _scoped(q, user: dict):
     return q.where(scope) if scope is not None else q
 
 
+
+_IST = timezone(timedelta(hours=5, minutes=30))
+
+
+def export_rows(msgs: list[dict]) -> list[dict]:
+    """One row per conversation for the WhatsApp page's CSV: the customer's name (off
+    their newest inbound message that carried one), the phone, and every message oldest
+    first. Conversations most recently active first, like the page's list."""
+    by_phone: dict[str, list[dict]] = {}
+    for m in msgs:
+        by_phone.setdefault(m["phone"], []).append(m)
+    rows = []
+    for phone, ms in by_phone.items():
+        ms.sort(key=lambda m: m["created_at"])
+        named = [m["name"] for m in ms if m["direction"] == "in" and m["name"]]
+        rows.append({
+            "phone": phone,
+            "name": named[-1] if named else None,
+            "last_at": ms[-1]["created_at"],
+            "messages": [{
+                "at": m["created_at"].astimezone(_IST).strftime("%Y-%m-%d %H:%M IST"),
+                "from": "customer" if m["direction"] == "in" else "us",
+                "type": m["msg_type"],
+                "text": m["body"],
+            } for m in ms],
+        })
+    rows.sort(key=lambda r: r["last_at"], reverse=True)
+    return [{k: v for k, v in r.items() if k != "last_at"} for r in rows]
+
+
+@router.get("/gupshup/export")
+async def gupshup_export(user: dict = Depends(require_admin)):
+    """Every conversation this user can see (`_thread_scope`, same as the page) with all
+    its messages — the WhatsApp page builds its CSV from this. Not paged: the page's own
+    list is, and a CSV of only what was scrolled into view would silently be partial."""
+    engine = neon_engine()
+    if engine is None:
+        return {"items": []}
+    q = _scoped(select(WaMessage.phone, WaMessage.direction, WaMessage.body, WaMessage.msg_type,
+                       WaMessage.name, WaMessage.created_at), user)
+    async with engine.connect() as conn:
+        msgs = [dict(r) for r in (await conn.execute(q)).mappings()]
+    return {"items": export_rows(msgs)}
+
+
 THREADS_PAGE_MAX = 200
 # a conversation whose number has no lead yet — what "Create leads" can act on
 _NO_LEAD = func.right(WaMessage.phone, 10).not_in(

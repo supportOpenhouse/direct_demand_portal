@@ -2,7 +2,7 @@
 
 Four answers on `leads`, written through PATCH /leads/{id}/source-data one pick at a
 time. The dropdowns offer a fixed list; the server refuses anything else. Q4 (societies
-shortlisted with the broker) is Q7's column and has its own endpoint
+shortlisted with the broker) is its own list column, `buyer_shortlisted_broker_societies`
 (tests/test_lead_societies.py).
 """
 import re

@@ -22,9 +22,13 @@ import { useAuth } from "../components/AuthContext";
 import { useToast } from "../components/Toast";
 import {
   IconCheck,
+  IconDownload,
   IconX,
   WhatsAppIcon,
 } from "../components/icons";
+import { TopbarSlot } from "../components/TopbarSlot";
+import { api } from "../lib/api";
+import { downloadCsv } from "../lib/csv";
 import { SkeletonRows } from "../components/Skeleton";
 import { LeadLink } from "../components/LeadModal";
 import { useSearchParams } from "react-router-dom";
@@ -47,6 +51,32 @@ function TagChip({ tag }: { tag: WaTag }) {
     >
       {tag}
     </span>
+  );
+}
+
+/* Admin-only, like every CSV export. Fetches EVERY conversation (the list on screen is
+   paged, so exporting what's scrolled in would be silently partial): one row each —
+   name, phone, and all its messages as a JSON array. */
+function WaExportButton() {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try {
+      const { items } = await api.waExport();
+      const today = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
+      downloadCsv(`whatsapp-${today}.csv`, ["Name", "Phone", "Messages"],
+        items.map((r) => [r.name ?? "", r.phone, JSON.stringify(r.messages)]));
+    } catch (e: any) {
+      toast(e.message, "gold");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="btn primary sm" onClick={go} disabled={busy} title="Every conversation, with all its messages">
+      <IconDownload /> {busy ? "Exporting…" : "Export CSV"}
+    </button>
   );
 }
 
@@ -145,6 +175,7 @@ export default function Chat() {
 
   return (
     <div>
+      {isAdmin && <TopbarSlot><WaExportButton /></TopbarSlot>}
       <div className="section-head" style={{ marginBottom: 10 }}>
         <p className="sec-sub" style={{ margin: 0 }}>
           <b style={{ color: "var(--ink-2)" }}>{total.toLocaleString("en-IN")}</b> conversation{total === 1 ? "" : "s"}

@@ -5,7 +5,8 @@
    This is that place — read-only triage, not a replacement for the worklists. */
 import { useMemo, useState } from "react";
 import { useAllLeads, useAllSocieties, useAssignees } from "../lib/queries";
-import { LEAD_SEGMENTS, leadMatchesQuery, newFirst, segHue } from "../lib/leads";
+import { LEAD_SEGMENTS, newFirst, segHue } from "../lib/leads";
+import { NO_SEARCH, leadMatchesSearch, type LeadSearch } from "../lib/leadQuery";
 import { matchesOption, rmOptions } from "../components/Filters";
 import { EXTRA_DEFAULTS, extraFields, passExtras, sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { useFilterValues } from "../components/FilterBar";
@@ -32,7 +33,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
   const rowOpen = useRowOpen();
   // Page-local search and city tab. Local on purpose: a query that outlives the
   // page it was typed on is what the global box got wrong.
-  const [q, setQ] = useState("");
+  const [search, setSearch] = useState<LeadSearch>(NO_SEARCH);
   const [cityTab, setCityTab] = useState("");
   const [selectMode, setSelectMode] = useState(false);
 
@@ -49,7 +50,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     (skip === "city" || cityMatches(l.city, cityTab)) &&
     (skip === "owner" || matchesOption(l.assigned_to, f.owner)) &&
     passExtras(l, f, skip) &&
-    leadMatchesQuery(q, l);
+    leadMatchesSearch(search, l);
 
   const filtered = all.filter((l) => pass(l));
   // Box counts respect every filter EXCEPT the stage selection — otherwise picking a
@@ -59,7 +60,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
     for (const l of all.filter((l) => pass(l, "seg"))) m[l._seg] = (m[l._seg] ?? 0) + 1;
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [all, f, q, cityTab]);
+  }, [all, f, search, cityTab]);
 
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort(filtered, LEAD_SORTERS);
 
@@ -83,7 +84,7 @@ export default function AllLeads({ toolbarEnd }: { toolbarEnd?: React.ReactNode 
       {columns.modal}
 
       <LeadToolbar
-        city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
+        city={cityTab} onCity={setCityTab} search={search} onSearch={setSearch} segment={null} leads={all}
         fields={[
           { key: "source", label: "Source",
             options: sourceOptions(all.filter((l) => pass(l, "source")), f.source) },

@@ -435,6 +435,14 @@ export type DemandProperty = {
   studio_video_url: string | null;
 } & Record<string, unknown>;
 
+/** POST /v1/lead-search/claude. */
+export interface ClaudeSearchResult {
+  lead_ids: string[];
+  /** "" for a plain search; otherwise Claude's comment, shown in a popup */
+  note: string;
+  leads_read: number;
+}
+
 export interface MatchPreviewReq {
   city?: string | null;
   societies?: string[];
@@ -755,6 +763,10 @@ export const api = {
   // A property's brochure PDF, by its Openhouse Core home id — a link, not the file.
   demandBrochure: (homeId: number) =>
     request<{ url: string; filename: string }>(`/v1/demand-dashboard/brochure/${homeId}`),
+  // The search box's Claude mode (admins): Claude reads every lead the page could show
+  // (segment omitted = every stage) and returns the matches; `note` is anything else it said.
+  claudeSearch: (query: string, segment: string | null) =>
+    request<ClaudeSearchResult>("/v1/lead-search/claude", { method: "POST", body: JSON.stringify({ query, segment }) }),
   // The Openhouse Studio shoot's room photos for one property (`slot_id` = "bedrooms:2").
   demandStudioPhotos: (uid: string) =>
     request<{ items: { slot_id: string; url: string }[] }>(`/v1/demand-dashboard/studio/${encodeURIComponent(uid)}/photos`),

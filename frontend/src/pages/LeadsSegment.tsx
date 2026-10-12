@@ -4,7 +4,8 @@
 import { useState } from "react";
 import { useAllSocieties, useAssignees, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { SEGMENT_STAGES, leadMatchesQuery, newFirst } from "../lib/leads";
+import { SEGMENT_STAGES, newFirst } from "../lib/leads";
+import { NO_SEARCH, leadMatchesSearch, type LeadSearch } from "../lib/leadQuery";
 import { StageBoxes } from "../components/StageBoxes";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { matchesOption, rmOptions } from "../components/Filters";
@@ -75,7 +76,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
   const rowOpen = useRowOpen();
   // Page-local search and city tab. Local on purpose: a query that outlives the
   // page it was typed on is what the global box got wrong.
-  const [q, setQ] = useState("");
+  const [search, setSearch] = useState<LeadSearch>(NO_SEARCH);
   const [cityTab, setCityTab] = useState("");
   // Checkboxes appear only in Select mode, matching Direct Inventory's board.
   const [selectMode, setSelectMode] = useState(false);
@@ -121,7 +122,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
       (!hotOnly || l.is_hot) &&
       (off("visitStatus") || !visitStatus || l.visit_status === visitStatus) &&
       passExtras(l, f, Array.isArray(skip) ? undefined : skip) &&
-      leadMatchesQuery(q, l)
+      leadMatchesSearch(search, l)
     );
   };
   const filtered = all.filter((l) => pass(l));
@@ -164,7 +165,7 @@ export default function LeadsSegment({ segment }: { segment: "qualified" | "futu
       </TopbarSlot>
       {columns.modal}
       <LeadToolbar
-        city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
+        city={cityTab} onCity={setCityTab} search={search} onSearch={setSearch} segment={segment} leads={all}
         fields={[
           { key: "source", label: "Source",
             options: sourceOptions(all.filter((l) => pass(l, "source")), source) },

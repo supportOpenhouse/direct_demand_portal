@@ -328,6 +328,9 @@ export function useSupply() {
 export function useDemandProperties() {
   return useQuery({ queryKey: ["demand-dashboard"], queryFn: api.demandDashboard, staleTime: 60_000 });
 }
+export function useClaudeSearch() {
+  return useMutation({ mutationFn: (v: { query: string; segment: string | null }) => api.claudeSearch(v.query, v.segment) });
+}
 export function useDemandStudioPhotos(uid: string) {
   return useQuery({ queryKey: ["demand-studio-photos", uid], queryFn: () => api.demandStudioPhotos(uid), staleTime: 5 * 60_000 });
 }

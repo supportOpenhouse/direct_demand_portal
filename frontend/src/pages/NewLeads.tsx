@@ -2,7 +2,8 @@
    Two source categories (Meta + listing portals) land in one table; rows clickable → lead detail. */
 import { useAllSocieties, useAssignees, useLeadCounts, useLeads } from "../lib/queries";
 import { Lead } from "../lib/api";
-import { leadMatchesQuery, newFirst } from "../lib/leads";
+import { newFirst } from "../lib/leads";
+import { NO_SEARCH, leadMatchesSearch, type LeadSearch } from "../lib/leadQuery";
 import { sourceMatches, sourceOptions } from "../lib/leadFilters";
 import { DATE_PRESETS, rmOptions } from "../components/Filters";
 import { uniqueValues, matchesOption, inDatePreset, type DatePreset } from "../components/Filters";
@@ -29,7 +30,7 @@ export default function NewLeads() {
   const { data: counts } = useLeadCounts();
   // Page-local search and city tab. Local on purpose: a query that outlives the
   // page it was typed on is what the global box got wrong.
-  const [q, setQ] = useState("");
+  const [search, setSearch] = useState<LeadSearch>(NO_SEARCH);
   const [cityTab, setCityTab] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const { values: f, set, setValues, clear } = useFilterValues({
@@ -56,7 +57,7 @@ export default function NewLeads() {
     (skip === "owner" || matchesOption(l.assigned_to, owner)) &&
     inDatePreset(l.received_at, datePreset, dateFrom, dateTo) &&
     passExtras(l, f, skip) &&
-    leadMatchesQuery(q, l);
+    leadMatchesSearch(search, l);
   const filtered = all.filter((l) => pass(l));
   const { sorted: sortedRows, sortKey, dir, onSort } = useSort<Lead>(filtered, LEAD_SORTERS);
   // NEW-badge leads on top in the default order only; a column sort is applied as-is
@@ -93,7 +94,7 @@ export default function NewLeads() {
       </div>
 
         <LeadToolbar
-          city={cityTab} onCity={setCityTab} q={q} onQ={setQ}
+          city={cityTab} onCity={setCityTab} search={search} onSearch={setSearch} segment={"new"} leads={all}
           fields={[
             { key: "source", label: "Source",
               options: sourceOptions(all.filter((l) => pass(l, "source")), source) },

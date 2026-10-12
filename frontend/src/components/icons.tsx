@@ -218,3 +218,16 @@ export function IconHuvo({ size = 17, color = "currentColor", ...props }: {
     </svg>
   );
 }
+
+/* Claude's pixel mascot, drawn as rects so it colours from `currentColor`: the lead search
+   box paints it grey for a plain search and Claude orange (--claude) when the box asks
+   Claude. The eyes are holes (evenodd), so they show whatever is behind in either theme. */
+export function ClaudeMascot(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 16 10" width="1em" height="1em" fill="currentColor" shapeRendering="crispEdges"
+         aria-hidden="true" {...props}>
+      <path fillRule="evenodd" d="M3 0h10v7H3z M8 2h1v2H8z M11 2h1v2h-1z" />
+      <path d="M1 4h2v2H1z M13 4h2v2h-2z M4 7h1v3H4z M6 7h1v3H6z M9 7h1v3H9z M11 7h1v3h-1z" />
+    </svg>
+  );
+}

@@ -85,6 +85,7 @@
   --call:#ff329a; --call-soft:#ffe3f1; --call-soft-2:#ffc9e4; --call-deep:#d4137a;
   --wa-green:#25d366; --wa-green-2:#25b15a; --wa-green-3:#1d964c; --wa-green-soft:#d6f5e0;
   --fb-blue:#1877f2;  --google-green:#34a853;
+  --claude:#d97757; --claude-soft:#fbeee8;  /* Anthropic's Claude orange — the search box's Claude mode */
   /* Openhouse supply orange — the Direct Inventory brand, used by the Live
      Inventory page and the Book Visits flow. */
   --supply-orange:#fa541c; --supply-orange-2:#d4380d; --supply-orange-3:#c2410c;
@@ -124,6 +125,7 @@
 [data-theme='dark']{
   --brand:#07b6d4; --brand-strong:#22d3ee; --brand-deep:#38dcf0;
   --brand-soft:rgba(7,182,212,.18); --brand-softer:rgba(7,182,212,.10);
+  --claude-soft:rgba(217,119,87,.18);  /* the Claude search toggle's wash, dimmed for dark */
   --brand-ring:rgba(7,182,212,.32);
   --on-brand:#062028;
   --on-accent:#0f1115;
@@ -2771,3 +2773,37 @@ td.lead-cell .nm{
   background: var(--qs-soft); color: var(--qs); font: inherit; font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: .04em; cursor: pointer;
 }
+
+/* ---- Lead search box (components/LeadToolbar.tsx) ---------------------------------
+   The ONE search on a lead page. Field search adds a suggestion list and the +AND | +OR
+   bar under the input (page dropdown layer, under the topbar's 50); admins get the Claude
+   mascot to its right — grey = plain search, Claude orange = the box asks Claude. */
+.ls-box{position:relative;flex:1;min-width:0;display:flex}
+.lead-toolbar > .search-form > .ls-box > input{height:var(--control-h);padding-top:0;padding-bottom:0}
+.search-form .ls-box > input{flex:1}
+.ls-suggest{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:40;max-height:300px;overflow:auto;
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--r-input);box-shadow:var(--shadow-lg);padding:4px}
+.ls-opt{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:7px 10px;border-radius:8px;cursor:pointer}
+.ls-opt.on{background:var(--brand-soft)}
+.ls-opt-l{font-family:var(--font-mono);font-size:12.5px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ls-opt-h{font-size:11.5px;color:var(--muted);white-space:nowrap}
+.ls-join{position:absolute;left:14px;top:calc(100% + 4px);z-index:40;display:flex;align-items:center;gap:6px;
+  background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 6px;box-shadow:var(--shadow-lg)}
+.ls-chip{border:0;background:none;color:var(--brand);font:inherit;font-weight:700;font-size:12px;padding:2px 6px;
+  border-radius:999px;cursor:pointer}
+.ls-chip:hover{background:var(--brand-soft)}
+.ls-sep{color:var(--muted);font-size:12px}
+.ls-join.ls-err{color:var(--coral);font-size:12px;padding:4px 10px}
+/* the mascot: an SVG on currentColor, so the colour IS the state */
+.claude-toggle{flex:none;display:inline-flex;align-items:center;justify-content:center;
+  width:var(--control-h);height:var(--control-h);border:1px solid var(--line);border-radius:999px;
+  background:var(--panel);color:var(--muted);cursor:pointer;transition:var(--t)}
+.claude-toggle svg{width:24px;height:24px}
+.claude-toggle:hover{border-color:var(--line-3)}
+.claude-toggle.on{color:var(--claude);border-color:var(--claude);background:var(--claude-soft)}
+.claude-toggle:disabled{cursor:progress}
+.search-form.claude .ls-box > input{border-color:var(--claude)}
+.search-form.claude .ls-box > input:focus{box-shadow:0 0 0 3px var(--claude-soft)}
+.claude-pop-h{display:flex;align-items:center;gap:8px}
+.claude-pop-h svg{width:22px;height:22px;color:var(--claude)}
+.claude-pop-t{white-space:pre-wrap;line-height:1.55}

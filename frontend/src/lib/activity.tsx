@@ -106,6 +106,16 @@ export function Details({ r }: { r: ActivityRow }) {
         </>
       );
     }
+    case "claude_search":
+      // the lead search box's Claude mode — every search is logged, failed ones too
+      return (
+        <>
+          searched “{m.query}” {m.segment ? <>in {m.segment}</> : <>across all stages</>}
+          {m.error ? <span style={{ color: "var(--coral)" }}> — failed: {m.error}</span>
+            : <> — {m.matched ?? 0} of {m.leads_read ?? 0} leads matched</>}
+          {m.note && <div className="lg-sub">Claude: {m.note}</div>}
+        </>
+      );
     case "marked_hot":   return <>starred as hot</>;
     case "unmarked_hot": return <>no longer hot</>;
     case "sync_run":

@@ -19,7 +19,7 @@ from .models import Base
 from .migrations import run_migrations
 from .routers import (
     activity, app_settings, auth, bonvoice, demand_dashboard, dialer, external_analytics,
-    gupshup, health,
+    claude_search, gupshup, health,
     huvo, huvo_calls, inventory, leads, live_calls, logs, meta, reports,
     sheet_leads, studio_external, supply, users, visits,
 )
@@ -167,6 +167,7 @@ app.include_router(supply.router, prefix="/v1")
 app.include_router(demand_dashboard.router, prefix="/v1")
 app.include_router(studio_external.router, prefix="/v1")
 app.include_router(leads.router, prefix="/v1")
+app.include_router(claude_search.router, prefix="/v1")
 app.include_router(users.router, prefix="/v1")
 app.include_router(app_settings.router, prefix="/v1")
 app.include_router(external_analytics.router, prefix="/v1")

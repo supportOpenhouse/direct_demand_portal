@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     # Key for Core's get-homes-video/ (header X-OpenHouse-Studio-Key) — the videos listed in
     # the Openhouse app, copied into onboarded_properties.app_listed_videos by scripts/23.
     OPENHOUSE_STUDIO_API_KEY: str = ""
+    # Anthropic API key for the Search page's "Ask Claude" (services/lead_ask.py).
+    CLAUDE_API_KEY: str = ""
     GOOGLE_SERVICE_ACCOUNT_JSON: str = ""
     SHEET_ID: str = ""
     SYNC_INTERVAL_MINUTES: int = 15

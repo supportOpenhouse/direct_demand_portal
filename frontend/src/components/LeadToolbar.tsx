@@ -13,7 +13,7 @@
      · plain text, as always — or field search `field:"text" AND …` (lib/leadQuery.ts):
        it suggests field names, then that field's values, and offers +AND | +OR once the
        cursor sits after a finished clause;
-     · admins get the Claude mascot to its right — grey = plain search, Claude orange =
+     · everyone gets the Claude mascot to its right (admins only until 13 Oct) — grey = plain search, Claude orange =
        the box's text goes to Claude, which reads every lead this page could show and
        returns the matches. Claude's comments and every error open a popup; the server
        logs every Claude search to activity_log. */
@@ -22,7 +22,6 @@ import { createPortal } from "react-dom";
 import SlideTabs from "./SlideTabs";
 import { FilterBar, type Field, type Values } from "./FilterBar";
 import { ClaudeMascot, IconSearch, IconX } from "./icons";
-import { useAuth } from "./AuthContext";
 import type { Lead } from "../lib/api";
 import { useClaudeSearch } from "../lib/queries";
 import { useModalExit } from "../lib/useModalExit";
@@ -68,10 +67,8 @@ export function LeadToolbar({
   onClear: () => void;
   children?: ReactNode;
 }) {
-  const { enabled, user } = useAuth();
-  const isAdmin = !enabled || user?.role === "admin";
   const [claude, setClaude] = useState(false);
-  const claudeOn = isAdmin && claude;
+  const claudeOn = claude;
   const ask = useClaudeSearch();
   const [popup, setPopup] = useState<{ title: string; text: string } | null>(null);
 
@@ -192,14 +189,12 @@ export function LeadToolbar({
             <div className="ls-join ls-err">{errors.join(" · ")}</div>
           )}
         </div>
-        {isAdmin && (
-          <button type="button" className={"claude-toggle" + (claudeOn ? " on" : "")}
-            aria-pressed={claudeOn} disabled={ask.isPending}
-            title={claudeOn ? "Claude search is on — click for normal search" : "Search with Claude"}
-            onClick={() => setClaude((v) => !v)}>
-            <ClaudeMascot />
-          </button>
-        )}
+        <button type="button" className={"claude-toggle" + (claudeOn ? " on" : "")}
+          aria-pressed={claudeOn} disabled={ask.isPending}
+          title={claudeOn ? "Claude search is on — click for normal search" : "Search with Claude"}
+          onClick={() => setClaude((v) => !v)}>
+          <ClaudeMascot />
+        </button>
         <button type="submit" className="btn primary" disabled={ask.isPending}>
           <IconSearch /> {ask.isPending ? "Claude is searching…" : "Search"}
         </button>

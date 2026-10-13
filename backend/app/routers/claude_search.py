@@ -1,4 +1,5 @@
-"""The search box's Claude mode — `POST /v1/lead-search/claude`. Admins only for now.
+"""The search box's Claude mode — `POST /v1/lead-search/claude`. Every signed-in user (13 Oct;
+admins only before). An RM still only ever searches their own leads — see the scope below.
 
 Scoped like the list it filters: `_role_scope` (the same clause the lead lists use) AND
 the page's segment predicate, so Claude reads exactly the leads that page could show.
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from ..config import get_settings
-from ..core.auth import require_admin
+from ..core.auth import current_user
 from ..db import neon_engine
 from ..services import activity
 from ..services.claude_search import MAX_QUERY, load_book, search
@@ -42,7 +43,7 @@ async def _log(user: dict, meta: dict) -> None:
 
 
 @router.post("/lead-search/claude")
-async def claude_search(payload: SearchIn, user: dict = Depends(require_admin)):
+async def claude_search(payload: SearchIn, user: dict = Depends(current_user)):
     if not get_settings().CLAUDE_API_KEY:
         raise HTTPException(status_code=503, detail="Claude search isn't configured — set CLAUDE_API_KEY")
     if payload.segment is not None and payload.segment not in SEGMENTS:

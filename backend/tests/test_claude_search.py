@@ -84,10 +84,12 @@ def test_the_book_is_scoped_like_the_list_it_filters():
     assert "_role_scope(user)" in src and "SEGMENTS[payload.segment]" in src
 
 
-async def test_admins_only_and_unknown_segments_refused(monkeypatch):
-    from app.core.auth import require_admin
+async def test_open_to_every_signed_in_user_and_unknown_segments_refused(monkeypatch):
+    """Not admin-only since 13 Oct — safe because the book is role-scoped (an RM reads only
+    their own leads), which test_the_book_is_scoped_like_the_list_it_filters pins."""
+    from app.core.auth import current_user
     sig = inspect.signature(router.claude_search)
-    assert sig.parameters["user"].default.dependency is require_admin
+    assert sig.parameters["user"].default.dependency is current_user
     monkeypatch.setattr(router.get_settings(), "CLAUDE_API_KEY", "k")
     with pytest.raises(HTTPException) as e:
         await router.claude_search(router.SearchIn(query="hot leads", segment="nope"), {"role": "admin"})

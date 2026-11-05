@@ -1,5 +1,5 @@
 import { keepPreviousData, useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, AppSettings, BookRequest, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
+import { api, AcresItem, AcresListing, AppSettings, BookRequest, CompleteVisitIn, ConfirmPayload, HuvoCallQuery, MatchPreviewReq, MetaLeadFilters } from "./api";
 import { LEAD_SEGMENTS } from "./leads";
 
 /* Org-wide settings.
@@ -330,6 +330,26 @@ export function useDemandProperties() {
 }
 export function useClaudeSearch() {
   return useMutation({ mutationFn: (v: { query: string; segment: string | null }) => api.claudeSearch(v.query, v.segment) });
+}
+/* 99acres (admin only). Every reader shares one cache entry; `select` hands each a uid → row
+   map (module-level, so react-query memoises it instead of rebuilding per render). */
+const acresByUid = (d: { items: AcresListing[] }) => new Map(d.items.map((r) => [r.uid, r]));
+export function useAcresListings(enabled: boolean) {
+  return useQuery({ queryKey: ["acres-listings"], queryFn: api.acresListings, enabled, staleTime: 30_000, select: acresByUid });
+}
+export function useAcresPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { items: AcresItem[]; photos: boolean }) => api.acresPost(v.items, v.photos),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["acres-listings"] }),
+  });
+}
+export function useAcresMark() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (v: { uid: string; status: "live" | "failed" | "removed"; prop_id?: string }) => api.acresMark(v.uid, v.status, v.prop_id),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["acres-listings"] }),
+  });
 }
 export function useDemandStudioPhotos(uid: string) {
   return useQuery({ queryKey: ["demand-studio-photos", uid], queryFn: () => api.demandStudioPhotos(uid), staleTime: 5 * 60_000 });

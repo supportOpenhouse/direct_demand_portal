@@ -82,14 +82,14 @@ Code: `backend/app/services/matching.py` (`match_lead` / `match_preview`).
 
 Every property earns points; more points = better fit:
 
-| Signal | Points | Why |
-|---|---|---|
-| Same society they asked for | **+30** | strongest signal |
-| Inside their budget | **+20** | closer to their exact figure scores higher |
-| Same sub-area / micro-market | **+15** | |
-| Same locality | **+12** | |
-| Same BHK | **+10** | |
-| Same city | **+5** | baseline |
+| Signal                       | Points        | Why                                        |
+| ---------------------------- | ------------- | ------------------------------------------ |
+| Same society they asked for  | **+30** | strongest signal                           |
+| Inside their budget          | **+20** | closer to their exact figure scores higher |
+| Same sub-area / micro-market | **+15** |                                            |
+| Same locality                | **+12** |                                            |
+| Same BHK                     | **+10** |                                            |
+| Same city                    | **+5**  | baseline                                   |
 
 And it searches in order, stopping once it has 5 — a stronger tier always beats a weaker one,
 and within a tier the higher score wins:
@@ -157,8 +157,7 @@ semantic colours read clearly and consistently:
 
 - **Canvas** — cool near-white (`#f5f7fa`) instead of warm cream, so colour-coded chips pop.
 - **Stages** — a logical hue ramp across the pipeline:
-  `New (blue) → Contacted (cyan) → Visit Scheduled (amber) → Visit Feedback (violet) →
-  Negotiation (indigo) → Won (emerald)`, plus terminal states
+  `New (blue) → Contacted (cyan) → Visit Scheduled (amber) → Visit Feedback (violet) → Negotiation (indigo) → Won (emerald)`, plus terminal states
   `Lost (red)`, `Future Prospect (gold)`, `Timepass (slate)`.
 - **TAT** — a strict traffic-light scale: `ok = green`, `warn = amber`, `breach = red (pulsing)`.
 - **Sources** — kept on recognisable brand colours (Meta blue, Google Ads green, 99acres
@@ -201,8 +200,8 @@ Mirrors the PRD modules:
   - **Closing Manager (CM)** — all leads assigned to the RMs in their team (multiple RMs report
     into one CM).
   - **RM** — their own (assigned) leads only.
-  Every list, the dashboard counts, nav badges, Gold Mine and Society Insights are filtered to
-  the current user's scope. Source-captured data stays Admin-edit-only.
+    Every list, the dashboard counts, nav badges, Gold Mine and Society Insights are filtered to
+    the current user's scope. Source-captured data stays Admin-edit-only.
 - **Add New Lead** (top bar) and **Connect Meta Leads** demonstrate ingestion, TAT and
   WhatsApp alerts.
 
@@ -271,27 +270,32 @@ The app is production-hardened while staying on **Render** (backend) + **Vercel*
 with no infra beyond Neon (no Redis — removed 29 Sep).
 
 ### Local stack (Docker)
+
 ```bash
 cp .env.example .env   # fill in DB/Google/CRM values
 docker compose up --build        # backend :8000, frontend :5173
 ```
+
 Backend uses the shared Neon/properties DBs from `.env`. Cache, cron and Live Calls
 events are all in-process, so **exactly one process may run with `RUN_SCHEDULER=true`**.
 
 ### New runtime env vars
-| Var | Purpose |
-|-----|---------|
-| `APP_ENV` | `dev` (default) or `prod`. In **prod** the app refuses to boot on insecure config (default `JWT_SECRET`, missing `GOOGLE_OAUTH_CLIENT_ID`, localhost `CORS_ORIGINS`). |
-| `RUN_SCHEDULER` | `true` (default). Runs the cron + auto-dialer. Must be `true` on exactly ONE process — there is no cross-instance lock. |
-| `CORS_ORIGIN_REGEX` | e.g. `https://.*\.vercel\.app$` for preview deploys. |
-| `LOG_JSON` | `true` for structured logs in prod. |
-| `MAX_BODY_BYTES` | request body cap (default 1 MB). |
+
+| Var                   | Purpose                                                                                                                                                                               |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `APP_ENV`           | `dev` (default) or `prod`. In **prod** the app refuses to boot on insecure config (default `JWT_SECRET`, missing `GOOGLE_OAUTH_CLIENT_ID`, localhost `CORS_ORIGINS`). |
+| `RUN_SCHEDULER`     | `true` (default). Runs the cron + auto-dialer. Must be `true` on exactly ONE process — there is no cross-instance lock.                                                          |
+| `CORS_ORIGIN_REGEX` | e.g. `https://.*\.vercel\.app$` for preview deploys.                                                                                                                                |
+| `LOG_JSON`          | `true` for structured logs in prod.                                                                                                                                                 |
+| `MAX_BODY_BYTES`    | request body cap (default 1 MB).                                                                                                                                                      |
 
 ### Health probes
+
 - `GET /v1/health/live` — liveness (no DB), use for container restart checks.
 - `GET /v1/health` — readiness; returns **503** when the primary DB (Neon) is down.
 
 ### CI/CD (deferred)
+
 GitHub Actions is **not active yet** — ready-to-use configs (CI lint/test/scan/build,
 CodeQL, Dependabot) live inert in **`ci-templates/`**. See `ci-templates/README.md` to
 activate them (move into `.github/`, add secrets, protect `main`) when you're ready.

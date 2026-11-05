@@ -11,6 +11,7 @@ import SlideTabs from "../components/SlideTabs";
 import { IconChart, IconTable } from "../components/icons";
 import Analytics from "./Analytics";
 import AllLeads from "./AllLeads";
+import { isFestive } from "../lib/festive";
 
 const VIEW_KEY = "dd_home_view";
 type View = "summary" | "table";
@@ -45,6 +46,8 @@ export default function Home() {
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
       {view === "summary" ? (
         <>
+          {/* Festive (Diwali) — lib/festive.ts */}
+          {isFestive() && <div className="festive-lights" aria-hidden="true" />}
           <div className="home-viewbar">
             <div>
               <h1 style={{ fontFamily: "var(--font-display)", fontSize: 24, margin: 0, letterSpacing: "-.02em" }}>Hello, {name}</h1>

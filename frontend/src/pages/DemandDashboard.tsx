@@ -27,6 +27,9 @@ import { useLeadColumns } from "../features/leadTable/ColumnSettings";
 import { TopbarSlot } from "../components/TopbarSlot";
 import { IconDownload, IconEye, IconPlay, IconSearch, IconX } from "../components/icons";
 import { useToast } from "../components/Toast";
+import { useAuth } from "../components/AuthContext";
+import { AcresChip, AcresSection, ListOnAcresModal } from "../features/acres/Acres";
+import { useRowSelection } from "../lib/useRowSelection";
 
 /* ₹ in lakh, as the source dashboard prints it. A price is a real (float) column there,
    so 170 means ₹1.70 Cr — shown in lakh because that is the unit the team speaks in. */
@@ -252,6 +255,10 @@ export const DEMAND_COLUMNS: DDColumn[] = [
   // to the device; "No video" when there is neither
   { id: "studio_video", label: "Studio video", tight: true,
     cell: (p) => <StudioVideoDownload url={p.studio_video_url} uid={p.uid} /> },
+  /* Admins only (the registry drops it for everyone else): where this property stands on
+     99acres. Its state lives in our own acres_listings table, not the property book. */
+  { id: "acres", label: "99acres", tight: true,
+    cell: (p) => <AcresChip uid={p.uid} availability={p.availability_status} /> },
   /* Off by default — every other field from the same row. They are ordinary table
      columns, not popup fields, so the settings modal lists them under "Hidden table
      columns"; `popup` is a lead-table distinction that means nothing here. */
@@ -299,8 +306,10 @@ const AVAIL_BOXES = [
 ];
 
 const DD_BY_ID: Record<string, DDColumn> = Object.fromEntries(DEMAND_COLUMNS.map((c) => [c.id, c]));
+/* Non-admins never see the 99acres column; a saved layout naming it is filtered on read. */
+const NON_ADMIN_COLUMNS = DEMAND_COLUMNS.filter((c) => c.id !== "acres");
 /* their ten, in their order */
-const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks", "brochure", "studio_video"];
+const DEMAND_COLS = ["society", "city", "locality", "config", "area", "price", "ama", "handover", "status", "remarks", "brochure", "studio_video", "acres"];
 /* module-level: an accessor object rebuilt each render re-sorts on every keystroke */
 const SORTERS = Object.fromEntries(
   DEMAND_COLUMNS.filter((c) => c.sort).map((c) => [c.id, c.sort!]),
@@ -308,6 +317,8 @@ const SORTERS = Object.fromEntries(
 
 function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => void }) {
   const { onClose, overlayClass } = useModalExit(raw);
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
   // Studio shoot first (a room-by-room tour), then the listing's own shots. One list, so
   // the lightbox's arrows walk across both.
   const studioQ = useDemandStudioPhotos(p.uid);
@@ -379,6 +390,7 @@ function PropertyModal({ p, onClose: raw }: { p: DemandProperty; onClose: () => 
               )}
             </div>
           )}
+          {isAdmin && <AcresSection p={p} />}
         </div>
       </div>
       {shot && <Lightbox shot={shot} all={photos} onPick={setShot} onClose={() => setShot(null)} />}
@@ -621,8 +633,16 @@ export default function DemandDashboard() {
   const rows = all.filter((p) => pass(p));
   const { sorted, sortKey, dir, onSort } = useSort<DemandProperty>(rows, SORTERS);
   // same Columns control as the lead tables, driven by this page's own registry
-  const columns = useLeadColumns("demand-dashboard", DEMAND_COLS, "Demand Dashboard", DEMAND_COLUMNS);
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
+  const columns = useLeadColumns("demand-dashboard", DEMAND_COLS, "Demand Dashboard", isAdmin ? DEMAND_COLUMNS : NON_ADMIN_COLUMNS);
   const pg = usePaging(sorted);
+  // Select mode (admins): the 99acres bulk action. Selection spans every filtered row.
+  const [selectMode, setSelectMode] = useState(false);
+  const sel = useRowSelection(sorted.map((p) => p.uid));
+  const [listing, setListing] = useState<DemandProperty[] | null>(null);
+  const pageChecked = pg.slice.length > 0 && pg.slice.every((p) => sel.has(p.uid));
+  const extraCol = selectMode ? 1 : 0;
 
   return (
     <>
@@ -669,13 +689,30 @@ export default function DemandDashboard() {
           count: all.filter((p) => pass(p, "availability") && p.availability_status === b.key).length }))}
         extraValue={avail} onExtra={setAvail} />
 
+      {selectMode && sel.count > 0 && (
+        <div className="acres-bar">
+          <b>{sel.count} selected</b><span className="acres-bar-of">of {sel.visibleCount}</span>
+          <div style={{ flex: 1 }} />
+          <button className="btn sm acres-bar-btn" onClick={() => setListing(sorted.filter((p) => sel.has(p.uid)))}>List on 99acres</button>
+          <button className="btn sm acres-bar-btn" onClick={sel.clear}>Clear</button>
+        </div>
+      )}
+
       <Pager page={pg.page} pages={pg.pages} size={pg.size} total={sorted.length} onPage={pg.setPage}
-             sizeChoice={pg.sizeChoice} onSize={pg.setSize} />
+             sizeChoice={pg.sizeChoice} onSize={pg.setSize}
+             select={isAdmin ? { on: selectMode, onToggle: () => { setSelectMode((v) => !v); sel.clear(); },
+                                 total: sorted.length, onPick: sel.selectFirst } : undefined} />
 
       <div className="card table-wrap">
         <table className="tbl">
           <thead>
             <tr>
+              {selectMode && (
+                <th className="cell-tight">
+                  <input type="checkbox" checked={pageChecked} aria-label="Select this page"
+                         onChange={() => sel.togglePage(pg.slice.map((p) => p.uid))} />
+                </th>
+              )}
               {columns.cols.map((id) => DD_BY_ID[id]).filter(Boolean).map((c) => (
                 c.sort
                   ? <SortTh key={c.id} sortKey={c.id} label={c.label} activeKey={sortKey}
@@ -686,11 +723,17 @@ export default function DemandDashboard() {
           </thead>
           <tbody>
             {isLoading ? (
-              <SkeletonTable rows={8} cols={columns.cols.length} />
+              <SkeletonTable rows={8} cols={columns.cols.length + extraCol} />
             ) : !pg.slice.length ? (
-              <tr><td colSpan={columns.cols.length}><div className="empty" style={{ padding: 24 }}>No properties match these filters.</div></td></tr>
+              <tr><td colSpan={columns.cols.length + extraCol}><div className="empty" style={{ padding: 24 }}>No properties match these filters.</div></td></tr>
             ) : pg.slice.map((p) => (
               <tr key={p.uid} className="row-open" onClick={() => setOpen(p)}>
+                {selectMode && (
+                  // ticking a row must not open its popup
+                  <td className="cell-tight" onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={sel.has(p.uid)} onChange={() => sel.toggle(p.uid)} />
+                  </td>
+                )}
                 {columns.cols.map((id) => DD_BY_ID[id]).filter(Boolean).map((c) => (
                   <td key={c.id} className={c.tight ? "cell-tight" : "cell-text"}>{c.cell(p)}</td>
                 ))}
@@ -701,6 +744,7 @@ export default function DemandDashboard() {
       </div>
 
       {open && <PropertyModal p={open} onClose={() => setOpen(null)} />}
+      {listing && <ListOnAcresModal properties={listing} onClose={() => setListing(null)} />}
     </>
   );
 }

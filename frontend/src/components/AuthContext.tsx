@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, AuthUser, GOOGLE_CLIENT_ID, getToken, setToken,
          isDevBuild, getDevUser, setDevUser } from "../lib/api";
 import { IconWarn } from "./icons";
+import { isFestive } from "../lib/festive";
 
 interface AuthState {
   enabled: boolean;
@@ -137,10 +138,13 @@ function LoginGate({ onSignedIn }: { onSignedIn: (token: string) => void }) {
   return (
     <div className="login-wrap">
       <div className="card panel-pad login-card" style={{ width: 360, textAlign: "center", padding: 32 }}>
+        {/* Festive (Diwali) — lib/festive.ts */}
+        {isFestive() && <img className="login-fireworks" src="/festive/fireworks.webp" alt="" aria-hidden="true" decoding="async" />}
         <img className="login-logo light-only" src="/direct_demand_logo.png"
              alt="Openhouse Direct Demand" />
         <img className="login-logo dark-only" src="/direct_demand_logo_dark.png"
              alt="" aria-hidden="true" />
+        {isFestive() && <h2 className="login-festive-title">Happy Diwali</h2>}
         <p className="sec-sub" style={{ marginBottom: 20 }}>Sign in with your Openhouse Google account.</p>
         <div id="g-signin" style={{ display: "flex", justifyContent: "center" }} />
         {err && <div className="mand-flag show" style={{ marginTop: 16 }}><IconWarn /> {err}</div>}

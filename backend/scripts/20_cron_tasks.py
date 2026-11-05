@@ -1,7 +1,8 @@
 """The recurring jobs, for a Render Cron Job.
 
     cd backend
-    uv run python scripts/20_cron_tasks.py                 # all three
+    uv run python scripts/20_cron_tasks.py                 # visits, whatsapp, leads
+    uv run python scripts/20_cron_tasks.py --task acres_egress   # daily, its own Render job
     uv run python scripts/20_cron_tasks.py --task leads    # just one
     uv run python scripts/20_cron_tasks.py --dry-run       # say what would run, do nothing
 
@@ -27,6 +28,11 @@ Tasks, in the order they run:
             nothing — but set LEAD_ASSIGN_INTERVAL_MINUTES high, or drop the in-app job,
             rather than leaving both on a tight interval.
 
+  acres_egress  Is the 99acres droplet still sending from its Reserved IP? Fails unless the
+            egress through the proxy equals ACRES_EXPECTED_IP. Not in the default set: it
+            runs DAILY as its own Render Cron Job (`--task acres_egress`). The 24 Oct → 3 Nov
+            outage went unnoticed for ten days because nothing checked this (STATUS.md).
+
 Exit code is non-zero if any task failed, so Render marks the run failed instead of
 reporting a green tick over a job that did nothing. One task failing does not stop the
 others — they are independent, and a Core outage shouldn't hold up lead assignment.
@@ -43,7 +49,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.config import get_settings  # noqa: E402
 from app.db import dispose_engines, neon_engine  # noqa: E402
 
-TASKS = ("visits", "whatsapp", "leads")
+TASKS = ("visits", "whatsapp", "leads", "acres_egress")
+DEFAULT_TASKS = ("visits", "whatsapp", "leads")   # what runs with no --task
 
 
 async def task_visits() -> dict:
@@ -66,7 +73,17 @@ async def task_leads() -> dict:
     return await run_assignment_sweep(trigger="cron")
 
 
-RUNNERS = {"visits": task_visits, "whatsapp": task_whatsapp, "leads": task_leads}
+async def task_acres_egress() -> dict:
+    from app.services import acres_client
+
+    ip, expected = await acres_client.egress_ip(), get_settings().ACRES_EXPECTED_IP
+    if ip != expected:
+        raise RuntimeError(f"egress {ip} != expected {expected} — 99acres will refuse every call (STATUS.md)")
+    return {"egress": ip}
+
+
+RUNNERS = {"visits": task_visits, "whatsapp": task_whatsapp, "leads": task_leads,
+           "acres_egress": task_acres_egress}
 
 
 async def main(which: list[str], dry_run: bool) -> int:
@@ -101,4 +118,4 @@ if __name__ == "__main__":
                     help="run only this task (repeatable); default is all three")
     ap.add_argument("--dry-run", action="store_true", help="print the plan and exit")
     a = ap.parse_args()
-    raise SystemExit(asyncio.run(main(a.task or list(TASKS), a.dry_run)))
+    raise SystemExit(asyncio.run(main(a.task or list(DEFAULT_TASKS), a.dry_run)))

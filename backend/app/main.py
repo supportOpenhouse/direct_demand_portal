@@ -18,7 +18,7 @@ from .db import dispose_engines, neon_engine
 from .models import Base
 from .migrations import run_migrations
 from .routers import (
-    activity, app_settings, auth, bonvoice, demand_dashboard, dialer, external_analytics,
+    acres, activity, app_settings, auth, bonvoice, demand_dashboard, dialer, external_analytics,
     claude_search, gupshup, health,
     huvo, huvo_calls, inventory, leads, live_calls, logs, meta, reports,
     sheet_leads, studio_external, supply, users, visits,
@@ -165,6 +165,7 @@ app.include_router(auth.router, prefix="/v1")
 app.include_router(inventory.router, prefix="/v1")
 app.include_router(supply.router, prefix="/v1")
 app.include_router(demand_dashboard.router, prefix="/v1")
+app.include_router(acres.router, prefix="/v1")
 app.include_router(studio_external.router, prefix="/v1")
 app.include_router(leads.router, prefix="/v1")
 app.include_router(claude_search.router, prefix="/v1")

@@ -7,6 +7,7 @@
 import { useLocation } from "react-router-dom";
 import { NotificationBell } from "./NotificationBell";
 import { AddLeadButton } from "./AddLead";
+import { isFestive } from "../lib/festive";
 
 const TITLES: Record<string, string> = {
   "/": "Home",
@@ -58,6 +59,8 @@ export default function Topbar() {
             </span>
           </>
         )}
+        {/* Festive (Diwali) — lib/festive.ts */}
+        {isFestive() && <img className="festive-diya" src="/festive/diya.png" alt="" aria-hidden="true" />}
       </h1>
       <span style={{ flex: 1 }} />
       {/* Pages portal their own actions here (Select, Download CSV) — the strip is

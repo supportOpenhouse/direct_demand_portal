@@ -403,6 +403,25 @@ export interface LeadMatches {
   supply: MatchUnit[];
 }
 
+/* 99acres listings (admin only). Spec: docs/superpowers/specs/2026-11-05-99acres-listing-design.md.
+   `acres_listings` holds one row per property ever sent or recorded — the repeat guard. */
+export type AcresStatus = "unknown" | "live" | "failed" | "duplicate" | "removed";
+export type AcresListing = {
+  uid: string; status: AcresStatus; prop_id: string | null; source: "api" | "manual" | null;
+  age: string | null; owntype: string | null; error: string | null; quality_score: number | null;
+  posted_at: string | null; updated_at: string; updated_by: string | null;
+};
+export type AcresItem = { uid: string; owntype?: string | null };
+export type AcresCheck = {
+  uid: string; ok: boolean; problems: string[]; status: AcresStatus | null; age: string | null;
+  lookalikes: { uid: string; status: AcresStatus | null }[];
+  payload: Record<string, unknown> | null; pin: { lat: number; lng: number } | null;
+};
+export type AcresPostResult = {
+  uid: string; status: AcresStatus | null; prop_id: string | null; quality_score: number | null;
+  error: string | null; problems: string[]; halt: boolean;
+};
+
 export type DemandProperty = {
   uid: string;
   society_name: string | null;
@@ -735,6 +754,14 @@ export const api = {
   // and the set follows their table, so it is typed as an open record with the fields
   // this page actually names; a column added there reaches the popup without a change.
   demandDashboard: () => request<{ status: string; items: DemandProperty[] }>("/v1/demand-dashboard"),
+  acresListings: () => request<{ items: AcresListing[] }>("/v1/acres/listings"),
+  acresCheck: (items: AcresItem[], photos: boolean) =>
+    request<{ items: AcresCheck[] }>("/v1/acres/check", { method: "POST", body: JSON.stringify({ items, photos }) }),
+  acresPost: (items: AcresItem[], photos: boolean) =>
+    request<{ items: AcresPostResult[]; halt: boolean }>("/v1/acres/post", { method: "POST", body: JSON.stringify({ items, photos }) }),
+  acresMark: (uid: string, status: "live" | "failed" | "removed", prop_id?: string) =>
+    request<{ uid: string; status: AcresStatus; prop_id: string | null }>(`/v1/acres/listings/${encodeURIComponent(uid)}`,
+      { method: "PATCH", body: JSON.stringify({ status, prop_id: prop_id ?? null }) }),
   /* The brochure PDF straight to the device. Fetched through OUR server (…/file): the
      bucket sends no CORS header, so the page can't fetch it, and `<a download>` is
      ignored for another site's URL — it opens instead of saving. Same fetch → blob →

@@ -4,6 +4,7 @@ import os
 from functools import lru_cache
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILES = ("../.env", ".env")
@@ -89,6 +90,15 @@ class Settings(BaseSettings):
     LEAD_ASSIGN_INTERVAL_MINUTES: int = 60
     # Google Maps key (server-side, for geocoding inventory addresses → lat/lng)
     MAPS_API_KEY: str = ""
+
+    # --- 99acres listing API (STATUS.md, docs/99acres-api.md) ---
+    # 99acres answers only 129.212.244.52, the droplet's Reserved IP, so every call goes
+    # through its Squid proxy: http://acres:<pw>@129.212.244.52:31847. Unset = 503, never direct.
+    ACRES_PROXY_URL: str = ""
+    ACRES_EXPECTED_IP: str = ""   # what the egress check must see (129.212.244.52)
+    # The keys already in backend/.env; they start with a digit, hence the aliases.
+    ACRES_USERNAME: str = Field("", validation_alias="99ACRES_DASHBOARD_USERNAME")
+    ACRES_PASSWORD: str = Field("", validation_alias="99ACRES_DASHBOARD_PASSWORD")
 
     # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
     # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.

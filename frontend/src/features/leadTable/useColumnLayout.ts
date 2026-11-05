@@ -5,7 +5,8 @@
 
    A saved layout is filtered against the registry on read: a column renamed or removed
    in code must not leave a dead id that renders an empty <th>, and a layout that ends up
-   with nothing left falls back to the page default rather than an empty table. */
+   with nothing left falls back to the page default rather than an empty table. The
+   default is filtered the same way. */
 import { useCallback, useState } from "react";
 import { COLUMN_BY_ID } from "./columns";
 
@@ -29,7 +30,10 @@ function read(page: string, defaults: string[], byId: Registry): string[] {
   }
 }
 
-export function useColumnLayout(page: string, defaults: string[], byId: Registry = COLUMN_BY_ID) {
+export function useColumnLayout(page: string, pageDefaults: string[], byId: Registry = COLUMN_BY_ID) {
+  // The defaults are filtered too: a page whose registry depends on who is looking (the
+  // Demand Dashboard's admin-only 99acres column) must not show a non-admin its header.
+  const defaults = pageDefaults.filter((id) => id in byId);
   const [cols, setColsState] = useState<string[]>(() => read(page, defaults, byId));
 
   const setCols = useCallback((next: string[]) => {

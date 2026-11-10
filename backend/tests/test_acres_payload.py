@@ -130,7 +130,14 @@ def test_photos_ordered_by_room_with_exactly_one_cover():
 def test_age_band_from_possession_year():
     assert [age_band(y, 2026) for y in (2026, 2025, 2022, 2017, 2016, 2005)] == ["6", "1", "1", "2", "3", "3"]
     assert age_band(None, 2026) is None and age_band(2028, 2026) is None
-    assert "Possession year 2028 is in the future" in build_payload(_prop(), photos=[], owntype="2", society={**SOC, "possession_year": 2028}, year=2026)[1]
+
+
+def test_a_future_possession_year_is_listed_as_2024():
+    """User ruling 10 Nov: a possession year after this year is sent AS 2024 — only here, in the
+    listing; master_societies keeps the real year."""
+    pay, problems = build_payload(_prop(), photos=[], owntype="2", society={**SOC, "possession_year": 2029}, year=2026)
+    assert problems == [] and pay["Age"] == age_band(2024, 2026) == "1"
+    assert build_payload(_prop(), photos=[], owntype="2", society={**SOC, "possession_year": 2026}, year=2026)[0]["Age"] == "6"
 
 
 def test_lookalikes_ignore_config_spelling():

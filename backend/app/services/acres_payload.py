@@ -34,6 +34,9 @@ SLOT_TAG = {"living_room": "LIVING_ROOM", "bedrooms": "BEDROOM", "kitchen": "KIT
             "bathrooms": "BATHROOM", "balconies": "BALCONY", "extra_area": "OTHERS"}
 
 PRICE_MIN, PRICE_MAX = 25_000, 9_999_999_999
+# A possession year after this year (under construction) is listed as 2024 — user ruling 10 Nov.
+# Applied here only; master_societies keeps the real year.
+FUTURE_POSSESSION_AS = 2024
 _NOT_ALLOWED = re.compile(r"[^A-Za-z0-9 .;'/\\\-()]")   # 99acres: only . ; ' / \ - ( ) in Description
 _BHK = re.compile(r"^(\d+(?:\.5)?)(?:\.0)?\s*BHK", re.IGNORECASE)
 
@@ -147,11 +150,11 @@ def build_payload(p: dict, *, photos: list[dict], owntype: str | None, society: 
             pay |= {"Latitude": str(lat), "Longitude": str(lng), "Map_Source": "user_moves",
                     "Map_Status": "MAPPED", "ZoomLevel": "16"}
         py = society.get("possession_year")
+        if py is not None and int(py) > year:
+            py = FUTURE_POSSESSION_AS   # user ruling 10 Nov; master_societies keeps the real year
         band = age_band(py, year)
         if py is None:
             problems.append("No possession year in master_societies")
-        elif band is None:
-            problems.append(f"Possession year {py} is in the future")
         else:
             pay["Age"] = band
 

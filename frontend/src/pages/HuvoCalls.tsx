@@ -9,6 +9,7 @@
    numbers with no lead, and "Create lead" turns one into a real lead and back-links
    every call from that number in the same click. */
 import { useState } from "react";
+import { SortTh, useServerSort } from "../lib/useSort";
 import { HuvoCall, DURATION_OPTIONS, NO_CAMPAIGN } from "../lib/api";
 import { CITIES } from "../lib/leads";
 import { societyChoices } from "../lib/leadFilters";
@@ -260,6 +261,8 @@ export default function HuvoCalls() {
   });
   const { campaign, outcome, interested, linked, dur } = f;
   const [page, setPage] = useState(0);
+  // server-side column sort: the log is paged, so the whole log is ordered in SQL
+  const srt = useServerSort(() => setPage(0));
   const [creating, setCreating] = useState<HuvoCall | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   // Bulk mode is opt-in so the table stays a reading surface by default; checkboxes
@@ -278,6 +281,7 @@ export default function HuvoCalls() {
     linked: linked || undefined,
     duration: dur || undefined,
     campaign: campaign || undefined,
+    ...srt.params,
     limit: PAGE,
     offset: page * PAGE,
   });
@@ -406,15 +410,15 @@ export default function HuvoCalls() {
             <thead>
               <tr>
                 {bulk && <th style={{ width: 34 }} />}
-                <th style={{ width: 140 }}>Campaign</th>
-                <th style={{ width: 150 }}>When</th>
-                <th style={{ width: 150 }}>Caller</th>
-                <th style={{ width: 170 }}>Outcome</th>
-                <th style={{ width: 60 }}>Score</th>
-                <th>Summary</th>
-                <th style={{ width: 70 }}>Duration</th>
-                <th style={{ width: 110 }}>Recording</th>
-                <th style={{ width: 150 }}>Lead</th>
+                <SortTh label="Campaign" sortKey="campaign" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 140 }} />
+                <SortTh label="When" sortKey="when" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
+                <SortTh label="Caller" sortKey="caller" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
+                <SortTh label="Outcome" sortKey="outcome" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 170 }} />
+                <SortTh label="Score" sortKey="score" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 60 }} />
+                <SortTh label="Summary" sortKey="summary" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
+                <SortTh label="Duration" sortKey="duration" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 70 }} />
+                <SortTh label="Recording" sortKey="recording" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 110 }} />
+                <SortTh label="Lead" sortKey="lead" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
               </tr>
             </thead>
             <tbody>

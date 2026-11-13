@@ -7,7 +7,7 @@
    Their screen expands a panel BELOW the clicked row. Here a row opens the popup, like
    every lead row does, so the five sections get the modal's own motion and a stack-aware
    Escape instead of a second animation nobody else in this app uses. */
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useDemandProperties, useDemandStudioPhotos } from "../lib/queries";
 import { api, DemandProperty } from "../lib/api";
@@ -28,7 +28,8 @@ import { TopbarSlot } from "../components/TopbarSlot";
 import { IconDownload, IconEye, IconPlay, IconSearch, IconX } from "../components/icons";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../components/AuthContext";
-import { AcresChip, AcresSection, ListOnAcresModal } from "../features/acres/Acres";
+import { AcresChip, AcresSection, ListOnAcresModal, acresSortKey } from "../features/acres/Acres";
+import { useAcresListings } from "../lib/queries";
 import { useRowSelection } from "../lib/useRowSelection";
 
 /* ₹ in lakh, as the source dashboard prints it. A price is a real (float) column there,
@@ -250,11 +251,13 @@ export const DEMAND_COLUMNS: DDColumn[] = [
   { id: "remarks", label: "Demand Team Remarks", cell: (p) => text(p.internal_remarks),
     sort: (p) => (p.internal_remarks ?? "").toLowerCase() },
   // the brochure PDF, saved straight to the device; "No home id" where Core has none
-  { id: "brochure", label: "Brochure", tight: true, cell: (p) => <BrochureDownload homeId={p.core_home_id} /> },
+  { id: "brochure", label: "Brochure", tight: true, cell: (p) => <BrochureDownload homeId={p.core_home_id} />,
+    sort: (p) => p.core_home_id ?? "" },   // the ones with a brochure (a home id) first
   // Openhouse Studio's stitched walkthrough (else the home's app-listed video), saved straight
   // to the device; "No video" when there is neither
   { id: "studio_video", label: "Studio video", tight: true,
-    cell: (p) => <StudioVideoDownload url={p.studio_video_url} uid={p.uid} /> },
+    cell: (p) => <StudioVideoDownload url={p.studio_video_url} uid={p.uid} />,
+    sort: (p) => (p.studio_video_url ? "video" : "") },   // the ones with a video first
   /* Admins only (the registry drops it for everyone else): where this property stands on
      99acres. Its state lives in our own acres_listings table, not the property book. */
   { id: "acres", label: "99acres", tight: true,
@@ -586,6 +589,10 @@ function Lightbox({ shot, all, onPick, onClose: raw }: {
 
 export default function DemandDashboard() {
   const { data, isLoading } = useDemandProperties();
+  const { enabled, user } = useAuth();
+  const isAdmin = !enabled || user?.role === "admin";
+  // Our own 99acres listing rows (admins only): the 99acres column's sort and the id search.
+  const acresRows = useAcresListings(isAdmin).data;
   const all = data?.items ?? [];
   const [q, setQ] = useState("");
   const [applied, setApplied] = useState("");
@@ -616,7 +623,7 @@ export default function DemandDashboard() {
     (skip === "bhk" || !f.bhk.length || f.bhk.includes(bhkOf(p))) &&
     inRange(p.listing_price, f.budget) &&
     inRange(p.area_sqft, f.size) &&
-    matchesQuery(p, applied);
+    (matchesQuery(p, applied) || acresIdMatches(acresRows?.get(p.uid)?.prop_id, applied));
 
   /* Faceted like every other filter: each area's count is over the rows passing all the
      OTHER filters, so the numbers don't collapse once one is ticked. */
@@ -631,10 +638,11 @@ export default function DemandDashboard() {
   })();
 
   const rows = all.filter((p) => pass(p));
-  const { sorted, sortKey, dir, onSort } = useSort<DemandProperty>(rows, SORTERS);
+  const sorters = useMemo<Record<string, (p: DemandProperty) => string | number | null>>(() => (isAdmin
+    ? { ...SORTERS, acres: (p: DemandProperty) => acresSortKey(acresRows?.get(p.uid)) }
+    : SORTERS), [isAdmin, acresRows]);
+  const { sorted, sortKey, dir, onSort } = useSort<DemandProperty>(rows, sorters);
   // same Columns control as the lead tables, driven by this page's own registry
-  const { enabled, user } = useAuth();
-  const isAdmin = !enabled || user?.role === "admin";
   const columns = useLeadColumns("demand-dashboard", DEMAND_COLS, "Demand Dashboard", isAdmin ? DEMAND_COLUMNS : NON_ADMIN_COLUMNS);
   const pg = usePaging(sorted);
   // Select mode (admins): the 99acres bulk action. Selection spans every filtered row.
@@ -661,7 +669,7 @@ export default function DemandDashboard() {
         {/* The same `.search-form` every lead list uses — apply-on-submit, with Clear
             appearing once applied. Hand-rolling it here gave a square, unsized box. */}
         <form className="search-form" onSubmit={(e) => { e.preventDefault(); setApplied(q); }}>
-          <input value={q} placeholder="Search any field — e.g. 1709 Sahaj"
+          <input value={q} placeholder={isAdmin ? "Search any field or 99acres id — e.g. 1709 Sahaj, E95607134" : "Search any field — e.g. 1709 Sahaj"}
                  onChange={(e) => setQ(e.target.value)} />
           <button type="submit" className="btn primary"><IconSearch /> Search</button>
           {applied && (
@@ -714,7 +722,7 @@ export default function DemandDashboard() {
                 </th>
               )}
               {columns.cols.map((id) => DD_BY_ID[id]).filter(Boolean).map((c) => (
-                c.sort
+                sorters[c.id]
                   ? <SortTh key={c.id} sortKey={c.id} label={c.label} activeKey={sortKey}
                             dir={dir} onSort={onSort} />
                   : <th key={c.id} className={c.tight ? "cell-tight" : undefined}>{c.label}</th>
@@ -747,6 +755,13 @@ export default function DemandDashboard() {
       {listing && <ListOnAcresModal properties={listing} onClose={() => setListing(null)} />}
     </>
   );
+}
+
+/* Admins can also search a 99acres listing id (E95607134) — it lives in our acres_listings, not
+   the property book, so it is matched separately from the row's own fields. */
+function acresIdMatches(propId: string | null | undefined, q: string): boolean {
+  const s = q.trim().toLowerCase();
+  return !!s && !!propId && propId.toLowerCase().includes(s);
 }
 
 /* Search runs over the fields a person would type: the ones on the row plus the UID. */

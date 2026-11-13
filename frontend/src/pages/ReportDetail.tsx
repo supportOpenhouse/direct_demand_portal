@@ -16,6 +16,7 @@ import { asPreset, COLUMNS, dayLabel, hhmm, PRESETS, Preset, rangeFor, todayIST 
 import { downloadCsv } from "../lib/csv";
 import { stageLabel } from "../lib/leads";
 import { IconDownload } from "../components/icons";
+import { SortTh, useSort } from "../lib/useSort";
 import { StageChip } from "../components/StageChip";
 
 /* A day's numbers as pills. Every metric is rendered even at zero — a day with four
@@ -33,6 +34,19 @@ function Pills({ row }: { row: RmDayRow }) {
   );
 }
 
+/* The day's leads table: every column sorts (module-level, so the accessors stay stable). */
+const DAY_LEAD_SORTERS: Record<string, (l: RmDayLeadRow) => string | number | null> = {
+  time: (l) => l.last_at,
+  lead: (l) => l.name?.toLowerCase() ?? null,
+  city: (l) => l.city?.toLowerCase() ?? null,
+  dialled: (l) => l.calls_dialled,
+  conn: (l) => l.calls_connected,
+  missed: (l) => l.calls_missed,
+  moved: (l) => (l.to_stage ? stageLabel(l.to_stage) : null),
+  now: (l) => (l.current_stage ? stageLabel(l.current_stage) : null),
+  note: (l) => l.note?.toLowerCase() ?? null,
+};
+
 function Stage({ s }: { s: string | null }) {
   if (!s) return <span className="rp-sub">—</span>;
   return <StageChip stage={s} />;
@@ -47,7 +61,7 @@ function Stage({ s }: { s: string | null }) {
    again after this day, which is worth seeing. */
 function DayLeads({ email, day, onClose }: { email: string; day: string; onClose: () => void }) {
   const { data, isLoading, error } = useRmDayLeads(email, day);
-  const items = data?.items ?? [];
+  const { sorted: items, sortKey, dir, onSort } = useSort<RmDayLeadRow>(data?.items ?? [], DAY_LEAD_SORTERS);
 
   const exportCsv = () =>
     downloadCsv(
@@ -83,15 +97,17 @@ function DayLeads({ email, day, onClose }: { email: string; day: string; onClose
                 <table className="tbl rd-tbl">
                   <thead>
                     <tr>
-                      <th style={{ width: 60 }}>Time</th>
-                      <th>Lead</th>
-                      <th style={{ width: 100 }}>City</th>
-                      <th className="rp-th" title="Connected + Missed on this lead, this day">Dialled</th>
-                      <th className="rp-th">Conn.</th>
-                      <th className="rp-th">Missed</th>
-                      <th style={{ width: 300 }}>Stage moved</th>
-                      <th style={{ width: 130 }} title="The lead's stage right now — differs from 'to' if it moved again later">Now</th>
-                      <th>Note</th>
+                      <SortTh label="Time" sortKey="time" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 60 }} />
+                      <SortTh label="Lead" sortKey="lead" activeKey={sortKey} dir={dir} onSort={onSort} />
+                      <SortTh label="City" sortKey="city" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 100 }} />
+                      <SortTh label="Dialled" sortKey="dialled" activeKey={sortKey} dir={dir} onSort={onSort} className="rp-th" align="right"
+                              hint="Connected + Missed on this lead, this day" />
+                      <SortTh label="Conn." sortKey="conn" activeKey={sortKey} dir={dir} onSort={onSort} className="rp-th" align="right" />
+                      <SortTh label="Missed" sortKey="missed" activeKey={sortKey} dir={dir} onSort={onSort} className="rp-th" align="right" />
+                      <SortTh label="Stage moved" sortKey="moved" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 300 }} />
+                      <SortTh label="Now" sortKey="now" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 130 }}
+                              hint="The lead's stage right now — differs from 'to' if it moved again later" />
+                      <SortTh label="Note" sortKey="note" activeKey={sortKey} dir={dir} onSort={onSort} />
                     </tr>
                   </thead>
                   <tbody>

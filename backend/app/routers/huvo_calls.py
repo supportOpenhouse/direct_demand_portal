@@ -20,6 +20,7 @@ from sqlalchemy import text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..core.auth import current_user, require_admin
+from ..core.sorting import order_by
 from ..db import neon_engine
 from ..models import Lead
 from ..services.normalize import Societies
@@ -94,6 +95,21 @@ def calls_filters(q, outcome, interested, linked, duration, campaign=None) -> tu
     return (" WHERE " + " AND ".join(where)) if where else "", params
 
 
+# Huvo Call Log columns → SQL. See core/sorting.py.
+HUVO_DEFAULT = "COALESCE(h.started_at, h.received_at) DESC"
+HUVO_SORTS = {
+    "campaign": "NULLIF(h.campaign_name, '')",
+    "when": "COALESCE(h.started_at, h.received_at)",
+    "caller": "COALESCE(NULLIF(h.caller_name, ''), h.from_number)",
+    "outcome": "NULLIF(h.call_outcome, '')",
+    "score": "h.lead_score",
+    "summary": "NULLIF(h.summary, '')",
+    "duration": "h.duration_sec",
+    "recording": "CASE WHEN NULLIF(h.recording_url, '') IS NOT NULL THEN 1 END",   # with one first
+    "lead": "l.name",
+}
+
+
 @router.get("/huvo/calls", dependencies=[Depends(require_admin)])
 async def huvo_calls(
     q: str | None = Query(None),
@@ -104,11 +120,14 @@ async def huvo_calls(
     campaign: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: str | None = Query(None),
+    sort_dir: str | None = Query(None, alias="dir"),
 ):
-    """Every Huvo call, newest first."""
+    """Every Huvo call, newest first (or by the column the page sorts on)."""
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
+    order = order_by(sort, sort_dir, HUVO_SORTS, HUVO_DEFAULT)
     clause, params = calls_filters(q, outcome, interested, linked, duration, campaign)
     async with engine.connect() as conn:
         # Both counts in one round trip. unique_leads is distinct numbers, not rows:
@@ -131,9 +150,9 @@ async def huvo_calls(
                    h.recording_url, h.duration_sec, h.started_at, h.received_at,
                    h.lead_id, l.name AS lead_name, l.stage AS lead_stage
             {_FROM}{clause}
-             -- started_at is null for the rows that record no call, so they'd sort
-             -- last forever; received_at keeps them in the timeline
-             ORDER BY COALESCE(h.started_at, h.received_at) DESC
+             -- default: started_at is null for the rows that record no call, so they'd
+             -- sort last forever; received_at keeps them in the timeline (HUVO_DEFAULT)
+             {order}
              LIMIT :limit OFFSET :offset"""),
             {**params, "limit": limit, "offset": offset})).mappings().all()
     return {"items": [

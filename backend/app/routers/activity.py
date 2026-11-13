@@ -21,6 +21,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 
 from ..core.auth import current_user, require_admin
+from ..core.sorting import order_by
 from ..db import neon_engine
 
 log = logging.getLogger("activity")
@@ -158,6 +159,17 @@ def _shape(r) -> dict:
             for k, v in dict(r).items()}
 
 
+# Activity Logs columns → SQL (When · Who · What · On · Details). See core/sorting.py.
+ACTIVITY_DEFAULT = "a.created_at DESC"
+ACTIVITY_SORTS = {
+    "when": "a.created_at",
+    "who": "COALESCE(NULLIF(a.actor_name, ''), a.actor_email)",   # a background job (no actor) last
+    "what": "a.action",
+    "on": "COALESCE(l.name, a.entity_type)",
+    "details": "NULLIF(a.field, '')",
+}
+
+
 @router.get("", dependencies=[Depends(require_admin)])
 async def list_activity(
     q: str | None = Query(None),
@@ -168,16 +180,19 @@ async def list_activity(
     date_to: date | None = Query(None, alias="to"),      # bind a str against ::date (500)
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    sort: str | None = Query(None),
+    sort_dir: str | None = Query(None, alias="dir"),
 ):
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
+    order = order_by(sort, sort_dir, ACTIVITY_SORTS, ACTIVITY_DEFAULT)
     clause, params = activity_filters(q, action, entity_type, actor, date_from, date_to)
     async with engine.connect() as conn:
         total = (await conn.execute(text(
             f"SELECT count(*) FROM activity_log a{clause}"), params)).scalar()
         rows = (await conn.execute(text(
-            f"{_SELECT}{clause} ORDER BY a.created_at DESC LIMIT :limit OFFSET :offset"),
+            f"{_SELECT}{clause}{order} LIMIT :limit OFFSET :offset"),
             {**params, "limit": limit, "offset": offset})).mappings().all()
     return {"items": [_shape(r) for r in rows], "total": total}
 

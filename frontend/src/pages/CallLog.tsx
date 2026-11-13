@@ -2,6 +2,7 @@
    Rows are legs, not calls: a live bridged call writes one for the RM's handset and
    one for the lead. The leg itself isn't shown — it's noise next to the numbers. */
 import { useState } from "react";
+import { SortTh, useServerSort } from "../lib/useSort";
 import { useCallLog, useSyncCallLog, useCallLogActors, callDuration, formatDateTime } from "../lib/queries";
 import { FilterSelect } from "../components/Filters";
 import { useToast } from "../components/Toast";
@@ -22,6 +23,8 @@ export default function CallLog() {
   const { values: f, set, clear } = useFilterValues({ conn: "", by: "", dur: "" });
   const { conn, by, dur } = f;
   const [page, setPage] = useState(0);
+  // server-side column sort: the log is paged, so the whole log is ordered in SQL
+  const srt = useServerSort(() => setPage(0));
   const dq = useDebounce(q, 300);
   const toast = useToast();
 
@@ -51,6 +54,7 @@ export default function CallLog() {
     answered: conn ? conn === "Connected" : undefined,
     placed_by: by || undefined,
     duration: dur || undefined,
+    ...srt.params,
     limit: PAGE,
     offset: page * PAGE,
   });
@@ -102,13 +106,13 @@ export default function CallLog() {
         <table>
           <thead>
             <tr>
-              <th style={{ width: 150 }}>When</th>
-              <th>Lead</th>
-              <th>From → To</th>
-              <th>Status</th>
-              <th style={{ width: 70 }}>Duration</th>
-              <th style={{ width: 110 }}>Recording</th>
-              <th>Placed by</th>
+              <SortTh label="When" sortKey="when" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
+              <SortTh label="Lead" sortKey="lead" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
+              <SortTh label="From → To" sortKey="route" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
+              <SortTh label="Status" sortKey="status" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
+              <SortTh label="Duration" sortKey="duration" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 70 }} />
+              <SortTh label="Recording" sortKey="recording" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 110 }} />
+              <SortTh label="Placed by" sortKey="placed_by" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
             </tr>
           </thead>
           <tbody>

@@ -8,6 +8,7 @@
    The Details column is the whole point: each action renders as a sentence, not as
    three raw columns the reader has to assemble in their head. */
 import { useState } from "react";
+import { SortTh, useServerSort } from "../lib/useSort";
 import { useActivity, useActivityFilters, formatDateTime } from "../lib/queries";
 import { ActivityRow, api } from "../lib/api";
 import { FilterSelect } from "../components/Filters";
@@ -25,6 +26,8 @@ export default function Logs() {
   const { values: f, set, clear } = useFilterValues({ action: "", entityType: "", actor: "", from: "", to: "" });
   const { action, entityType, actor, from, to } = f;
   const [page, setPage] = useState(0);
+  // server-side column sort: the log is paged, so the whole log is ordered in SQL
+  const srt = useServerSort(() => setPage(0));
   const [exporting, setExporting] = useState(false);
   // the CSV button opens a column picker first; the download runs from inside it
   const [picking, setPicking] = useState(false);
@@ -36,7 +39,7 @@ export default function Logs() {
     entity_type: entityType || undefined, actor: actor || undefined,
     from: from || undefined, to: to || undefined,
   };
-  const { data, isLoading, isFetching, isPlaceholderData } = useActivity({ ...params, limit: PAGE, offset: page * PAGE });
+  const { data, isLoading, isFetching, isPlaceholderData } = useActivity({ ...params, ...srt.params, limit: PAGE, offset: page * PAGE });
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -88,11 +91,11 @@ export default function Logs() {
         <table className="tbl">
           <thead>
             <tr>
-              <th style={{ width: 150 }}>When</th>
-              <th style={{ width: 160 }}>Who</th>
-              <th style={{ width: 160 }}>What</th>
-              <th style={{ width: 180 }}>On</th>
-              <th>Details</th>
+              <SortTh label="When" sortKey="when" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
+              <SortTh label="Who" sortKey="who" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 160 }} />
+              <SortTh label="What" sortKey="what" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 160 }} />
+              <SortTh label="On" sortKey="on" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 180 }} />
+              <SortTh label="Details" sortKey="details" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
             </tr>
           </thead>
           <tbody>

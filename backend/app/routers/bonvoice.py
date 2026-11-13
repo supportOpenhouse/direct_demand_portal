@@ -29,6 +29,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from ..config import get_settings
 from ..core.auth import current_user, is_calling_rm, require_admin
+from ..core.sorting import order_by
 from ..db import neon_engine
 from ..events import publish, rm_channel
 from ..services import activity
@@ -896,6 +897,19 @@ async def _my_phone10(user: dict) -> str:
     return _digits(phone)
 
 
+# Call Log + Dialer history columns → SQL. See core/sorting.py.
+CALL_LOG_DEFAULT = "COALESCE(c.start_at, c.created_at) DESC"
+CALL_LOG_SORTS = {
+    "when": "COALESCE(c.start_at, c.created_at)",
+    "lead": "l.name",
+    "route": "NULLIF(c.source_number, '')",          # From → To: by the From side
+    "status": "c.answered",                           # the connected / not connected chip
+    "duration": "c.end_at - c.start_at",
+    "recording": "CASE WHEN NULLIF(c.recording_url, '') IS NOT NULL THEN 1 END",   # with one first
+    "placed_by": PLACED_BY_SQL,
+}
+
+
 @router.get("/bonvoice/calls")
 async def call_log(
     q: str | None = Query(None),          # matches any phone number or the lead's name
@@ -905,6 +919,8 @@ async def call_log(
     duration: str | None = Query(None),      # a DURATION_BUCKETS label
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    sort: str | None = Query(None),
+    sort_dir: str | None = Query(None, alias="dir"),
     user: dict = Depends(current_user),
 ):
     """Every call leg Bonvoice has reported, newest first — backs the Call Log page.
@@ -915,6 +931,7 @@ async def call_log(
     engine = neon_engine()
     if engine is None:
         return {"items": [], "total": 0}
+    order = order_by(sort, sort_dir, CALL_LOG_SORTS, CALL_LOG_DEFAULT)
     clause, params = call_log_filters(q, answered, campaign_id, placed_by, duration)
 
     # RMs see only calls involving their own handset; admins see everything. Scoped on
@@ -945,7 +962,7 @@ async def call_log(
                    -- differently (see _p10_sql).
                    {_lead_side_sql()} AS lead_side
             {CALL_LOG_FROM}{clause}
-             ORDER BY COALESCE(c.start_at, c.created_at) DESC
+             {order}
              LIMIT :limit OFFSET :offset"""),
             {**params, "limit": limit, "offset": offset})).mappings().all()
     return {"items": [

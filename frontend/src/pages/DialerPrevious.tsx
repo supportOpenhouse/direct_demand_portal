@@ -5,6 +5,7 @@
    the rows can't drift from what Bonvoice Call Log shows. Attribution comes from
    call_logs.campaign_id, stamped when the callback lands — see routers/bonvoice.py. */
 import { useEffect, useState } from "react";
+import { SortTh, useServerSort } from "../lib/useSort";
 import { Link } from "react-router-dom";
 import {
   useCallLog, useCampaign, useCampaignAction, useCampaigns, useDialerFields,
@@ -113,6 +114,8 @@ export default function DialerPrevious() {
   const fields = dialerMeta.data?.fields ?? [];
   const [activeId, setActiveId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  // server-side column sort: the log is paged, so the whole log is ordered in SQL
+  const srt = useServerSort(() => setPage(0));
 
   const items = campaigns.data?.items ?? [];
 
@@ -127,7 +130,7 @@ export default function DialerPrevious() {
   const stats = detail.data?.stats;
 
   const calls = useCallLog(
-    { campaign_id: activeId || undefined, limit: PAGE, offset: page * PAGE },
+    { campaign_id: activeId || undefined, ...srt.params, limit: PAGE, offset: page * PAGE },
     !!activeId,  // never fire unscoped — that would fetch every call in the system
   );
   const rows = activeId ? calls.data?.items ?? [] : [];
@@ -336,13 +339,13 @@ export default function DialerPrevious() {
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: 150 }}>When</th>
-                  <th style={{ minWidth: 120 }}>Lead</th>
-                  <th>From → To</th>
-                  <th style={{ minWidth: 150 }}>Status</th>
-                  <th style={{ width: 70 }}>Duration</th>
-                  <th style={{ width: 110 }}>Recording</th>
-                  <th>Placed by</th>
+                  <SortTh label="When" sortKey="when" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 150 }} />
+                  <SortTh label="Lead" sortKey="lead" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ minWidth: 120 }} />
+                  <SortTh label="From → To" sortKey="route" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
+                  <SortTh label="Status" sortKey="status" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ minWidth: 150 }} />
+                  <SortTh label="Duration" sortKey="duration" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 70 }} />
+                  <SortTh label="Recording" sortKey="recording" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} style={{ width: 110 }} />
+                  <SortTh label="Placed by" sortKey="placed_by" activeKey={srt.sortKey} dir={srt.dir} onSort={srt.onSort} />
                 </tr>
               </thead>
               <tbody>

@@ -168,7 +168,7 @@ export const LEAD_COLUMNS: LeadColumn[] = [
       : <span style={{ color: "var(--muted)", fontSize: 12 }}>—</span> },
   { id: "reason", label: "Reject reason", sort: (l) => l.reject_reason, tdClass: "reason-cell",
     render: (l) => <span className="stage lost">{l.reject_reason || "—"}</span> },
-  { id: "rejectNote", label: "Reject note", tdClass: "note-cell",
+  { id: "rejectNote", label: "Reject note", tdClass: "note-cell", sort: (l) => l.reject_notes?.toLowerCase() ?? "",
     // clamped to two lines; the full note is in the tooltip and on the lead itself
     render: (l) => <div className="note-clamp" title={l.reject_notes || undefined}>{l.reject_notes || "—"}</div> },
   { id: "created", label: "Created On", sort: (l) => t(l.received_at), tdClass: "cell-tight", tdStyle: mono,

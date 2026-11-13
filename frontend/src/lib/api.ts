@@ -171,6 +171,8 @@ export interface ActivityRow {
 }
 
 export interface ActivityQuery {
+  sort?: string;            // a whitelisted column key (backend core/sorting.py)
+  dir?: "asc" | "desc";
   q?: string; action?: string; entity_type?: string; actor?: string;
   from?: string; to?: string; limit?: number; offset?: number;
 }
@@ -223,6 +225,8 @@ export interface HuvoBulkLeadReq {
 }
 
 export interface HuvoCallQuery {
+  sort?: string;            // a whitelisted column key (backend core/sorting.py)
+  dir?: "asc" | "desc";
   q?: string;
   outcome?: string;
   interested?: string;
@@ -1311,6 +1315,8 @@ export interface LeadCallRow {
   recording_url: string | null;
 }
 export interface CallLogParams {
+  sort?: string;            // a whitelisted column key (backend core/sorting.py)
+  dir?: "asc" | "desc";
   q?: string; answered?: boolean; limit?: number; offset?: number;
   campaign_id?: string;  // Previous Campaigns: only what this campaign dialled
   placed_by?: string;    // an actor email, or the BY_LEAD / UNKNOWN sentinels

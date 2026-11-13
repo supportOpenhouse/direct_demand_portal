@@ -9,9 +9,18 @@
    page for, so they're rendered as muted zeroes rather than hidden. */
 import { useState } from "react";
 import { useRmReport } from "../lib/queries";
+import { RmReportRow } from "../lib/api";
+import { SortTh, useSort } from "../lib/useSort";
 /* Presets, metric columns and the detail link are shared with ReportDetail — see
    lib/report.ts on why they can't live on either page. */
 import { COLUMNS, detailHref, hhmm, PRESETS, Preset, rangeFor, todayIST } from "../lib/report";
+
+/* module-level: a new accessor object each render would re-sort on every keystroke */
+const REPORT_SORTERS: Record<string, (r: RmReportRow) => string | number | null> = {
+  rm: (r) => (r.name || r.email).toLowerCase(),
+  login: (r) => r.first_action_at,
+  ...Object.fromEntries(COLUMNS.map((c) => [c.key, (r: RmReportRow) => r[c.key]])),
+};
 
 function Num({ n, strong }: { n: number; strong?: boolean }) {
   // A zero is information, not an absence — muted, never blank.
@@ -38,7 +47,7 @@ export default function Reports() {
     }
   };
 
-  const rows = data?.items ?? [];
+  const { sorted: rows, sortKey, dir, onSort } = useSort<RmReportRow>(data?.items ?? [], REPORT_SORTERS);
   /* "Login" is the first activity of the IST day. Over a multi-day range that's the
      first activity of the FIRST day, which reads like a clock-in time and isn't one —
      so the column only fills in when the range is a single day, and the drill-down
@@ -96,14 +105,14 @@ export default function Reports() {
         <table className="tbl rp-tbl">
           <thead>
             <tr>
-              <th style={{ width: 200 }}>RM</th>
-              <th style={{ width: 90 }} title={singleDay
-                ? "First activity of the day, IST — not the login event: a week-long session means someone can work for days without signing in"
-                : "Only shown for a single-day range — open an RM to see their login for each day"}>
-                Login
-              </th>
+              <SortTh label="RM" sortKey="rm" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 200 }} />
+              <SortTh label="Login" sortKey="login" activeKey={sortKey} dir={dir} onSort={onSort} style={{ width: 90 }}
+                hint={singleDay
+                  ? "First activity of the day, IST — not the login event: a week-long session means someone can work for days without signing in"
+                  : "Only shown for a single-day range — open an RM to see their login for each day"} />
               {COLUMNS.map((c) => (
-                <th key={c.key} className="rp-th" title={c.hint}>{c.label}</th>
+                <SortTh key={c.key} label={c.label} sortKey={c.key} activeKey={sortKey} dir={dir} onSort={onSort}
+                        className="rp-th" align="right" hint={c.hint} />
               ))}
             </tr>
           </thead>

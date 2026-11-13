@@ -33,18 +33,36 @@ export function useSort<T>(items: T[], accessors: Record<string, Accessor<T>>, i
      "Default" is the initial key if the page gave one, otherwise no sort at all, which
      hands `items` through untouched in whatever order the page built them. */
   const onSort = (k: string) => {
-    if (key !== k) {
-      setKey(k);
-      setDir("asc");
-    } else if (dir === "asc") {
-      setDir("desc");
-    } else {
-      setKey(initialKey ?? null);
-      setDir(initialDir);
-    }
+    const [nk, nd] = nextSort(key, dir, k, initialKey ?? null, initialDir);
+    setKey(nk);
+    setDir(nd);
   };
 
   return { sorted, sortKey: key, dir, onSort };
+}
+
+/* asc → desc → back to the default — the one cycle every sortable header follows. */
+function nextSort(key: string | null, dir: Dir, k: string, initialKey: string | null, initialDir: Dir): [string | null, Dir] {
+  if (key !== k) return [k, "asc"];
+  if (dir === "asc") return [k, "desc"];
+  return [initialKey, initialDir];
+}
+
+/* For a table the SERVER pages (Call Log, Dialer history, Huvo calls, Activity Logs): the
+   browser holds one page, so sorting it here would reorder only what's on screen. This keeps
+   the same header cycle and hands back `params` ({sort, dir}) for the query; the server's
+   whitelist (backend/app/core/sorting.py) does the ordering. `onChange` runs on every click —
+   pages pass their "back to page 1". */
+export function useServerSort(onChange?: () => void) {
+  const [key, setKey] = useState<string | null>(null);
+  const [dir, setDir] = useState<Dir>("asc");
+  const onSort = (k: string) => {
+    const [nk, nd] = nextSort(key, dir, k, null, "asc");
+    setKey(nk);
+    setDir(nd);
+    onChange?.();
+  };
+  return { sortKey: key, dir, onSort, params: key ? { sort: key, dir } : {} };
 }
 
 export function SortTh({
@@ -55,6 +73,8 @@ export function SortTh({
   onSort,
   style,
   align = "left",
+  className,
+  hint,
 }: {
   label: string;
   sortKey: string;
@@ -63,13 +83,18 @@ export function SortTh({
   onSort: (k: string) => void;
   style?: React.CSSProperties;
   align?: "left" | "right" | "center";
+  className?: string;
+  /** what the column means — shown before the sort action in the tooltip */
+  hint?: string;
 }) {
   const active = activeKey === sortKey;
+  const action = !active ? "Sort ascending" : dir === "asc" ? "Sort descending" : "Back to default order";
   return (
     <th
+      className={className}
       onClick={() => onSort(sortKey)}
       style={{ cursor: "pointer", userSelect: "none", whiteSpace: "nowrap", textAlign: align, ...style }}
-      title={!active ? "Sort ascending" : dir === "asc" ? "Sort descending" : "Back to default order"}
+      title={hint ? `${hint} — ${action.toLowerCase()}` : action}
     >
       {label}
       {/* Was fontSize 9 + opacity .25: icons size to 1em, so that drew a 9px chevron at a

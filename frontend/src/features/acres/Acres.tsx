@@ -5,7 +5,7 @@
    that page for every `p.<field>` it reads and fails on anything the API doesn't send. */
 import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, type AcresCheck, type AcresPostResult, type AcresStatus, type DemandProperty } from "../../lib/api";
+import { api, type AcresCheck, type AcresListing, type AcresPostResult, type AcresStatus, type DemandProperty } from "../../lib/api";
 import { useAcresListings, useAcresMark, useAcresPost } from "../../lib/queries";
 import { useModalExit } from "../../lib/useModalExit";
 import { useToast } from "../../components/Toast";
@@ -32,6 +32,12 @@ const CHIP: Record<AcresStatus, { cls: string; label: string }> = {
 
 const istDay = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+/* The 99acres column's sort: live first, then the states that need a person, then the ones
+   that may be posted again — and by listing id within a status. No row (never sent) → null,
+   which useSort always puts last. */
+const STATUS_RANK: Record<AcresStatus, number> = { live: 1, unknown: 2, duplicate: 3, failed: 4, removed: 5 };
+export const acresSortKey = (row: AcresListing | undefined) => (row ? `${STATUS_RANK[row.status]}${row.prop_id ?? ""}` : null);
 
 export function AcresStatusChip({ status, propId, availability, error }:
   { status: AcresStatus | null | undefined; propId?: string | null; availability?: string; error?: string | null }) {

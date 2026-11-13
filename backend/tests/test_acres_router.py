@@ -62,7 +62,7 @@ def test_ownership_only_accepts_99acres_ids():
 async def test_health_reports_a_mismatch_and_never_the_token(monkeypatch):
     monkeypatch.setattr(acres.acres_client, "egress_ip", AsyncMock(return_value="206.189.139.59"))
     monkeypatch.setattr(acres.acres_client, "token", AsyncMock(return_value="eyJ.secret.sig"))
-    monkeypatch.setattr(acres, "get_settings", lambda: SimpleNamespace(ACRES_EXPECTED_IP="129.212.244.52", ACRES_PROXY_URL="http://p"))
+    monkeypatch.setattr(acres, "get_settings", lambda: SimpleNamespace(DROPLET_STATIC_IP="129.212.244.52"))
     out = await acres.health(login=True)
     assert out["egress_matches"] is False and out["login"] == {"ok": True, "error": None}
     assert "eyJ" not in json.dumps(out)
@@ -72,7 +72,7 @@ async def test_the_cron_task_fails_on_the_wrong_egress(monkeypatch):
     cron = _load_cron_module()
     from app.services import acres_client
     monkeypatch.setattr(acres_client, "egress_ip", AsyncMock(return_value="206.189.139.59"))
-    monkeypatch.setattr(cron, "get_settings", lambda: SimpleNamespace(ACRES_EXPECTED_IP="129.212.244.52"))
+    monkeypatch.setattr(cron, "get_settings", lambda: SimpleNamespace(DROPLET_STATIC_IP="129.212.244.52"))
     with pytest.raises(RuntimeError, match="206.189.139.59"):
         await cron.task_acres_egress()
 

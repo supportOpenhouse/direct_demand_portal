@@ -22,7 +22,7 @@ def _fake_99(monkeypatch, handler):
         return handler(req)
 
     monkeypatch.setattr(acres_client, "get_settings", lambda: SimpleNamespace(
-        ACRES_PROXY_URL="http://p", ACRES_USERNAME="u", ACRES_PASSWORD="pw"))
+        DROPLET_STATIC_IP="129.212.244.52", DROPLET_SQUID_PORT="31847", DROPLET_SQUID_USERNAME="acres", DROPLET_SQUID_PASSWORD="pw", ACRES_DASHBOARD_USERNAME="u", ACRES_DASHBOARD_PASSWORD="pw"))
     monkeypatch.setattr(acres_client, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(transport)))
     monkeypatch.setattr(acres_client, "_cached", None)
     return seen
@@ -89,9 +89,19 @@ async def test_egress_is_the_ip_echo_through_the_proxy(monkeypatch):
 
 
 def test_no_proxy_means_not_configured(monkeypatch):
-    monkeypatch.setattr(acres_client, "get_settings", lambda: SimpleNamespace(ACRES_PROXY_URL="", ACRES_USERNAME="u", ACRES_PASSWORD="p"))
+    monkeypatch.setattr(acres_client, "get_settings", lambda: SimpleNamespace(
+        DROPLET_STATIC_IP="", DROPLET_SQUID_PORT="", DROPLET_SQUID_USERNAME="", DROPLET_SQUID_PASSWORD="",
+        ACRES_DASHBOARD_USERNAME="u", ACRES_DASHBOARD_PASSWORD="p"))
     with pytest.raises(acres_client.AcresNotConfigured):
         acres_client._client()
+
+
+def test_the_proxy_url_is_built_from_the_droplet_settings():
+    """The four DROPLET_* keys already in backend/.env ARE the proxy; user + password are
+    URL-quoted so a password with @ : / can't break the URL."""
+    s = SimpleNamespace(DROPLET_STATIC_IP="129.212.244.52", DROPLET_SQUID_PORT="31847",
+                        DROPLET_SQUID_USERNAME="acres", DROPLET_SQUID_PASSWORD="p@ss:w/rd")
+    assert acres_client.proxy_url(s) == "http://acres:p%40ss%3Aw%2Frd@129.212.244.52:31847"
 
 
 def test_only_the_client_sets_a_proxy():
@@ -101,10 +111,14 @@ def test_only_the_client_sets_a_proxy():
 
 
 def test_credentials_come_from_the_existing_env_keys(monkeypatch):
-    monkeypatch.setenv("99ACRES_DASHBOARD_USERNAME", "user")
-    monkeypatch.setenv("99ACRES_DASHBOARD_PASSWORD", "pw")
+    monkeypatch.setenv("ACRES_DASHBOARD_USERNAME", "user")
+    monkeypatch.setenv("ACRES_DASHBOARD_PASSWORD", "pw")
+    for k, v in {"DROPLET_STATIC_IP": "129.212.244.52", "DROPLET_SQUID_PORT": "31847",
+                 "DROPLET_SQUID_USERNAME": "acres", "DROPLET_SQUID_PASSWORD": "sq"}.items():
+        monkeypatch.setenv(k, v)
     s = Settings(_env_file=None)
-    assert (s.ACRES_USERNAME, s.ACRES_PASSWORD) == ("user", "pw")
+    assert (s.ACRES_DASHBOARD_USERNAME, s.ACRES_DASHBOARD_PASSWORD) == ("user", "pw")
+    assert acres_client.proxy_url(s) == "http://acres:sq@129.212.244.52:31847"
 
 
 def test_the_model_guards_repeats():
@@ -132,3 +146,17 @@ async def test_a_proxy_that_cannot_connect_is_a_refusal(monkeypatch):
     _fake_99(monkeypatch, boom)
     with pytest.raises(acres_client.AcresError, match="proxy"):
         await acres_client.token()
+
+
+def test_not_configured_names_the_missing_settings(monkeypatch):
+    """A bare "not configured" 503 can't tell a missing proxy from a missing login — and on
+    Render nobody can run a debugger. Name the env keys (never their values)."""
+    monkeypatch.setattr(acres_client, "get_settings", lambda: SimpleNamespace(
+        DROPLET_STATIC_IP="129.212.244.52", DROPLET_SQUID_PORT="31847", DROPLET_SQUID_USERNAME="acres",
+        DROPLET_SQUID_PASSWORD="", ACRES_DASHBOARD_USERNAME="u", ACRES_DASHBOARD_PASSWORD="p"))
+    with pytest.raises(acres_client.AcresNotConfigured, match=r"set DROPLET_SQUID_PASSWORD$"):
+        acres_client._client()
+    monkeypatch.setattr(acres_client, "get_settings", lambda: SimpleNamespace(
+        DROPLET_STATIC_IP="129.212.244.52", DROPLET_SQUID_PORT="31847", DROPLET_SQUID_USERNAME="acres", DROPLET_SQUID_PASSWORD="pw", ACRES_DASHBOARD_USERNAME="", ACRES_DASHBOARD_PASSWORD=""))
+    with pytest.raises(acres_client.AcresNotConfigured, match=r"ACRES_DASHBOARD_USERNAME, ACRES_DASHBOARD_PASSWORD"):
+        acres_client._client()

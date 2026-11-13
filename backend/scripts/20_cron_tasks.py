@@ -29,7 +29,7 @@ Tasks, in the order they run:
             rather than leaving both on a tight interval.
 
   acres_egress  Is the 99acres droplet still sending from its Reserved IP? Fails unless the
-            egress through the proxy equals ACRES_EXPECTED_IP. Not in the default set: it
+            egress through the proxy equals DROPLET_STATIC_IP. Not in the default set: it
             runs DAILY as its own Render Cron Job (`--task acres_egress`). The 24 Oct → 3 Nov
             outage went unnoticed for ten days because nothing checked this (STATUS.md).
 
@@ -76,7 +76,7 @@ async def task_leads() -> dict:
 async def task_acres_egress() -> dict:
     from app.services import acres_client
 
-    ip, expected = await acres_client.egress_ip(), get_settings().ACRES_EXPECTED_IP
+    ip, expected = await acres_client.egress_ip(), get_settings().DROPLET_STATIC_IP
     if ip != expected:
         raise RuntimeError(f"egress {ip} != expected {expected} — 99acres will refuse every call (STATUS.md)")
     return {"egress": ip}

@@ -4,7 +4,6 @@ import os
 from functools import lru_cache
 from urllib.parse import urlencode, urlparse, parse_qsl, urlunparse
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _ENV_FILES = ("../.env", ".env")
@@ -92,13 +91,14 @@ class Settings(BaseSettings):
     MAPS_API_KEY: str = ""
 
     # --- 99acres listing API (STATUS.md, docs/99acres-api.md) ---
-    # 99acres answers only 129.212.244.52, the droplet's Reserved IP, so every call goes
-    # through its Squid proxy: http://acres:<pw>@129.212.244.52:31847. Unset = 503, never direct.
-    ACRES_PROXY_URL: str = ""
-    ACRES_EXPECTED_IP: str = ""   # what the egress check must see (129.212.244.52)
-    # The keys already in backend/.env; they start with a digit, hence the aliases.
-    ACRES_USERNAME: str = Field("", validation_alias="99ACRES_DASHBOARD_USERNAME")
-    ACRES_PASSWORD: str = Field("", validation_alias="99ACRES_DASHBOARD_PASSWORD")
+    # 99acres answers only the droplet's Reserved IP, so every call goes through its Squid proxy
+    # (acres_client.proxy_url builds http://user:pw@ip:port from these). Unset = 503, never direct.
+    DROPLET_STATIC_IP: str = ""        # the Reserved IP: the proxy's host AND the egress 99acres whitelists
+    DROPLET_SQUID_PORT: str = ""
+    DROPLET_SQUID_USERNAME: str = ""
+    DROPLET_SQUID_PASSWORD: str = ""
+    ACRES_DASHBOARD_USERNAME: str = ""   # the 99acres login (renamed 13 Nov from 99ACRES_DASHBOARD_*)
+    ACRES_DASHBOARD_PASSWORD: str = ""
 
     # --- Openhouse Core visit-booking API (server-to-server, X-CRM-Key) ---
     # Base must end in /api/v1/oh/ ; key is shared via Secret Manager. Never sent to the browser.

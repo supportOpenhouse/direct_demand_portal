@@ -106,7 +106,7 @@ Render (Singapore) / Mac / n8n
 ## 99acres token test (3 Nov)
 
 Token call `POST https://www.99acres.com/99api/v21/accesstoken/qwerty?rtype=json` with
-`{"username","password"}` from `backend/.env` (`99ACRES_DASHBOARD_USERNAME` / `_PASSWORD`),
+`{"username","password"}` from `backend/.env` (`ACRES_DASHBOARD_USERNAME` / `_PASSWORD`),
 run ON the droplet (creds via stdin over SSH, never stored there):
 
 | From | Answer |
@@ -208,18 +208,17 @@ city id. Until then the 2019 doc's static-data sample ids are the best guess.
 ### Code (Phase 4): needs the user's uploader codebase
 
 - [ ] Render environment variables (an Environment Group is fine):
-  - `ACRES_PROXY_URL=http://acres:<pw>@129.212.244.52:31847`
-  - `ACRES_EXPECTED_IP=129.212.244.52`
+  - `DROPLET_STATIC_IP=129.212.244.52`, `DROPLET_SQUID_PORT=31847`, `DROPLET_SQUID_USERNAME=acres`, `DROPLET_SQUID_PASSWORD=<pw>` — the app builds the proxy URL from these (`acres_client.proxy_url`), and `DROPLET_STATIC_IP` is also the egress the health check/cron expect
   - the 99acres keys
 - [ ] One dedicated 99acres client that uses the proxy; nothing else in the app should. Never set global `HTTP_PROXY`/`HTTPS_PROXY`.
-  - Python: a `requests.Session` with `trust_env = False` and `proxies = {"https": ACRES_PROXY_URL}`
+  - Python: a `requests.Session` with `trust_env = False` and `proxies = {"https": <proxy URL>}`
   - Node axios: `httpsAgent: new HttpsProxyAgent(url)` plus `proxy: false`
   - Native fetch: undici `ProxyAgent` as the `dispatcher`
   - n8n: set the proxy on the HTTP Request node only
-- [ ] Startup check: `GET https://icanhazip.com` through the proxy must equal `ACRES_EXPECTED_IP`, or the app fails loudly.
+- [ ] Startup check: `GET https://icanhazip.com` through the proxy must equal `DROPLET_STATIC_IP`, or the app fails loudly.
 - [ ] Timeouts and retries with backoff. Log which listing failed and why.
 - [ ] A per-listing upload log (listing ID, payload hash, 99acres response, timestamp) so retries don't create duplicates.
-- [ ] Laptop runs: use an SSH tunnel instead of adding home IPs to the firewall: `ssh -N -L 3128:localhost:31847 root@129.212.244.52`, then `ACRES_PROXY_URL=http://acres:<pw>@localhost:3128`.
+- [ ] Laptop runs: use an SSH tunnel instead of adding home IPs to the firewall: `ssh -N -L 3128:localhost:31847 root@129.212.244.52`, then set `DROPLET_STATIC_IP=localhost` and `DROPLET_SQUID_PORT=3128` locally (`/v1/acres/health` will then report an egress mismatch, because it compares the egress with `DROPLET_STATIC_IP` — expected in tunnel mode).
 
 ### Monitoring and maintenance (Phase 5)
 
@@ -255,7 +254,7 @@ sed -i 's/^acl acres  dstdomain .99acres.com$/acl acres  dstdomain .99acres.com 
 squid -k parse 2>&1 | tail -2 && systemctl restart squid && systemctl is-active squid
 ```
 
-Rotate the proxy password (then update the password manager and Render's `ACRES_PROXY_URL`):
+Rotate the proxy password (then update the password manager and Render's `DROPLET_SQUID_PASSWORD`):
 
 ```
 PASS=$(openssl rand -hex 24); echo "$PASS" | htpasswd -i /etc/squid/passwords acres

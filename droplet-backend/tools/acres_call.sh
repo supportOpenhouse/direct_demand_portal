@@ -4,7 +4,7 @@
 #   droplet-backend/tools/acres_call.sh GET  'v21/propertytype/qwerty?rtype=json&Res_Com=R&Mode=S'
 #   droplet-backend/tools/acres_call.sh POST 'v21/listing/qwerty?rtype=json' '{"Res_Com":"R",...}'
 #
-# - Login comes from backend/.env (99ACRES_DASHBOARD_USERNAME / _PASSWORD) and travels only inside
+# - Login comes from backend/.env (ACRES_DASHBOARD_USERNAME / _PASSWORD) and travels only inside
 #   the SSH session (base64 in the script on stdin) — never in argv, never on the droplet's disk.
 # - The token is fetched and used on the droplet; it never comes back to this Mac.
 # - Output is printed with anything JWT-shaped redacted (a token was once leaked by a sloppy

@@ -7,6 +7,7 @@ retry once, never more. Never log or return a token.
 """
 import asyncio
 import time
+import urllib.parse
 
 import httpx
 
@@ -32,11 +33,26 @@ _login_lock = asyncio.Lock()
 _one_at_a_time = asyncio.Semaphore(1)
 
 
+PROXY_KEYS = ("DROPLET_STATIC_IP", "DROPLET_SQUID_PORT", "DROPLET_SQUID_USERNAME", "DROPLET_SQUID_PASSWORD")
+
+
+def proxy_url(s) -> str:
+    """http://user:pw@ip:port from the four DROPLET_* settings; '' if any is missing."""
+    if not all(getattr(s, k) for k in PROXY_KEYS):
+        return ""
+    user, pw = (urllib.parse.quote(getattr(s, k), safe="") for k in ("DROPLET_SQUID_USERNAME", "DROPLET_SQUID_PASSWORD"))
+    return f"http://{user}:{pw}@{s.DROPLET_STATIC_IP}:{s.DROPLET_SQUID_PORT}"
+
+
 def _client() -> httpx.AsyncClient:
     s = get_settings()
-    if not (s.ACRES_PROXY_URL and s.ACRES_USERNAME and s.ACRES_PASSWORD):
-        raise AcresNotConfigured("99acres is not configured on this server")
-    return httpx.AsyncClient(proxy=s.ACRES_PROXY_URL, trust_env=False, timeout=60.0)
+    # Name the env keys that are empty (never their values): on Render a bare "not configured"
+    # can't tell a missing proxy from a missing login.
+    missing = [k for k in PROXY_KEYS if not getattr(s, k)] + [
+        k for k in ("ACRES_DASHBOARD_USERNAME", "ACRES_DASHBOARD_PASSWORD") if not getattr(s, k)]
+    if missing:
+        raise AcresNotConfigured(f"99acres is not configured on this server — set {', '.join(missing)}")
+    return httpx.AsyncClient(proxy=proxy_url(s), trust_env=False, timeout=60.0)
 
 
 async def _send(c: httpx.AsyncClient, method: str, url: str, **kw) -> httpx.Response:
@@ -60,11 +76,11 @@ async def token(force: bool = False) -> str:
         s = get_settings()
         async with _client() as c:
             r = await _send(c, "POST", f"{BASE}/v21/accesstoken/{SEGMENT}?rtype=json", headers=_HEADERS,
-                            json={"username": s.ACRES_USERNAME, "password": s.ACRES_PASSWORD})
+                            json={"username": s.ACRES_DASHBOARD_USERNAME, "password": s.ACRES_DASHBOARD_PASSWORD})
         body = r.json()
         tok = body.get("accessToken") or body.get("accesstoken")
         if not body.get("status") or not tok:
-            raise AcresError("99acres login refused — check 99ACRES_DASHBOARD_USERNAME / _PASSWORD")
+            raise AcresError("99acres login refused — check ACRES_DASHBOARD_USERNAME / _PASSWORD")
         _cached = (tok, time.time() + int(body.get("expires") or 86400) - 300)
         return tok
 

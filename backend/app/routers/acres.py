@@ -100,8 +100,8 @@ async def health(login: bool = False) -> dict:
         raise HTTPException(status_code=503, detail=str(e))
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail=f"proxy unreachable ({type(e).__name__})")
-    out = {"egress_ip": ip, "expected_ip": s.ACRES_EXPECTED_IP or None,
-           "egress_matches": ip == s.ACRES_EXPECTED_IP, "login": None}
+    out = {"egress_ip": ip, "expected_ip": s.DROPLET_STATIC_IP or None,
+           "egress_matches": ip == s.DROPLET_STATIC_IP, "login": None}
     if login:
         try:
             await acres_client.token(force=True)

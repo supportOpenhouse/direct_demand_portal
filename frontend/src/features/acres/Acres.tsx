@@ -98,16 +98,16 @@ export function AcresSection({ p }: { p: DemandProperty }) {
 }
 
 const CHECK_MAX = 300;   // /v1/acres/check's cap
-const POST_CHUNK = 5;
-const NOT_ATTEMPTED = "Not attempted — the run stopped";   // = acres_listings.NOT_ATTEMPTED    // /v1/acres/post's cap — each answer lands as it happens
+const NOT_ATTEMPTED = "Not attempted — the run stopped";   // = acres_listings.NOT_ATTEMPTED
+// User, 13 Nov: no "How many to post this run?" prompt — every Post sends exactly one property
+// (the first ticked, ready row), so the next listing is always a deliberate click.
+const PER_RUN = 1;
 
 /* List one or many properties on 99acres. The server decides everything (what would be sent,
-   what blocks it); this window collects ownership, shows the answer, and asks how many to post
-   THIS run — a listing's cost in pack credits is still unknown (STATUS.md, "295 Credits"). */
+   what blocks it); this window collects ownership and shows the answer. Each Post sends ONE
+   property — a listing's cost in pack credits is still unknown (STATUS.md, "295 Credits"). */
 export function ListOnAcresModal({ properties, onClose: rawClose }: { properties: DemandProperty[]; onClose: () => void }) {
-  const stopRef = useRef(false);
-  const close = () => { stopRef.current = true; rawClose(); };   // closing mid-run stops after the in-flight call
-  const { onClose, overlayClass } = useModalExit(close);
+  const { onClose, overlayClass } = useModalExit(rawClose);
   const stored = useAcresListings(true).data;
   const post = useAcresPost();
   const toast = useToast();
@@ -119,7 +119,6 @@ export function ListOnAcresModal({ properties, onClose: rawClose }: { properties
   const [ticked, setTicked] = useState<Set<string>>(new Set());
   const everOk = useRef(new Set<string>());
   const [results, setResults] = useState<Record<string, AcresPostResult>>({});
-  const [count, setCount] = useState("");
   const [running, setRunning] = useState(false);
   const [round, setRound] = useState(0);   // bumped after a run to re-check
 
@@ -153,32 +152,20 @@ export function ListOnAcresModal({ properties, onClose: rawClose }: { properties
 
   const ready = properties.map((p) => p.uid).filter((u) => checks?.get(u)?.ok && !results[u]);
   const tickedReady = ready.filter((u) => ticked.has(u));
-  const n = Number(count);
-  const nValid = Number.isInteger(n) && n >= 1 && n <= tickedReady.length;
-
   const run = async () => {
-    const queue = tickedReady.slice(0, n);
-    stopRef.current = false;
+    const chunk = tickedReady.slice(0, PER_RUN).map((uid) => ({ uid, owntype: ownOf(uid) || null }));
     setRunning(true);
-    for (let i = 0; i < queue.length && !stopRef.current; i += POST_CHUNK) {
-      const chunk = queue.slice(i, i + POST_CHUNK).map((uid) => ({ uid, owntype: ownOf(uid) || null }));
-      try {
-        const r = await post.mutateAsync({ items: chunk, photos });
-        // Rows the server never reached stay Ready for the next run — they aren't results.
-        const reached = r.items.filter((x) => x.error !== NOT_ATTEMPTED);
-        setResults((prev) => ({ ...prev, ...Object.fromEntries(reached.map((x) => [x.uid, x])) }));
-        if (r.halt) {   // a lost answer, or 99acres / its edge / the proxy refused us: stop here
-          toast(r.items.find((x) => x.halt)?.error ?? "The run stopped", "gold");
-          break;
-        }
-      } catch (e) {
-        // 502/503 = login, our IP or config: refused before anything was claimed. Stop the run.
-        toast(e instanceof Error ? e.message : "99acres refused the run", "gold");
-        break;
-      }
+    try {
+      const r = await post.mutateAsync({ items: chunk, photos });
+      // A row the server never reached stays Ready for the next click — it isn't a result.
+      const reached = r.items.filter((x) => x.error !== NOT_ATTEMPTED);
+      setResults((prev) => ({ ...prev, ...Object.fromEntries(reached.map((x) => [x.uid, x])) }));
+      if (r.halt) toast(r.items.find((x) => x.halt)?.error ?? "99acres stopped the post", "gold");
+    } catch (e) {
+      // 502/503 = login, our IP or config: refused before anything was claimed.
+      toast(e instanceof Error ? e.message : "99acres refused the post", "gold");
     }
     setRunning(false);
-    setCount("");
     setRound((x) => x + 1);
   };
 
@@ -224,7 +211,7 @@ export function ListOnAcresModal({ properties, onClose: rawClose }: { properties
                       </td>
                       <td>
                         <b>{p.uid}</b> · {p.society_name ?? "—"}
-                        <div className="sub">{[p.tower_no && `T-${p.tower_no}`, p.unit_no, p.configuration, p.listing_price != null && `₹${p.listing_price} L`].filter(Boolean).join(" · ")}</div>
+                        <div className="sub">{[p.tower_no && `T-${p.tower_no}`, p.unit_no, p.configuration, p.listing_price != null && `₹${Number(p.listing_price).toLocaleString("en-IN")} L`].filter(Boolean).join(" · ")}</div>
                       </td>
                       <td className="cell-tight">{c?.age ? AGE_LABEL[c.age] : "—"}</td>
                       <td className="cell-tight">
@@ -262,15 +249,11 @@ export function ListOnAcresModal({ properties, onClose: rawClose }: { properties
         </div>
 
         <div className="acres-foot">
-          <label>How many to post this run?
-            <input type="number" className="ctl" min={1} max={tickedReady.length} value={count} disabled={running}
-                   onChange={(e) => setCount(e.target.value)} placeholder={`1–${tickedReady.length}`} />
-          </label>
-          <span className="acres-sub">{tickedReady.length} ticked and ready</span>
+          <span className="acres-sub">{tickedReady.length} ticked and ready · each Post lists the next one</span>
           <div style={{ flex: 1 }} />
-          {running
-            ? <button className="btn ghost" onClick={() => { stopRef.current = true; }}>Stop</button>
-            : <button className="btn primary" disabled={!nValid} onClick={run}>Post {nValid ? n : ""}</button>}
+          <button className="btn primary" disabled={running || !tickedReady.length} onClick={run}>
+            {running ? "Posting…" : `Post ${PER_RUN}`}
+          </button>
         </div>
       </div>
     </div>,

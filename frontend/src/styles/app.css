@@ -2678,7 +2678,6 @@ td.lead-cell .nm{
 .acres-sub{font-size:12px;font-weight:400;color:var(--muted)}
 .acres-top,.acres-foot{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
 .acres-top label,.acres-foot label{display:flex;align-items:center;gap:8px;font-size:13px}
-.acres-foot input[type=number]{width:110px}
 .acres-rows{overflow:auto;min-height:120px;border:1px solid var(--line);border-radius:var(--r-input)}
 .acres-blocked td{color:var(--muted)}
 .acres-err{color:var(--coral)}

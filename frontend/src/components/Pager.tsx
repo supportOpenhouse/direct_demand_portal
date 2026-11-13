@@ -61,6 +61,8 @@ export interface PagerSelect {
   /** rows passing the current filters — what "Select first N" counts from */
   total: number;
   onPick: (n: number) => void;
+  /** the button's name; lead tables keep "Select" (Demand Dashboard: "Bulk List") */
+  label?: string;
 }
 
 export function Pager({
@@ -91,7 +93,7 @@ export function Pager({
       {select && (
         <span className="pager-select">
           <button className={"btn sm" + (select.on ? "" : " ghost")} onClick={select.onToggle}>
-            {select.on ? "Exit Select" : "Select"}
+            {select.on ? `Exit ${select.label ?? "Select"}` : select.label ?? "Select"}
           </button>
           {/* the shortcut only means anything once rows can be picked */}
           {select.on && <SelectFirst total={select.total} onPick={select.onPick} />}

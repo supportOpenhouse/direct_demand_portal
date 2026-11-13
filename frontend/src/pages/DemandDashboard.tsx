@@ -701,7 +701,7 @@ export default function DemandDashboard() {
       <Pager page={pg.page} pages={pg.pages} size={pg.size} total={sorted.length} onPage={pg.setPage}
              sizeChoice={pg.sizeChoice} onSize={pg.setSize}
              select={isAdmin ? { on: selectMode, onToggle: () => { setSelectMode((v) => !v); sel.clear(); },
-                                 total: sorted.length, onPick: sel.selectFirst } : undefined} />
+                                 total: sorted.length, onPick: sel.selectFirst, label: "Bulk List" } : undefined} />
 
       <div className="card table-wrap">
         <table className="tbl">
